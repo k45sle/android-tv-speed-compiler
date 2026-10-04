@@ -29,6 +29,17 @@ class AppBaseline:
     enabled: bool
     compiled_fingerprint: str | None
 
+    @property
+    def fingerprint(self) -> str:
+        return "|".join(
+            (
+                self.package_id,
+                str(self.version_code) if self.version_code is not None else "",
+                self.last_update_time or "",
+                self.apk_path or "",
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Job:
@@ -42,6 +53,8 @@ class Job:
     reason: str | None
     created_at: str
     updated_at: str
+    manual_override: bool = False
+    manual: bool = False
 
 
 @dataclass(frozen=True, slots=True)
