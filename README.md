@@ -78,3 +78,5 @@ PLAYWRIGHT_MODULE=/path/to/node_modules/playwright make smoke
 ```
 
 See [`docs/operations.md`](docs/operations.md) for network, backup, recovery, and limitations detail. MIT license; original project copyright 2026 k45sle.
+
+For self-hosting setup, upgrades, or recovery performed by an AI agent, explicitly provide [`docs/agent-self-hosting.md`](docs/agent-self-hosting.md) as its runbook. Agents do not necessarily load it automatically.
