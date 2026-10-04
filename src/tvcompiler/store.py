@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS job_events (
   event TEXT NOT NULL, detail TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 """
 
 
@@ -53,6 +57,12 @@ class Store:
         self._lock = threading.RLock()
         with closing(self._connect()) as db:
             db.executescript(_SCHEMA)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+            if "manual_override" not in columns:
+                db.execute("ALTER TABLE jobs ADD COLUMN manual_override INTEGER NOT NULL DEFAULT 0")
+            if "manual" not in columns:
+                db.execute("ALTER TABLE jobs ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+            db.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('monitoring_enabled','0')")
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
@@ -115,6 +125,8 @@ class Store:
             row["reason"],
             row["created_at"],
             row["updated_at"],
+            bool(row["manual_override"]) if "manual_override" in row.keys() else False,
+            bool(row["manual"]) if "manual" in row.keys() else False,
         )
 
     def upsert_device(
@@ -214,6 +226,126 @@ class Store:
             if not enabled:
                 self._cancel_jobs(db, "app disabled", device_id=device_id, package_id=package_id)
 
+    def set_setting(self, key: str, value: str) -> None:
+        self.set_settings({key: value})
+
+    def set_settings(self, values: dict[str, str]) -> None:
+        if any(not key or len(key) > 100 or len(value) > 2000 for key, value in values.items()):
+            raise ValueError("invalid setting")
+        with self._transaction() as db:
+            db.executemany(
+                """INSERT INTO settings(key,value) VALUES(?,?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                   updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
+                values.items(),
+            )
+
+    def get_settings(self, keys: tuple[str, ...]) -> dict[str, str]:
+        if not keys:
+            return {}
+        placeholders = ",".join("?" for _ in keys)
+        with closing(self._connect()) as db:
+            rows = db.execute(f"SELECT key,value FROM settings WHERE key IN ({placeholders})", keys)
+            return {row["key"]: row["value"] for row in rows}
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        with closing(self._connect()) as db:
+            row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_monitoring(self, enabled: bool) -> None:
+        self.set_setting("monitoring_enabled", "1" if enabled else "0")
+
+    def monitoring_enabled(self) -> bool:
+        return self.get_setting("monitoring_enabled", "0") == "1"
+
+    def observe_app(
+        self,
+        device_id: str,
+        package_id: str,
+        *,
+        label: str | None,
+        version_name: str | None,
+        version_code: int | None,
+        last_update_time: str | None,
+        apk_path: str | None,
+        enqueue_change: bool,
+        initial_compile: bool = False,
+        enable: bool = False,
+        manual: bool = False,
+    ) -> tuple[AppBaseline, Job | None, bool]:
+        """Persist observed installation and any resulting job in one transaction."""
+        validate_package_id(package_id)
+        fingerprint = "|".join(
+            (package_id, str(version_code) if version_code is not None else "", last_update_time or "", apk_path or "")
+        )
+        with self._transaction() as db:
+            before = db.execute(
+                "SELECT * FROM apps WHERE device_id=? AND package_id=?", (device_id, package_id)
+            ).fetchone()
+            changed = bool(before and self._app(before).fingerprint != fingerprint)
+            enabled = enable or bool(before and before["enabled"])
+            db.execute(
+                """INSERT INTO apps(
+                   device_id,package_id,label,version_name,version_code,last_update_time,apk_path,enabled)
+                   VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(device_id,package_id) DO UPDATE SET
+                   label=COALESCE(excluded.label,apps.label),version_name=excluded.version_name,
+                   version_code=excluded.version_code,last_update_time=excluded.last_update_time,
+                   apk_path=excluded.apk_path,enabled=excluded.enabled,
+                   updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
+                (device_id, package_id, label, version_name, version_code, last_update_time, apk_path, int(enabled)),
+            )
+            app = self._app(
+                db.execute("SELECT * FROM apps WHERE device_id=? AND package_id=?", (device_id, package_id)).fetchone()
+            )
+            device = db.execute("SELECT enabled FROM devices WHERE id=?", (device_id,)).fetchone()
+            should_enqueue = (
+                (initial_compile or (enqueue_change and changed)) and app.enabled and bool(device and device["enabled"])
+            )
+            if not should_enqueue:
+                return app, None, changed
+            return (
+                app,
+                self._enqueue_job(
+                    db,
+                    device_id,
+                    package_id,
+                    fingerprint,
+                    manual_override=False,
+                    manual=manual or initial_compile,
+                    force=False,
+                ),
+                changed,
+            )
+
+    def enqueue_manual_job(
+        self, device_id: str, package_id: str, fingerprint: str, *, foreground_override: bool
+    ) -> Job | None:
+        """Explicitly retry a known fingerprint; manual retry may requeue a prior terminal result."""
+        validate_package_id(package_id)
+        with self._transaction() as db:
+            row = db.execute(
+                """SELECT d.enabled AS de,a.enabled AS ae,a.version_code,a.last_update_time,a.apk_path
+                   FROM devices d JOIN apps a ON a.device_id=d.id
+                   WHERE d.id=? AND a.package_id=?""",
+                (device_id, package_id),
+            ).fetchone()
+            if not row or not row["de"] or not row["ae"]:
+                return None
+            current = "|".join(
+                (
+                    package_id,
+                    str(row["version_code"]) if row["version_code"] is not None else "",
+                    row["last_update_time"] or "",
+                    row["apk_path"] or "",
+                )
+            )
+            if current != fingerprint:
+                return None
+            return self._enqueue_job(
+                db, device_id, package_id, fingerprint, manual_override=foreground_override, manual=True, force=True
+            )
+
     def remove_app(self, device_id: str, package_id: str) -> None:
         validate_package_id(package_id)
         with self._transaction() as db:
@@ -224,7 +356,9 @@ class Store:
     def _event(db: sqlite3.Connection, job_id: int, event: str, detail: str | None = None) -> None:
         db.execute("INSERT INTO job_events(job_id,event,detail) VALUES(?,?,?)", (job_id, event, detail))
 
-    def enqueue_job(self, device_id: str, package_id: str, fingerprint: str) -> Job | None:
+    def enqueue_job(
+        self, device_id: str, package_id: str, fingerprint: str, *, manual_override: bool = False, manual: bool = False
+    ) -> Job | None:
         """Queue a current installation once; supersede queued/running older fingerprints.
 
         Returns None when the device/app is missing or disabled. Fingerprint should be produced
@@ -240,33 +374,130 @@ class Store:
             ).fetchone()
             if not enabled or not enabled["device_enabled"] or not enabled["app_enabled"]:
                 return None
-            existing = db.execute(
-                """SELECT * FROM jobs WHERE device_id=? AND package_id=?
+            return self._enqueue_job(
+                db, device_id, package_id, fingerprint, manual_override=manual_override, manual=manual, force=False
+            )
+
+    def _enqueue_job(
+        self,
+        db: sqlite3.Connection,
+        device_id: str,
+        package_id: str,
+        fingerprint: str,
+        *,
+        manual_override: bool,
+        manual: bool,
+        force: bool,
+    ) -> Job | None:
+        existing = db.execute(
+            """SELECT * FROM jobs WHERE device_id=? AND package_id=?
               AND fingerprint=? AND state IN ('pending','running')""",
+            (device_id, package_id, fingerprint),
+        ).fetchone()
+        if existing:
+            if (manual and not existing["manual"]) or (manual_override and not existing["manual_override"]):
+                db.execute(
+                    "UPDATE jobs SET manual=MAX(manual,?),manual_override=MAX(manual_override,?) WHERE id=?",
+                    (int(manual), int(manual_override), existing["id"]),
+                )
+                existing = db.execute("SELECT * FROM jobs WHERE id=?", (existing["id"],)).fetchone()
+            return self._job(existing)
+        if not force:
+            terminal = db.execute(
+                """SELECT 1 FROM jobs WHERE device_id=? AND package_id=? AND fingerprint=?
+                       AND state IN ('succeeded','failed') LIMIT 1""",
                 (device_id, package_id, fingerprint),
             ).fetchone()
-            if existing:
-                return self._job(existing)
-            old_rows = db.execute(
-                """SELECT id FROM jobs WHERE device_id=? AND package_id=?
+            if terminal:
+                return None
+        old_rows = db.execute(
+            """SELECT id FROM jobs WHERE device_id=? AND package_id=?
               AND fingerprint<>? AND state IN ('pending','running')""",
-                (device_id, package_id, fingerprint),
-            ).fetchall()
-            for old in old_rows:
-                db.execute(
-                    """UPDATE jobs SET state='superseded',reason='newer installation detected',
+            (device_id, package_id, fingerprint),
+        ).fetchall()
+        for old in old_rows:
+            db.execute(
+                """UPDATE jobs SET state='superseded',reason='newer installation detected',
                             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?""",
-                    (old["id"],),
-                )
-                self._event(db, old["id"], "superseded", "newer installation detected")
-            cur = db.execute(
-                """INSERT INTO jobs(device_id,package_id,fingerprint,state)
-                              VALUES(?,?,?,'pending')""",
-                (device_id, package_id, fingerprint),
+                (old["id"],),
             )
-            job_id = cur.lastrowid
-            self._event(db, job_id, "queued")
+            self._event(db, old["id"], "superseded", "newer installation detected")
+        cur = db.execute(
+            """INSERT INTO jobs(device_id,package_id,fingerprint,state,manual_override,manual)
+                              VALUES(?,?,?,'pending',?,?)""",
+            (device_id, package_id, fingerprint, int(manual_override), int(manual)),
+        )
+        job_id = cur.lastrowid
+        self._event(db, job_id, "queued")
+        return self._job(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
+
+    def pending_jobs(self, *, now: str | None = None, limit: int = 1000) -> list[Job]:
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                """SELECT j.* FROM jobs j WHERE j.state='pending'
+                   AND j.available_at<=COALESCE(?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                   ORDER BY j.available_at,j.id LIMIT ?""",
+                (now, limit),
+            )
+            return [self._job(row) for row in rows]
+
+    def claim_job(self, job_id: int, *, now: str | None = None) -> Job | None:
+        """Claim a specific, currently eligible due row after scheduler gates have passed."""
+        with self._transaction() as db:
+            if db.execute("SELECT 1 FROM jobs WHERE state='running' LIMIT 1").fetchone():
+                return None
+            row = db.execute(
+                """SELECT j.id FROM jobs j JOIN devices d ON d.id=j.device_id
+                   JOIN apps a ON a.device_id=j.device_id AND a.package_id=j.package_id
+                   WHERE j.id=? AND j.state='pending'
+                   AND j.available_at<=COALESCE(?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                   AND d.enabled=1 AND a.enabled=1""",
+                (job_id, now),
+            ).fetchone()
+            if not row:
+                return None
+            db.execute(
+                """UPDATE jobs SET state='running',attempts=attempts+1,reason=NULL,
+                   updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?""",
+                (job_id,),
+            )
+            self._event(db, job_id, "claimed")
             return self._job(db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
+
+    def finish_success_if_current(self, job_id: int, fingerprint: str, reason: str | None = None) -> bool:
+        """Atomically persist successful outcome only while job, allowlist and current fingerprint agree."""
+        with self._transaction() as db:
+            row = db.execute(
+                """SELECT j.device_id,j.package_id,j.state,a.enabled AS ae,d.enabled AS de,
+                   a.version_code,a.last_update_time,a.apk_path FROM jobs j
+                   JOIN devices d ON d.id=j.device_id
+                   JOIN apps a ON a.device_id=j.device_id AND a.package_id=j.package_id
+                   WHERE j.id=?""",
+                (job_id,),
+            ).fetchone()
+            if not row or row["state"] != "running" or not row["ae"] or not row["de"]:
+                return False
+            current = "|".join(
+                (
+                    row["package_id"],
+                    str(row["version_code"]) if row["version_code"] is not None else "",
+                    row["last_update_time"] or "",
+                    row["apk_path"] or "",
+                )
+            )
+            if current != fingerprint:
+                return False
+            db.execute(
+                """UPDATE apps SET compiled_fingerprint=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                   WHERE device_id=? AND package_id=?""",
+                (fingerprint, row["device_id"], row["package_id"]),
+            )
+            db.execute(
+                "UPDATE jobs SET state='succeeded',reason=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+                (reason, job_id),
+            )
+            self._event(db, job_id, "succeeded", reason)
+            return True
 
     def claim_next(self, now: str | None = None) -> Job | None:
         """Atomically claim the oldest due job, enforcing a single running operation."""
@@ -319,6 +550,32 @@ class Store:
                 (state, reason, available_at, job_id),
             )
             self._event(db, job_id, state, reason)
+
+    def set_wait_reason(self, job_id: int, reason: str) -> None:
+        """Persist a deferral explanation without claiming the job or using an attempt."""
+        with self._transaction() as db:
+            row = db.execute("SELECT state,reason FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["state"] != "pending" or row["reason"] == reason:
+                return
+            db.execute(
+                "UPDATE jobs SET reason=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+                (reason, job_id),
+            )
+            self._event(db, job_id, "deferred", reason)
+
+    def defer_running(self, job_id: int, reason: str, available_at: str | None = None) -> None:
+        """Release a preflight claim without charging an attempt to a compiler operation."""
+        with self._transaction() as db:
+            row = db.execute("SELECT state,attempts FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["state"] != "running":
+                return
+            db.execute(
+                """UPDATE jobs SET state='pending',attempts=MAX(0,attempts-1),reason=?,
+                   available_at=COALESCE(?,available_at),
+                   updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?""",
+                (reason, available_at, job_id),
+            )
+            self._event(db, job_id, "deferred", reason)
 
     def mark_compiled(self, device_id: str, package_id: str, fingerprint: str) -> bool:
         """Persist verified success only if the fingerprint still matches the current baseline."""
