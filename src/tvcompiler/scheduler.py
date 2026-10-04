@@ -263,14 +263,20 @@ class Scheduler:
             return self._run_once_locked()
 
     def _run_once_locked(self) -> Job | None:
+        if self._worker_stopping():
+            return None
         owned_lock = self._lock_file is None
         if owned_lock:
             self._acquire_process_lock()
         try:
             if self.store.monitoring_enabled():
                 self.poll_once()
+            if self._worker_stopping():
+                return None
             now = self._db_time(self.clock())
             for candidate in self.store.pending_jobs(now=now):
+                if self._worker_stopping():
+                    return None
                 if not self.store.monitoring_enabled() and not candidate.manual:
                     self.store.set_wait_reason(candidate.id, "monitoring is paused")
                     continue
@@ -283,6 +289,8 @@ class Scheduler:
                 if not eligible:
                     self.store.set_wait_reason(candidate.id, reason or "waiting")
                     continue
+                if self._worker_stopping():
+                    return None
                 job = self.store.claim_job(candidate.id, now=now)
                 if job is None:
                     return None
@@ -333,6 +341,22 @@ class Scheduler:
             )
             self._finish_if_running(job.id, "superseded", "installation changed before compilation")
             return self.store.get_job(job.id)
+        # Re-read durable intent after the live ADB check; a disable, removal, or superseding
+        # installation may have landed while that preflight was waiting on the TV.
+        latest = self.store.get_job(job.id)
+        device = self.store.get_device(job.device_id)
+        app = self.store.get_app(job.device_id, job.package_id)
+        if latest is None or latest.state != "running":
+            return latest
+        if not device or not device.enabled or not app or not app.enabled:
+            self._finish_if_running(job.id, "cancelled", "device or app disabled before compilation")
+            return self.store.get_job(job.id)
+        if latest.fingerprint != job.fingerprint or app.fingerprint != job.fingerprint:
+            self._finish_if_running(job.id, "superseded", "installation changed before compilation")
+            return self.store.get_job(job.id)
+        # Eligibility may have involved slow ADB reads. Honor shutdown before starting new work.
+        if self._worker_stopping():
+            return self._defer_claimed(job, "service is shutting down before compilation")
         try:
             result = self.adb.compile_speed(serial, job.package_id)
             if not re.search(r"(?im)^\s*Success\s*$", result.stdout):
@@ -404,6 +428,9 @@ class Scheduler:
     def _defer_claimed(self, job: Job, reason: str) -> Job | None:
         self.store.defer_running(job.id, reason, self._db_time(self.clock()))
         return self.store.get_job(job.id)
+
+    def _worker_stopping(self) -> bool:
+        return threading.current_thread() is self._thread and self._stop.is_set()
 
     def _finish_if_running(self, job_id: int, state: str, reason: str, available_at: str | None = None) -> None:
         try:

@@ -22,6 +22,9 @@ class FakeAdb:
         self.compile_count = 0
         self.entered = Event()
         self.release = Event()
+        self.block_package_read = False
+        self.package_read_entered = Event()
+        self.package_read_release = Event()
 
     def reconnect(self, *, expected_serial, expected_fingerprint, endpoint):
         if endpoint in self.fail_reconnect:
@@ -29,6 +32,9 @@ class FakeAdb:
         return endpoint or expected_serial, object()
 
     def package_info(self, serial, package_id):
+        if self.block_package_read:
+            self.package_read_entered.set()
+            self.package_read_release.wait(5)
         try:
             return self.packages[(serial, package_id)]
         except KeyError as exc:
@@ -359,11 +365,32 @@ def test_stop_timeout_keeps_process_lock_until_subprocess_exits(tmp_path):
     adb.block_compile = True
     scheduler.start()
     assert adb.entered.wait(1)
-    scheduler.stop(timeout=0)
+    stopping = Thread(target=scheduler.stop)
+    stopping.start()
+    stopping.join(0.05)
+    assert stopping.is_alive()
     other = Scheduler(store, adb, tmp_path)
     with pytest.raises(RuntimeError, match="another scheduler"):
         other._acquire_process_lock()
     adb.release.set()
-    scheduler.stop()
+    stopping.join(1)
+    assert not stopping.is_alive()
+    assert store.get_job(1).state == "succeeded"
     other._acquire_process_lock()
     other._release_process_lock()
+
+
+def test_disabling_app_during_precompile_metadata_read_prevents_compile(tmp_path):
+    store, adb, scheduler, _device = setup(tmp_path)
+    app = watched(store, scheduler)
+    store.enqueue_manual_job("tv", app.package_id, app.fingerprint, foreground_override=True)
+    adb.block_package_read = True
+    worker = Thread(target=scheduler.run_once)
+    worker.start()
+    assert adb.package_read_entered.wait(1)
+    store.set_app_enabled("tv", app.package_id, False)
+    adb.package_read_release.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    assert adb.compile_count == 0
+    assert store.list_jobs()[0].state == "cancelled"
