@@ -222,3 +222,17 @@ def test_bounded_runner_caps_retained_stdout_and_stderr():
     assert result.returncode == 0
     assert len(result.stdout) <= 128
     assert len(result.stderr) <= 128
+
+
+def test_parse_real_adb_mdns_three_column_output_and_bracketed_ipv6():
+    from tvcompiler.adb import parse_mdns_services
+
+    services = parse_mdns_services(
+        "List of discovered mdns services\n"
+        "adb-example-SqXLCd\t_adb-tls-connect._tcp\t192.168.1.45:37821\n"
+        "adb-example-SqXLCd\t_adb-tls-pairing._tcp.\t[fd12::45]:37123\n"
+    )
+    assert [(item.kind, item.endpoint) for item in services] == [
+        ("connect", "192.168.1.45:37821"),
+        ("pairing", "[fd12::45]:37123"),
+    ]

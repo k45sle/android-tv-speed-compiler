@@ -14,4 +14,10 @@ Remaining: Task 3 dashboard integration, Task 4 delivery, independent final revi
 
 Parent task 2 review resolved pause semantics, in-process serialization, lock retention on timed shutdown, explicit Success validation, atomic watch re-enabling, canonical queue timestamps, and persistent poll errors. Parent checks:39 tests passed in0.46s; Ruff All checks passed; diff check exit0.
 
-Next: Task3 authenticated dashboard integration.
+Next: Task 4 delivery, packaging, documentation, and browser/container smoke checks.
+
+Task 3 implemented: FastAPI lifespan and one-worker console entry point, first-run token/password setup, hashed persistent sessions, CSRF and same-origin checks, bounded setup/login throttles, secure cookies, and accessible responsive dashboard/API for pairing, multiple TVs, fresh inventory, watch/baseline/manual jobs, settings, events, and allowlisted diagnostics. Fixed real three-column ADB mDNS parsing alongside legacy output and bracketed IPv6 transport serials. Existing-only TV updates prevent rename/reconnect races from resurrecting forgotten devices; fresh inventory does not mutate watched baselines. See `docs/task-3-report.md` for route/environment details and limitations. Validation: 52 fake-backed tests passed; Ruff, Node syntax, editable install, and `git diff --check` passed. No live ADB mutations or browser automation; Task 4 should run its Playwright smoke and clean locked install.
+
+Parent Task3 review accepted after fixes to first-run token lifecycle, password/CSRF handling, rename endpoint preservation, concurrent forget, mDNS output formats, form labels, login payload, async form reset, optional compile/override, and status refresh. Parent commands:pytest52 passed1.61s with1 upstream TestClient deprecation warning; Ruff All checks passed; node --check and git diff --check exit0.
+
+Next: Task4 delivery and cross-layer/browser/container checks, then independent final review and material fixes, final checks and source push to private GitHub repository.

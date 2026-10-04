@@ -102,13 +102,24 @@ def parse_mdns_services(text: str) -> list[DiscoveredService]:
     """Parse `adb mdns services`, retaining only ADB TLS pairing/connect services."""
     results: list[DiscoveredService] = []
     for line in text.splitlines():
-        match = re.search(r"(?P<name>\S+_adb-tls-(?P<kind>connect|pairing)\._tcp\.?)\s+(?P<endpoint>\S+)", line)
-        if match:
+        # Platform-tools versions emit either NAME TYPE ENDPOINT (current) or
+        # NAME_WITH_TYPE ENDPOINT (older releases / wrappers).
+        columns = line.split()
+        parsed = None
+        service_type = columns[1].rstrip(".") if len(columns) >= 3 else ""
+        if len(columns) >= 3 and service_type in {"_adb-tls-connect._tcp", "_adb-tls-pairing._tcp"}:
+            kind = "connect" if "connect" in service_type else "pairing"
+            parsed = (kind, columns[2], " ".join(columns[:2]))
+        else:
+            legacy = re.search(r"(?P<name>\S+_adb-tls-(?P<kind>connect|pairing)\._tcp\.?)\s+(?P<endpoint>\S+)", line)
+            if legacy:
+                parsed = (legacy.group("kind"), legacy.group("endpoint"), legacy.group("name"))
+        if parsed:
             try:
-                endpoint = validate_endpoint(match.group("endpoint"))
+                endpoint = validate_endpoint(parsed[1])
             except ValueError:
                 continue
-            results.append(DiscoveredService(match.group("kind"), match.group("name"), endpoint))
+            results.append(DiscoveredService(parsed[0], parsed[2], endpoint))
     return results
 
 
@@ -435,7 +446,7 @@ class AdbClient:
 
     def identity(self, serial: str) -> DeviceIdentity:
         """Read durable Android hardware identity, never the endpoint-shaped ADB transport ID."""
-        if not isinstance(serial, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,300}", serial):
+        if not isinstance(serial, str) or not re.fullmatch(r"[A-Za-z0-9_.:\-\[\]]{1,300}", serial):
             raise ValueError("invalid ADB serial")
         durable_serial = self._run(["shell", "getprop", "ro.serialno"], serial=serial).stdout.strip()
         if not durable_serial:

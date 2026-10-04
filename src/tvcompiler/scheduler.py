@@ -492,6 +492,7 @@ class Scheduler:
         return {
             "monitoring_enabled": self.store.monitoring_enabled(),
             "poll_interval_seconds": self.poll_interval,
+            "max_attempts": self.max_attempts,
             "last_poll_at": self.store.get_setting("last_poll_at"),
             "last_poll_error": self.store.get_setting("last_poll_error"),
             "scheduler_error": self.store.get_setting("scheduler_error"),
