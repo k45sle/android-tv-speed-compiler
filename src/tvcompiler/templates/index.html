@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf }}">
+  <title>Android TV Speed Compiler</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-authenticated="{{ 'true' if authenticated else 'false' }}">
+  <header class="topbar"><div><p class="eyebrow">LOCAL ANDROID TV TOOL</p><h1>Speed Compiler</h1></div><button id="logout" class="quiet hidden" type="button">Sign out</button></header>
+  <main>
+    <section id="auth-panel" class="card auth-card" aria-labelledby="auth-title">
+      <p class="eyebrow">SECURE FIRST RUN</p><h2 id="auth-title">Set up your local account</h2>
+      <p id="auth-copy">Enter the one-time token from <code>instance/bootstrap.token</code> and choose a strong password of at least 12 characters.</p>
+      <form id="auth-form">
+        <label id="token-label">One-time setup token<input id="token" name="token" autocomplete="off" required></label>
+        <label>Password<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <button id="auth-submit" type="submit">Create account</button>
+      </form><p id="auth-message" class="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <div id="dashboard" class="hidden">
+      <section class="hero card">
+        <div><p class="eyebrow">MONITORING</p><h2 id="monitor-title">Paused</h2><p id="monitor-copy">Monitoring starts paused. Explicit manual jobs can still run while paused.</p></div>
+        <button id="monitor-toggle" type="button">Resume monitoring</button>
+      </section>
+      <p id="notice" class="message" role="status" aria-live="polite"></p>
+      <section class="grid">
+        <article class="card section-card">
+          <div class="section-heading"><div><p class="eyebrow">TV SETUP</p><h2>Add a TV</h2></div><button id="discover" class="secondary" type="button">Discover TLS services</button></div>
+          <p class="muted">On the TV, open Settings → Network &amp; Internet → Wireless debugging. Pairing and connection use separate endpoints shown by the TV.</p>
+          <div id="services" class="service-list" aria-live="polite"></div>
+          <form id="pair-form" class="form-grid">
+            <label>TV name<input name="name" maxlength="80" placeholder="Living room" required></label>
+            <label>Pairing IP:port<input name="pairing_endpoint" maxlength="300" placeholder="192.168.1.45:37821" required></label>
+            <label>Pairing code<input name="pairing_code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required></label>
+            <label>Connection IP:port<input name="endpoint" maxlength="300" placeholder="192.168.1.45:41267" required></label>
+            <button type="submit">Pair and add TV</button>
+          </form>
+          <details><summary>Already paired? Add a TV</summary>
+            <form id="add-form" class="form-grid"><label>TV name<input name="name" maxlength="80" required></label><label>Connection IP:port<input name="endpoint" maxlength="300" required></label><button type="submit">Connect and add</button></form>
+          </details>
+        </article>
+        <article class="card section-card">
+          <p class="eyebrow">SCHEDULING</p><h2>Global settings</h2>
+          <form id="settings-form" class="form-grid compact">
+            <label>Poll interval (seconds)<input name="poll_interval_seconds" type="number" min="5" max="3600" value="60" required></label>
+            <label>Retry attempts<input name="max_attempts" type="number" min="1" max="8" value="3" required></label>
+            <label>Maintenance starts<input name="window_start" type="time"></label>
+            <label>Maintenance ends<input name="window_end" type="time"></label>
+            <label>Time zone (IANA)<input name="timezone" value="UTC" maxlength="80" placeholder="America/Chicago"></label>
+            <p class="muted full">Leave both times empty to disable the window. Crossing-midnight windows are supported. Manual jobs still respect idle and window rules unless you explicitly enable the foreground override.</p>
+            <button type="submit">Save settings</button>
+          </form>
+        </article>
+      </section>
+      <section class="card section-card">
+        <div class="section-heading"><div><p class="eyebrow">CONNECTED DEVICES</p><h2>Your TVs</h2></div><button id="refresh" class="secondary" type="button">Refresh</button></div>
+        <p id="empty-devices" class="muted">No TVs added yet. Pair a TV or add one that is already paired.</p>
+        <div id="devices" class="device-list"></div>
+      </section>
+      <section class="card section-card">
+        <div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>Recent work</h2></div><button id="diagnostics" class="secondary" type="button">Download safe diagnostics</button></div>
+        <p class="muted">A successful command means Android accepted the request. Filter status may be unverified; this does not measure or promise a performance improvement.</p>
+        <div class="table-wrap"><table><thead><tr><th>TV</th><th>App</th><th>Status</th><th>Details</th><th>Updated</th></tr></thead><tbody id="jobs"></tbody></table></div>
+      </section>
+      <footer><p id="poll-status" class="muted"></p><p class="muted">ADB work is limited to installed-app metadata and the fixed speed compilation operation. No arbitrary shell commands are exposed.</p></footer>
+    </div>
+  </main>
+</body>
+</html>

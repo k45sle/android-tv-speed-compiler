@@ -152,6 +152,24 @@ class Store:
             row = db.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
         return self._device(row) if row else None
 
+    def update_device(self, device_id: str, *, name: str | None = None, endpoint: str | None = None) -> bool:
+        """Update an existing TV only; a concurrent forget must never be undone by stale work."""
+        if name is None and endpoint is None:
+            return self.get_device(device_id) is not None
+        with self._transaction() as db:
+            current = db.execute("SELECT name,endpoint FROM devices WHERE id=?", (device_id,)).fetchone()
+            if not current:
+                return False
+            db.execute(
+                "UPDATE devices SET name=?,endpoint=? WHERE id=?",
+                (
+                    name if name is not None else current["name"],
+                    endpoint if endpoint is not None else current["endpoint"],
+                    device_id,
+                ),
+            )
+            return True
+
     def list_devices(self) -> list[Device]:
         with closing(self._connect()) as db:
             return [self._device(r) for r in db.execute("SELECT * FROM devices ORDER BY name,id")]
