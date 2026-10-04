@@ -8,6 +8,7 @@ from pathlib import Path
 required = {
     "tvcompiler/templates/index.html",
     "tvcompiler/static/style.css",
+    "tvcompiler/static/theme.js",
     "tvcompiler/static/app.js",
 }
 source_required = {f"src/{name}" for name in required} | {"pyproject.toml"}

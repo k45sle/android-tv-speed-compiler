@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf }}">
   <title>Android TV Speed Compiler</title>
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body data-authenticated="{{ 'true' if authenticated else 'false' }}">
-  <header class="topbar"><div><p class="eyebrow">LOCAL ANDROID TV TOOL</p><h1>Speed Compiler</h1></div><button id="logout" class="quiet hidden" type="button">Sign out</button></header>
+  <header class="topbar"><div><p class="eyebrow">LOCAL ANDROID TV TOOL</p><h1>Speed Compiler</h1></div><div class="topbar-tools"><label class="appearance-control" for="appearance">Appearance<select id="appearance" name="appearance"><option value="system">System</option><option value="light">Light</option><option value="night">Night</option></select></label><button id="logout" class="quiet hidden" type="button">Sign out</button></div></header>
   <main>
     <section id="auth-panel" class="card auth-card" aria-labelledby="auth-title">
       <p class="eyebrow">SECURE FIRST RUN</p><h2 id="auth-title">Set up your local account</h2>

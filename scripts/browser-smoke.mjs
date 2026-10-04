@@ -10,23 +10,40 @@ const { chromium } = require(packagePath);
 const baseURL = process.env.SMOKE_URL || 'http://127.0.0.1:8765';
 const password = 'fake browser smoke password only';
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true, colorScheme: 'dark' });
 const pageErrors = [];
 page.setDefaultTimeout(10000);
 page.on('pageerror', error => pageErrors.push(error.message));
 const screenshot = path.resolve('../../work/dashboard-smoke.png');
 try {
   await page.goto(baseURL);
+  const appearance = page.locator('#appearance');
+  assert.equal(await appearance.inputValue(), 'system');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'system');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
+  await appearance.selectOption('light');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'light');
+  await appearance.selectOption('night');
+  await page.reload();
+  assert.equal(await page.locator('#appearance').inputValue(), 'night');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
+
   await page.locator('#token').fill('fake-browser-smoke-bootstrap-token-2026-only');
   await page.locator('#password').fill(password);
   await page.locator('#auth-submit').click();
   await page.getByRole('heading', { name: 'Your TVs' }).waitFor();
+  assert.equal(await page.locator('#appearance').inputValue(), 'night');
   await page.locator('#logout').click();
   await page.locator('#auth-title').waitFor();
+  assert.equal(await page.locator('#appearance').inputValue(), 'night');
   assert.equal(await page.locator('#auth-title').textContent(), 'Sign in');
   await page.locator('#password').fill(password);
   await page.locator('#auth-submit').click();
   await page.getByRole('heading', { name: 'Your TVs' }).waitFor();
+  await page.locator('#appearance').selectOption('light');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'light');
+  await page.locator('#appearance').selectOption('system');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
 
   await page.getByRole('button', { name: 'Discover TLS services' }).click();
   await page.getByText('pairing: 10.0.0.5:37123').waitFor();
@@ -90,8 +107,21 @@ try {
   await page.setViewportSize({ width: 360, height: 800 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   assert.equal(overflow, false, 'mobile layout should not overflow horizontally');
+
+  const blockedStoragePage = await browser.newPage({ colorScheme: 'dark' });
+  blockedStoragePage.on('pageerror', error => pageErrors.push(error.message));
+  await blockedStoragePage.addInitScript(() => Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('Storage is disabled.'); },
+  }));
+  await blockedStoragePage.goto(baseURL);
+  assert.equal(await blockedStoragePage.locator('#appearance').inputValue(), 'system');
+  await blockedStoragePage.locator('#appearance').selectOption('light');
+  assert.equal(await blockedStoragePage.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'light');
+  await blockedStoragePage.close();
+
   assert.deepEqual(pageErrors, [], 'browser must not report JavaScript errors');
-  console.log(`browser smoke passed: setup/login/logout, TLS discovery/pair/add, inventory/watch/manual default, settings, pause, diagnostics, mobile layout; screenshot ${screenshot}`);
+  console.log(`browser smoke passed: appearance system/light/night and persistence/storage fallback, setup/login/logout, TLS discovery/pair/add, inventory/watch/manual default, settings, pause, diagnostics, mobile layout; screenshot ${screenshot}`);
 } catch (error) {
   await rm(screenshot, { force: true });
   throw error;
