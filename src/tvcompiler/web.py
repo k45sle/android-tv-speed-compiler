@@ -302,7 +302,12 @@ def create_app(
             yield
         finally:
             if start_scheduler:
-                jobs.stop(timeout=5)
+                # Keep the event loop alive while the bounded ADB compile and its postchecks finish.
+                # Uvicorn/container grace periods are the outer bound; an interrupted operation is
+                # recovered as pending on the next start and is never recorded as successful here.
+                import asyncio
+
+                await asyncio.to_thread(jobs.stop)
 
     app = FastAPI(title="Android TV Speed Compiler", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.store, app.state.adb, app.state.scheduler, app.state.security = store, client, jobs, security

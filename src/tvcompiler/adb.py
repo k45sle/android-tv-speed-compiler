@@ -243,13 +243,6 @@ def parse_compilation_filter(text: str, package_id: str) -> CompilationInspectio
             continue
         if in_package:
             package_lines.append(line)
-    if not package_seen and package_id in text:
-        package_seen = True
-        package_lines = [
-            line
-            for line in text.splitlines()
-            if package_id in line or "filter" in line.lower() or "status=" in line.lower()
-        ]
     filters = [
         match.group(1).lower()
         for line in package_lines

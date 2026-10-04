@@ -105,6 +105,11 @@ def test_compilation_inspection_does_not_infer_success_without_filter():
         "[com.example.stream]\narm: [status=speed]\nx86: [status=verify]\n", "com.example.stream"
     )
     assert mixed.supported and mixed.compiler_filter == "mixed"
+    similarly_named_package = parse_compilation_filter(
+        "[com.nuvio.tv.test]\narm: [status=speed]\n", "com.nuvio.tv"
+    )
+    assert not similarly_named_package.supported
+    assert similarly_named_package.compiler_filter is None
 
 
 def test_pair_keeps_leading_zero_code_and_never_exposes_it_on_failure(tmp_path):
