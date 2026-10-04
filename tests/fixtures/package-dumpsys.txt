@@ -1,0 +1,6 @@
+Packages:
+  Package [com.example.stream] (deadbeef):
+    codePath=/data/app/~~fresh/com.example.stream
+    versionCode=14 minSdk=23 targetSdk=35
+    versionName=2.4.0
+    lastUpdateTime=2026-10-01 12:34:56

@@ -1,0 +1,7 @@
+Dexopt state:
+  [com.example.stream]
+    /data/app/opaque/base.apk
+    arm: [status=speed] [reason=cmdline] [primary-abi]
+  [com.example.other]
+    /data/app/other/base.apk
+    arm: [status=verify] [reason=install]

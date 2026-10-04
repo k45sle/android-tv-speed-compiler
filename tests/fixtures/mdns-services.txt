@@ -1,0 +1,5 @@
+List of discovered mdns services
+adb-123456._adb-tls-connect._tcp. 192.168.1.45:37123
+adb-123456._adb-tls-pairing._tcp. living-room.local:42311
+legacy._adb._tcp. 192.168.1.45:5555
+bad._adb-tls-connect._tcp. 192.168.1.45:99999
