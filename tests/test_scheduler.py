@@ -23,8 +23,16 @@ class FakeAdb:
         self.entered = Event()
         self.release = Event()
         self.block_package_read = False
+        self.block_package_read_calls = {1}
+        self.package_read_calls = 0
         self.package_read_entered = Event()
         self.package_read_release = Event()
+        self.busy_callback = None
+        self.block_busy_read = False
+        self.busy_read_calls = 0
+        self.block_busy_read_calls = {1}
+        self.busy_read_entered = Event()
+        self.busy_read_release = Event()
 
     def reconnect(self, *, expected_serial, expected_fingerprint, endpoint):
         if endpoint in self.fail_reconnect:
@@ -32,7 +40,8 @@ class FakeAdb:
         return endpoint or expected_serial, object()
 
     def package_info(self, serial, package_id):
-        if self.block_package_read:
+        self.package_read_calls += 1
+        if self.block_package_read and self.package_read_calls in self.block_package_read_calls:
             self.package_read_entered.set()
             self.package_read_release.wait(5)
         try:
@@ -44,6 +53,12 @@ class FakeAdb:
         return self.installed.get(serial, [])
 
     def busy_status(self, serial):
+        self.busy_read_calls += 1
+        if self.busy_callback:
+            self.busy_callback(serial)
+        if self.block_busy_read and self.busy_read_calls in self.block_busy_read_calls:
+            self.busy_read_entered.set()
+            self.busy_read_release.wait(5)
         return self.busy.get(serial, BusyStatus(False, False, ()))
 
     def compile_speed(self, serial, package_id):
@@ -385,6 +400,7 @@ def test_disabling_app_during_precompile_metadata_read_prevents_compile(tmp_path
     app = watched(store, scheduler)
     store.enqueue_manual_job("tv", app.package_id, app.fingerprint, foreground_override=True)
     adb.block_package_read = True
+    adb.block_package_read_calls = {2}
     worker = Thread(target=scheduler.run_once)
     worker.start()
     assert adb.package_read_entered.wait(1)
@@ -394,3 +410,131 @@ def test_disabling_app_during_precompile_metadata_read_prevents_compile(tmp_path
     assert not worker.is_alive()
     assert adb.compile_count == 0
     assert store.list_jobs()[0].state == "cancelled"
+
+
+def test_pause_during_slow_idle_check_defers_automatic_job_without_attempt(tmp_path):
+    store, adb, scheduler, device = setup(tmp_path)
+    app = watched(store, scheduler)
+    scheduler.set_monitoring(True)
+    changed = package(updated="2026-10-04 19:30:00", path="/data/app/b/base.apk")
+    adb.packages[(device.endpoint, app.package_id)] = changed
+    scheduler.poll_once()
+    adb.block_busy_read = True
+    worker = Thread(target=scheduler.run_once)
+    worker.start()
+    assert adb.busy_read_entered.wait(1)
+    scheduler.set_monitoring(False)
+    adb.busy_read_release.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    job = store.list_jobs()[0]
+    assert adb.compile_count == 0
+    assert job.state == "pending" and job.attempts == 0
+    assert job.reason == "monitoring is paused"
+
+
+def test_pause_during_slow_metadata_preflight_defers_automatic_job(tmp_path):
+    store, adb, scheduler, device = setup(tmp_path)
+    app = watched(store, scheduler)
+    scheduler.set_monitoring(True)
+    changed = package(updated="2026-10-04 19:30:00", path="/data/app/b/base.apk")
+    adb.packages[(device.endpoint, app.package_id)] = changed
+    scheduler.poll_once()
+    adb.block_package_read = True
+    adb.block_package_read_calls = {4}
+    worker = Thread(target=scheduler.run_once)
+    worker.start()
+    assert adb.package_read_entered.wait(1)
+    scheduler.set_monitoring(False)
+    adb.package_read_release.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    job = store.list_jobs()[0]
+    assert adb.compile_count == 0
+    assert job.state == "pending" and job.attempts == 0
+    assert job.reason == "monitoring is paused"
+
+
+def test_pause_during_final_idle_recheck_defers_without_attempt(tmp_path):
+    store, adb, scheduler, device = setup(tmp_path)
+    app = watched(store, scheduler)
+    scheduler.set_monitoring(True)
+    changed = package(updated="2026-10-04 19:30:00", path="/data/app/b/base.apk")
+    adb.packages[(device.endpoint, app.package_id)] = changed
+    scheduler.poll_once()
+    adb.block_busy_read = True
+    adb.block_busy_read_calls = {2}
+    worker = Thread(target=scheduler.run_once)
+    worker.start()
+    assert adb.busy_read_entered.wait(1)
+    scheduler.set_monitoring(False)
+    adb.busy_read_release.set()
+    worker.join(2)
+    assert not worker.is_alive()
+    job = store.list_jobs()[0]
+    assert adb.compile_count == 0
+    assert job.state == "pending" and job.attempts == 0
+    assert job.reason == "monitoring is paused"
+
+
+def test_window_expiring_during_idle_check_defers_without_attempt(tmp_path):
+    now = [datetime(2030, 10, 4, 20, 30, tzinfo=UTC)]
+    store, adb, scheduler, device = setup(tmp_path, clock=lambda: now[0])
+    app = watched(store, scheduler)
+    scheduler.set_monitoring(True)
+    scheduler.configure_window("20:00", "21:00", "UTC")
+    changed = package(updated="2026-10-04 19:30:00", path="/data/app/b/base.apk")
+    adb.packages[(device.endpoint, app.package_id)] = changed
+    scheduler.poll_once()
+    adb.busy_callback = lambda _serial: now.__setitem__(0, datetime(2030, 10, 4, 22, 0, tzinfo=UTC))
+    result = scheduler.run_once()
+    job = store.list_jobs()[0]
+    assert result is not None and result.id == job.id and adb.compile_count == 0
+    assert job.state == "pending" and job.attempts == 0
+    assert job.reason == "outside configured maintenance window"
+
+
+@pytest.mark.parametrize(
+    "late_busy",
+    [
+        BusyStatus(True, False, ("screen is active",)),
+        BusyStatus(False, True, ("media playback is active",)),
+        BusyStatus(False, None, ("playback state unknown",)),
+    ],
+)
+def test_new_busy_state_after_metadata_preflight_defers_automatic_job(tmp_path, late_busy):
+    store, adb, scheduler, device = setup(tmp_path)
+    app = watched(store, scheduler)
+    scheduler.set_monitoring(True)
+    changed = package(updated="2026-10-04 19:30:00", path="/data/app/b/base.apk")
+    adb.packages[(device.endpoint, app.package_id)] = changed
+    scheduler.poll_once()
+    status_calls = 0
+
+    def busy_status(_serial):
+        nonlocal status_calls
+        status_calls += 1
+        if status_calls >= 2:
+            adb.busy[device.endpoint] = late_busy
+
+    adb.busy_callback = busy_status
+    result = scheduler.run_once()
+    job = store.list_jobs()[0]
+    assert result is not None and result.id == job.id and adb.compile_count == 0
+    assert job.state == "pending" and job.attempts == 0
+    assert "active" in job.reason or "unknown" in job.reason
+
+
+def test_manual_without_override_obeys_idle_gate_but_override_bypasses_it(tmp_path):
+    store, adb, scheduler, device = setup(tmp_path)
+    app = watched(store, scheduler)
+    scheduler.configure_window("20:00", "21:00", "UTC")
+    adb.busy[device.endpoint] = BusyStatus(False, True, ("media playback is active",))
+    held = store.enqueue_manual_job("tv", app.package_id, app.fingerprint, foreground_override=False)
+    assert scheduler.run_once() is None
+    assert store.get_job(held.id).attempts == 0
+    assert "media playback" in store.get_job(held.id).reason
+    scheduler.configure_window("05:00", "06:00", "UTC")
+    override = store.enqueue_manual_job("tv", app.package_id, app.fingerprint, foreground_override=True)
+    result = scheduler.run_once()
+    assert result.id == override.id and result.state == "succeeded"

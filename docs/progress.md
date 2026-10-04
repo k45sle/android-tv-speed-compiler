@@ -29,3 +29,11 @@ Final delivery checks: Ruff passed; 53 fake-backed tests passed; wheel/sdist and
 Parent Task4 review accepted: make check exit0 (Ruff clean,53 tests in1.62s,wheel/sdist and contents verified), make docker-check exit0 for bothstandalone configurations. Browser screenshot visually reviewed. Task4 reports nativeARM64/emulatedAMD64 build and offline health, cleanPython3.11 install, actualADBkey/auth/session/state restartpersistence, and cleanup. Source changes reviewed; no TV mutations.
 
 Next: independent bounded security/reliability/acceptance review. Resolve any material findings as one implementation task, scoped re-review, finalchecks and sourcepush.
+
+Independent review of b344e06 completed: two material P2 findings. Automatic global pause/window gates not refreshed after slow eligibility/preflight; unknown named media states could count as idle. No additional material security/identity/queue/packaging/deployment finding.
+
+Next bounded fix task: refresh dispatch gates, conservative named playback states, deterministic regressions; then scoped independent re-review and final checks/sourcepush.
+
+Task 5 complete and parent reviewed: dispatch rechecks pause/window and live idle state after slow preflight, and playback parsing keeps unknown/transition/mismatched states non-idle. Deferrals preserve attempts. Added 12 regression cases and Docker build exclusions. Independent scoped re-review confirmed both P2 findings addressed and found no material residual issue. See `docs/task-5-report.md`.
+
+Final integration checks passed: `make check` (Ruff clean, 65 tests in 1.96s, wheel/sdist and contents), clean locked Python 3.11 installation (65 tests in 2.34s), `make docker-check`, browser smoke, Node syntax, and whitespace checks. Rebuilt final ARM64 and AMD64 images, started both offline as UID/GID 10001, and verified healthy HTTP responses. The final ARM64 instance generated its isolated ADB key with no connected devices; its hash and 0600 mode survived restart. Earlier Task 4 probes verified SQLite and auth/session persistence. All ten acceptance criteria have implementation and automated evidence; real-TV update/reboot validation remains explicitly unverified. The authorized private-repository publication and hosted CI status are reported in the final delivery response.

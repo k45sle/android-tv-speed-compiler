@@ -96,6 +96,42 @@ def test_busy_detection_is_conservative_and_fixture_parsing():
     assert playing.playback_active is True
 
 
+@pytest.mark.parametrize("state", ["DOORBELLING", "42"])
+def test_unrecognized_playback_state_stays_unknown_with_inactive_flag(state):
+    status = parse_busy_status("mWakefulness=Asleep", "mDisplayState=OFF", f"active=false, state={state}")
+    assert status.screen_active is False
+    assert status.playback_active is None
+    assert "playback state unknown" in status.reasons
+
+
+def test_named_android_playback_states_and_wrapper_error_are_recognized():
+    error = parse_busy_status(
+        "mWakefulness=Asleep", "mDisplayState=OFF",
+        "active=false, state=PlaybackState {state=ERROR(7), position=0}",
+    )
+    playing = parse_busy_status("mWakefulness=Asleep", "mDisplayState=OFF", "active=false, state=PLAYING")
+    malformed = parse_busy_status("mWakefulness=Asleep", "mDisplayState=OFF", "active=false, state=wat?ever")
+    assert error.playback_active is False and error.idle_confirmed
+    assert playing.playback_active is True
+    assert malformed.playback_active is None
+
+
+def test_media_state_transitions_mismatches_and_unknowns_override_idle_hints():
+    transition = parse_busy_status("mWakefulness=Asleep", "mDisplayState=OFF", "active=false, state=CONNECTING")
+    mismatch = parse_busy_status("mWakefulness=Asleep", "mDisplayState=OFF", "active=false, state=PLAYING(2)")
+    unknown_with_no_sessions = parse_busy_status(
+        "mWakefulness=Asleep", "mDisplayState=OFF", "have 0 sessions; active=false, state=42"
+    )
+    no_space_wrapper = parse_busy_status(
+        "mWakefulness=Asleep", "mDisplayState=OFF",
+        "active=false, state=PlaybackState{state=ERROR(7), position=0}",
+    )
+    assert transition.playback_active is None
+    assert mismatch.playback_active is None
+    assert unknown_with_no_sessions.playback_active is None
+    assert no_space_wrapper.playback_active is False and no_space_wrapper.idle_confirmed
+
+
 def test_compilation_inspection_does_not_infer_success_without_filter():
     result = parse_compilation_filter(fixture("compilation.txt"), "com.example.stream")
     assert result.supported and result.compiler_filter == "speed"

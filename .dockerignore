@@ -1,12 +1,16 @@
 .git
 .github
 .venv
+.venv*/
 .serena
 .pytest_cache
 .ruff_cache
+.mypy_cache
 __pycache__
 *.py[cod]
 *.egg-info
+build/
+dist/
 instance
 *.sqlite
 *.sqlite3
