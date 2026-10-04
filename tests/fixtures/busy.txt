@@ -1,0 +1,7 @@
+POWER
+mWakefulness=Asleep
+mScreenOn=false
+DISPLAY
+mDisplayState=OFF
+MEDIA
+PlaybackState {state=2, position=0}

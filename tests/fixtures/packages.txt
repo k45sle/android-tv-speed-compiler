@@ -1,0 +1,4 @@
+package:/data/app/~~abcd/com.example.stream/base.apk=com.example.stream
+package:/data/app/~~efgh/com.example.other/base.apk=com.example.other
+package:com.nuvio.tv
+package:com.nuvio.tv.test
