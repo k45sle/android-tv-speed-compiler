@@ -354,6 +354,33 @@ class Scheduler:
         if latest.fingerprint != job.fingerprint or app.fingerprint != job.fingerprint:
             self._finish_if_running(job.id, "superseded", "installation changed before compilation")
             return self.store.get_job(job.id)
+        if not job.manual and not self.store.monitoring_enabled():
+            return self._defer_claimed(job, "monitoring is paused")
+        if self._in_window_wait() and not job.manual_override:
+            return self._defer_claimed(job, "outside configured maintenance window")
+        if not job.manual_override:
+            try:
+                busy = self.adb.busy_status(serial)
+            except (AdbError, FileNotFoundError, OSError) as exc:
+                return self._defer_claimed(job, self._actionable_error(exc))
+            # The fresh idle query can itself be slow; honor changes made while it ran.
+            if not job.manual and not self.store.monitoring_enabled():
+                return self._defer_claimed(job, "monitoring is paused")
+            if self._in_window_wait():
+                return self._defer_claimed(job, "outside configured maintenance window")
+            if not busy.idle_confirmed:
+                return self._defer_claimed(job, "; ".join(busy.reasons) or "idle state unknown")
+            latest = self.store.get_job(job.id)
+            device = self.store.get_device(job.device_id)
+            app = self.store.get_app(job.device_id, job.package_id)
+            if latest is None or latest.state != "running":
+                return latest
+            if not device or not device.enabled or not app or not app.enabled:
+                self._finish_if_running(job.id, "cancelled", "device or app disabled before compilation")
+                return self.store.get_job(job.id)
+            if latest.fingerprint != job.fingerprint or app.fingerprint != job.fingerprint:
+                self._finish_if_running(job.id, "superseded", "installation changed before compilation")
+                return self.store.get_job(job.id)
         # Eligibility may have involved slow ADB reads. Honor shutdown before starting new work.
         if self._worker_stopping():
             return self._defer_claimed(job, "service is shutting down before compilation")

@@ -196,18 +196,42 @@ def parse_busy_status(power: str, display: str, media: str) -> BusyStatus:
 
     # MediaSession exposes both active=false and numeric/named PlaybackState variants.
     active_values = [value.lower() == "true" for value in re.findall(r"\bactive\s*=\s*(true|false)\b", media, re.I)]
-    states: set[int] = set()
-    for match in re.finditer(r"\b(?:state|playbackState)\s*[=:]\s*(?:[A-Z_]+\()?([0-9]+)", media, re.I):
-        states.add(int(match.group(1)))
-    active_states = bool(states & {3, 4, 5, 6})
+    state_codes = {
+        "NONE": 0, "STOPPED": 1, "PAUSED": 2, "PLAYING": 3,
+        "FAST_FORWARDING": 4, "REWINDING": 5, "BUFFERING": 6,
+        "ERROR": 7, "CONNECTING": 8, "SKIPPING_TO_PREVIOUS": 9,
+        "SKIPPING_TO_NEXT": 10, "SKIPPING_TO_QUEUE_ITEM": 11,
+    }
+    states: list[int | None] = []
+    state_fields = re.finditer(
+        r"\b(?:state|playbackState)\s*[=:]\s*(PlaybackState\s*\{|[^,\s}]+)", media, re.I
+    )
+    for match in state_fields:
+        value = match.group(1)
+        # PlaybackState.toString() wraps the actual nested `state=ERROR(7)` field.
+        if re.fullmatch(r"PlaybackState\s*\{", value, re.I):
+            continue
+        numeric = re.fullmatch(r"[0-9]+", value)
+        named = re.fullmatch(r"(?:STATE_)?([A-Z_]+)(?:\(([0-9]+)\))?", value, re.I)
+        if numeric:
+            states.append(int(value))
+        elif named and named.group(1).upper() in state_codes:
+            state_code = state_codes[named.group(1).upper()]
+            supplied_code = int(named.group(2)) if named.group(2) else state_code
+            states.append(state_code if supplied_code == state_code else None)
+        else:
+            states.append(None)
+    active_states = any(state in {3, 4, 5, 6} for state in states)
     inactive_states = {0, 1, 2, 7}
     explicit_active = any(active_values)
     no_sessions = bool(re.search(r"\bhave\s+0\s+sessions\b|\bno (?:active )?sessions\b", media, re.I))
     if explicit_active or active_states:
         playback: bool | None = True
+    elif states and any(state not in inactive_states for state in states):
+        playback = None
     elif no_sessions:
         playback = False
-    elif states and states <= inactive_states:
+    elif states:
         playback = False
     elif active_values and not explicit_active and not states:
         playback = False
