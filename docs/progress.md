@@ -1,5 +1,7 @@
 # Progress ledger
 
+Current status: the GitHub repository is public. Entries below describe the initial plan and work as it stood at those earlier stages.
+
 Setup/resource follow-up complete: the user authorized parallel independent tasks using gpt-6-luna/high. Pair-first discovery with verified GUID selectors, app search, atomic explicit Finish actions, reboot guidance, six-character passwords, and configurable Compose caps were implemented and reviewed. Independent review findings in fallback navigation and duplicate ADB aliases were corrected and re-reviewed. Parent checks: Ruff clean, 112 tests in 4.17s, wheel/sdist contents, both Compose variants, browser smoke, JS syntax, whitespace, and native ARM64 image build passed. See [setup-improvements-checks.md](setup-improvements-checks.md) for current behavior and evidence; earlier ledger entries below describe historical behavior.
 
 Local account follow-up complete: the user rejected terminal-based token retrieval for local first run. Bundled loopback Compose now explicitly opts into password-only setup; app-default/custom/remote configuration retains token verification. Shared request-policy guards, existing CSRF/throttling/atomic account transaction, and account preservation were reviewed by parent and an independent security reviewer with no material finding. Final checks: 91 tests in 2.49s, Ruff, package contents, Compose validation, both browser setup flows and existing UI regressions, syntax/whitespace, native ARM64 build and offline password-only account creation/restart passed. See [local-account-checks.md](local-account-checks.md). Publication and existing-volume deployment update are reported in delivery.
@@ -16,7 +18,7 @@ Task 1 complete and parent reviewed: constrained ADB adapter, durable identity/p
 
 Task 2 complete and parent reviewed: scheduler service, persistent scheduler settings/job intent/wait reasons, atomic observe-plus-enqueue and success transactions, bounded retry/restart recovery, foreground override, idle/window gates, and durable single-instance lock. Monitoring defaults paused; manual work may execute while paused, while only an explicit foreground override bypasses idle/window gates. See `docs/task-2-report.md` for Task 3 APIs and limits. Fake-ADB suite: 39 passed; Ruff and `git diff --check` passed. No live ADB actions.
 
-Remaining: Task 3 dashboard integration, Task 4 delivery, independent final review, material fixes, final checks, GitHub source push. GitHub CLI authenticated as k45sle; private repository k45sle/android-tv-speed-compiler created, source push pending final review.
+At that stage, Task 3 dashboard integration, Task 4 delivery, independent final review, material fixes, final checks, and GitHub source push remained. The repository was private when it was created and later made public.
 
 Parent task 2 review resolved pause semantics, in-process serialization, lock retention on timed shutdown, explicit Success validation, atomic watch re-enabling, canonical queue timestamps, and persistent poll errors. Parent checks:39 tests passed in0.46s; Ruff All checks passed; diff check exit0.
 
@@ -26,7 +28,7 @@ Task 3 implemented: FastAPI lifespan and one-worker console entry point, first-r
 
 Parent Task3 review accepted after fixes to first-run token lifecycle, password/CSRF handling, rename endpoint preservation, concurrent forget, mDNS output formats, form labels, login payload, async form reset, optional compile/override, and status refresh. Parent commands:pytest52 passed1.61s with1 upstream TestClient deprecation warning; Ruff All checks passed; node --check and git diff --check exit0.
 
-Next: Task4 delivery and cross-layer/browser/container checks, then independent final review and material fixes, final checks and source push to private GitHub repository.
+At that stage, Task 4 delivery and cross-layer/browser/container checks, independent final review, material fixes, final checks, and source push were still planned. The repository has since been published and made public.
 
 Task 4 implemented and reported in `docs/task-4-report.md`: locked runtime/dev graph (including verified `httpx2` TestClient), wheel/sdist checks, Make commands, Debian Trixie Docker/Compose Linux-host variant, locked multi-architecture CI with offline health startup, MIT license, operational/security/backup/recovery docs, browser smoke harness, and cross-layer regression coverage. Parent review added two reliability corrections: graceful shutdown now does not claim a new compile after shutdown and rechecks app/device/job state after slow preflight; dexopt verification now requires an exact package header to distinguish Nuvio and Nuvio Test.
 
