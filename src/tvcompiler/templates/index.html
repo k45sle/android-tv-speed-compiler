@@ -10,10 +10,10 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body data-authenticated="{{ 'true' if authenticated else 'false' }}">
-  <header class="topbar"><div><p class="eyebrow">LOCAL ANDROID TV TOOL</p><h1>Speed Compiler</h1></div><div class="topbar-tools"><label class="appearance-control" for="appearance">Appearance<select id="appearance" name="appearance"><option value="system">System</option><option value="light">Light</option><option value="night">Night</option></select></label><button id="logout" class="quiet hidden" type="button">Sign out</button></div></header>
+  <header class="topbar"><h1>Speed Compiler</h1><div class="topbar-tools"><label class="appearance-control" for="appearance">Appearance<select id="appearance" name="appearance"><option value="system">System</option><option value="light">Light</option><option value="night">Night</option></select></label><button id="logout" class="quiet hidden" type="button">Sign out</button></div></header>
   <main>
     <section id="auth-panel" class="card auth-card" aria-labelledby="auth-title">
-      <p class="eyebrow">SECURE FIRST RUN</p><h2 id="auth-title">Set up your local account</h2>
+      <h2 id="auth-title">Set up your local account</h2>
       <p id="auth-copy">Enter the one-time token from <code>instance/bootstrap.token</code> and choose a strong password of at least 12 characters.</p>
       <form id="auth-form">
         <label id="token-label">One-time setup token<input id="token" name="token" autocomplete="off" required></label>
@@ -23,51 +23,73 @@
     </section>
 
     <div id="dashboard" class="hidden">
-      <section class="hero card">
-        <div><p class="eyebrow">MONITORING</p><h2 id="monitor-title">Paused</h2><p id="monitor-copy">Monitoring starts paused. Explicit manual jobs can still run while paused.</p></div>
-        <button id="monitor-toggle" type="button">Resume monitoring</button>
-      </section>
       <p id="notice" class="message" role="status" aria-live="polite"></p>
-      <section class="grid">
-        <article class="card section-card">
-          <div class="section-heading"><div><p class="eyebrow">TV SETUP</p><h2>Add a TV</h2></div><button id="discover" class="secondary" type="button">Discover TLS services</button></div>
-          <p class="muted">On the TV, enable Developer options (usually tap Build seven times under Settings → System → About), then open Developer options → Wireless debugging. Pairing and connection use separate endpoints shown by the TV.</p>
-          <div id="services" class="service-list" aria-live="polite"></div>
-          <form id="pair-form" class="form-grid">
-            <label>TV name<input name="name" maxlength="80" placeholder="Living room" required></label>
-            <label>Pairing IP:port<input name="pairing_endpoint" maxlength="300" placeholder="192.168.1.45:37821" required></label>
-            <label>Pairing code<input name="pairing_code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required></label>
-            <label>Connection IP:port<input name="endpoint" maxlength="300" placeholder="192.168.1.45:41267" required></label>
-            <button type="submit">Pair and add TV</button>
-          </form>
-          <details><summary>Already paired? Add a TV</summary>
-            <form id="add-form" class="form-grid"><label>TV name<input name="name" maxlength="80" required></label><label>Connection IP:port<input name="endpoint" maxlength="300" required></label><button type="submit">Connect and add</button></form>
-          </details>
-        </article>
-        <article class="card section-card">
-          <p class="eyebrow">SCHEDULING</p><h2>Global settings</h2>
-          <form id="settings-form" class="form-grid compact">
-            <label>Poll interval (seconds)<input name="poll_interval_seconds" type="number" min="5" max="3600" value="60" required></label>
-            <label>Retry attempts<input name="max_attempts" type="number" min="1" max="8" value="3" required></label>
-            <label>Maintenance starts<input name="window_start" type="time"></label>
-            <label>Maintenance ends<input name="window_end" type="time"></label>
-            <label>Time zone (IANA)<input name="timezone" value="UTC" maxlength="80" placeholder="America/Chicago"></label>
-            <p class="muted full">Leave both times empty to disable the window. Crossing-midnight windows are supported. Manual jobs still respect idle and window rules unless you explicitly enable the foreground override.</p>
-            <button type="submit">Save settings</button>
-          </form>
-        </article>
+      <section id="setup-entry" class="card dashboard-content" aria-labelledby="setup-title">
+        <h2 id="setup-title">Set up your first TV</h2>
+        <p id="setup-copy" class="muted">Connect a TV, choose the apps to watch, and save their current versions as a baseline.</p>
+        <button id="start-setup" type="button">Start setup</button>
       </section>
-      <section class="card section-card">
-        <div class="section-heading"><div><p class="eyebrow">CONNECTED DEVICES</p><h2>Your TVs</h2></div><button id="refresh" class="secondary" type="button">Refresh</button></div>
-        <p id="empty-devices" class="muted">No TVs added yet. Pair a TV or add one that is already paired.</p>
+      <section id="wizard" class="card hidden" aria-labelledby="wizard-title" aria-describedby="wizard-progress">
+        <div class="wizard-heading"><div><h2 id="wizard-title" tabindex="-1">Add a TV</h2><p id="wizard-progress" class="muted" aria-live="polite"></p></div><button id="wizard-cancel" class="quiet" type="button">Cancel setup</button></div>
+        <div id="wizard-error" class="message" role="alert" aria-live="assertive"></div>
+        <section class="wizard-step" data-step="0" aria-labelledby="step-title-0">
+          <h3 id="step-title-0">Name this TV</h3>
+          <label for="wizard-name">TV name</label><input id="wizard-name" maxlength="80" placeholder="Living room" autocomplete="off" required>
+          <p class="muted">On the TV, open Settings → System → About and enable Developer options if needed. Then open Developer options → Wireless debugging and turn it on.</p>
+          <fieldset><legend>Wireless debugging status</legend><label class="choice"><input type="radio" name="pairing-mode" value="new" checked> This TV needs pairing</label><label class="choice"><input type="radio" name="pairing-mode" value="paired"> This TV is already paired with this service</label></fieldset>
+        </section>
+        <section class="wizard-step hidden" data-step="1" aria-labelledby="step-title-1">
+          <h3 id="step-title-1">Connect to the TV</h3>
+          <p class="muted">On the TV’s main Wireless debugging screen, enter its IP address and connection port. Pairing uses a separate port. “Already paired” means this service has the TV’s pairing keys saved; pairing through another ADB installation does not count.</p>
+          <label for="wizard-endpoint">Connection IP:port</label><input id="wizard-endpoint" maxlength="300" placeholder="192.168.1.45:41267" autocomplete="off" required>
+          <button id="wizard-discover" class="secondary" type="button">Find TVs</button>
+          <div id="wizard-services" class="service-list" aria-live="polite"></div>
+        </section>
+        <section class="wizard-step hidden" data-step="2" aria-labelledby="step-title-2">
+          <h3 id="step-title-2">Pair this TV</h3>
+          <p class="muted">On the TV, choose Pair device with pairing code. Enter the IP:port and short code shown in that popup. This pairing port is separate from the connection port.</p>
+          <label for="wizard-pair-endpoint">Pairing IP:port</label><input id="wizard-pair-endpoint" maxlength="300" placeholder="192.168.1.45:37821" autocomplete="off" required>
+          <label for="wizard-code">Pairing code</label><input id="wizard-code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required>
+        </section>
+        <section class="wizard-step hidden" data-step="3" aria-labelledby="step-title-3">
+          <h3 id="step-title-3">Choose apps to watch</h3>
+          <p class="muted">Select apps to save their current versions as baselines. No compile will be queued.</p>
+          <div id="wizard-apps" class="wizard-apps" aria-live="polite"></div>
+          <div id="wizard-app-actions" class="wizard-app-actions hidden"><button id="wizard-app-save" type="button">Save selected apps</button><button id="wizard-app-skip" class="secondary" type="button">Skip for now</button></div>
+          <p id="wizard-app-state" class="muted" role="status" aria-live="polite"></p><p id="wizard-app-error" class="message" role="alert" aria-live="assertive"></p><button id="wizard-app-retry" class="secondary hidden" type="button">Retry loading apps</button>
+        </section>
+        <section class="wizard-step hidden" data-step="4" aria-labelledby="step-title-4">
+          <h3 id="step-title-4">Review setup</h3>
+          <div id="wizard-review"></div>
+          <div id="wizard-monitoring"></div>
+        </section>
+        <div class="wizard-actions"><button id="wizard-back" class="secondary" type="button">Back</button><button id="wizard-next" type="button">Continue</button></div>
+      </section>
+
+      <section id="devices-section" class="card section-card dashboard-content" aria-labelledby="devices-title">
+        <div class="section-heading"><h2 id="devices-title">Your TVs</h2><button id="refresh" class="secondary" type="button">Refresh</button></div>
+        <p id="empty-devices" class="muted">No TVs connected yet.</p>
         <div id="devices" class="device-list"></div>
       </section>
-      <section class="card section-card">
-        <div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>Recent work</h2></div><button id="diagnostics" class="secondary" type="button">Download safe diagnostics</button></div>
+      <section id="recent-work" class="card section-card dashboard-content">
+        <div class="section-heading"><h2>Recent work</h2><button id="diagnostics" class="secondary" type="button">Download safe diagnostics</button></div>
         <p class="muted">A successful command means Android accepted the request. Filter status may be unverified; this does not measure or promise a performance improvement.</p>
         <div class="table-wrap"><table><thead><tr><th>TV</th><th>App</th><th>Status</th><th>Details</th><th>Updated</th></tr></thead><tbody id="jobs"></tbody></table></div>
       </section>
-      <footer><p id="poll-status" class="muted"></p><p class="muted">ADB work is limited to installed-app metadata and the fixed speed compilation operation. No arbitrary shell commands are exposed.</p></footer>
+      <details id="advanced-settings" class="card advanced-settings dashboard-content">
+        <summary>Advanced settings and manual setup</summary>
+        <p class="muted">Most users can leave these options unchanged. Manual pairing and scheduling are available here.</p>
+        <details><summary>Manual TV setup</summary>
+          <button id="discover" class="secondary" type="button">Discover TLS services</button><div id="services" class="service-list" aria-live="polite"></div>
+          <form id="pair-form" class="form-grid"><label>TV name<input name="name" maxlength="80" placeholder="Living room" required></label><label>Pairing IP:port<input name="pairing_endpoint" maxlength="300" placeholder="192.168.1.45:37821" required></label><label>Pairing code<input name="pairing_code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required></label><label>Connection IP:port<input name="endpoint" maxlength="300" placeholder="192.168.1.45:41267" required></label><button type="submit">Pair and add TV</button></form>
+          <details><summary>Already paired? Add manually</summary><form id="add-form" class="form-grid"><label>TV name<input name="name" maxlength="80" required></label><label>Connection IP:port<input name="endpoint" maxlength="300" required></label><button type="submit">Connect and add</button></form></details>
+        </details>
+        <details><summary>Global scheduling</summary>
+          <form id="settings-form" class="form-grid compact"><label>Poll interval (seconds)<input name="poll_interval_seconds" type="number" min="5" max="3600" value="60" required></label><label>Retry attempts<input name="max_attempts" type="number" min="1" max="8" value="3" required></label><label>Maintenance starts<input name="window_start" type="time"></label><label>Maintenance ends<input name="window_end" type="time"></label><label>Time zone (IANA)<input name="timezone" value="UTC" maxlength="80" placeholder="America/Chicago"></label><p class="muted full">Leave both times empty to disable the window. Crossing-midnight windows are supported. Manual jobs still respect idle and window rules unless you explicitly enable the foreground override.</p><button type="submit">Save settings</button></form>
+        </details>
+        <details><summary>Monitoring control</summary><p id="monitor-copy" class="muted">Monitoring is paused.</p><button id="monitor-toggle" type="button">Resume monitoring</button></details>
+      </details>
+      <footer id="dashboard-footer" class="dashboard-content"><p id="monitor-status" class="muted"></p><p id="poll-status" class="muted"></p><p class="muted">ADB work is limited to installed-app metadata and the fixed speed compilation operation. No arbitrary shell commands are exposed.</p></footer>
     </div>
   </main>
 </body>
