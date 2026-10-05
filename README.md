@@ -1,12 +1,12 @@
 # Android TV Speed Compiler
 
-A private, single-instance service that watches selected Android TV app installations and can request Android's fixed `speed` compilation filter after an installation changes. It uses TLS Wireless debugging, SQLite, and a small local dashboard. It does not install apps, change system apps, expose arbitrary shell commands, measure launch time, or promise a performance improvement.
+A single-instance service that watches selected Android TV app installations and can request Android's fixed `speed` compilation filter after an installation changes. It uses TLS Wireless debugging, SQLite, and a small local dashboard. It does not install apps, change system apps, expose arbitrary shell commands, measure launch time, or promise a performance improvement.
 
 ## In plain terms
 
 This service watches the apps you choose. When one updates, it can ask Android to compile it with the `speed` setting while the TV is idle and the maintenance window allows. That may not fix stuttering, and it is not a guarantee of faster apps.
 
-1. Install Docker, and make sure you have access to this private GitHub repository. Follow the [Quick start commands](#quick-start-docker-desktop-or-a-linux-docker-host) to start the service.
+1. Install Docker, and clone this public GitHub repository. Follow the [Quick start commands](#quick-start-docker-desktop-or-a-linux-docker-host) to start the service.
 2. Open <http://127.0.0.1:8000> in your browser and create a password with at least 6 characters.
 3. On the TV, enable Wireless debugging. In the setup wizard, pair with the pairing IP:port and code shown by the TV. If discovery fails, enter the TV's current connection IP:port manually.
 4. Search the app list, select the apps to watch, and finish setup. If monitoring is paused, **Enable automatic monitoring after Finish** is checked by default and turns it on for all watched TVs. The one-time compile option is unchecked unless you choose it.
@@ -23,7 +23,7 @@ cd android-tv-speed-compiler
 docker compose up -d --build
 ```
 
-The repository is private; `git clone` requires GitHub authentication with access granted by `k45sle`. Open <http://127.0.0.1:8000>. On the bundled Compose first run, choose a unique password of at least 6 characters and select **Create account**. Longer passwords are recommended, especially for remote access. No terminal or token retrieval is needed. This password-only setup is enabled by `TVCOMPILER_LOCAL_SETUP=1` in the bundled files, which bind the service to host loopback.
+Open <http://127.0.0.1:8000>. On the bundled Compose first run, choose a unique password of at least 6 characters and select **Create account**. Longer passwords are recommended, especially for remote access. No terminal or token retrieval is needed. This password-only setup is enabled by `TVCOMPILER_LOCAL_SETUP=1` in the bundled files, which bind the service to host loopback.
 
 Source and custom installations default to token-required setup. The token is generated in the instance directory or supplied through `TVCOMPILER_BOOTSTRAP_TOKEN`; use the private local retrieval instructions shown by the setup page. The bundled local option is an operator declaration, not proof that every route is private: do not expose, proxy, or change the bind for a service with local setup enabled. Set `TVCOMPILER_LOCAL_SETUP=0` before any such change. Public origin, secure cookies, a supplied token, proxy headers, and non-loopback Host requests require the token. The token is never returned to a browser or placed in a URL or log, and the generated token file is removed after successful setup. Keep the Docker named volume `tvcompiler-data`; it contains account/session data, SQLite state, and this instance's ADB keys. The service starts while every TV is offline. Monitoring starts paused.
 

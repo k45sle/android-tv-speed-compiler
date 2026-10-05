@@ -1,6 +1,6 @@
 # Implementation plan and acceptance criteria
 
-Source: the user discussion and ../repository-assessment.md. No application existed at the start. Build a focused original Docker service named android-tv-speed-compiler, proposed private repository k45sle/android-tv-speed-compiler. No third-party repository code is copied. Use Python 3.11+, FastAPI, SQLite, official ADB command execution, and a small accessible server-rendered dashboard. Do not add a TV companion application, disable system apps, change ADB to legacy port 5555, or expose arbitrary shell execution. No real TV compilation or updates during project checks; use deterministic simulated ADB tests and optionally read-only live diagnostics.
+Source: the user discussion and ../repository-assessment.md. No application existed at the start. The initial plan proposed a private repository, k45sle/android-tv-speed-compiler; the repository is now public. Build a focused original Docker service with that name. No third-party repository code is copied. Use Python 3.11+, FastAPI, SQLite, official ADB command execution, and a small accessible server-rendered dashboard. Do not add a TV companion application, disable system apps, change ADB to legacy port 5555, or expose arbitrary shell execution. No real TV compilation or updates during project checks; use deterministic simulated ADB tests and optionally read-only live diagnostics.
 
 ## Acceptance criteria
 
