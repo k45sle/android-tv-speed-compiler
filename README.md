@@ -2,6 +2,17 @@
 
 A private, single-instance service that watches selected Android TV app installations and can request Android's fixed `speed` compilation filter after an installation changes. It uses TLS Wireless debugging, SQLite, and a small local dashboard. It does not install apps, change system apps, expose arbitrary shell commands, measure launch time, or promise a performance improvement.
 
+## In plain terms
+
+This service watches the apps you choose. When one updates, it can ask Android to compile it with the `speed` setting while the TV is idle and the maintenance window allows. That may not fix stuttering, and it is not a guarantee of faster apps.
+
+1. Install Docker, and make sure you have access to this private GitHub repository. Follow the [Quick start commands](#quick-start-docker-desktop-or-a-linux-docker-host) to start the service.
+2. Open <http://127.0.0.1:8000> in your browser and create a password with at least 6 characters.
+3. On the TV, enable Wireless debugging. In the setup wizard, pair with the pairing IP:port and code shown by the TV. If discovery fails, enter the TV's current connection IP:port manually.
+4. Search the app list, select the apps to watch, and finish setup. If monitoring is paused, **Enable automatic monitoring after Finish** is checked by default and turns it on for all watched TVs. The one-time compile option is unchecked unless you choose it.
+
+Keep your computer and Docker running for monitoring and scheduled work. If the TV's connection port changes, save its current endpoint; if pairing is revoked, pair it again. See [TV setup](#set-up-a-tv) and [operation and recovery](#operation-and-recovery).
+
 ## Quick start: Docker Desktop or a Linux Docker host
 
 Requirements: Docker Engine/Desktop with Compose v2; an Android TV with Wireless debugging; and a computer reachable on the same private network for pairing. The image installs Debian's `adb` package, which includes TLS pairing and mDNS support for the image's native architecture.
