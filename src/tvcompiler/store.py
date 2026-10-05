@@ -15,6 +15,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, endpoint TEXT, serial TEXT, fingerprint TEXT,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), last_seen_at TEXT,
+  connection_mode TEXT NOT NULL DEFAULT 'wireless' CHECK(connection_mode IN ('wireless','tcpip')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS device_serial_unique ON devices(serial) WHERE serial IS NOT NULL;
@@ -57,6 +58,12 @@ class Store:
         self._lock = threading.RLock()
         with closing(self._connect()) as db:
             db.executescript(_SCHEMA)
+            device_columns = {row[1] for row in db.execute("PRAGMA table_info(devices)")}
+            if "connection_mode" not in device_columns:
+                db.execute(
+                    "ALTER TABLE devices ADD COLUMN connection_mode TEXT NOT NULL DEFAULT 'wireless' "
+                    "CHECK(connection_mode IN ('wireless','tcpip'))"
+                )
             columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
             if "manual_override" not in columns:
                 db.execute("ALTER TABLE jobs ADD COLUMN manual_override INTEGER NOT NULL DEFAULT 0")
@@ -96,6 +103,7 @@ class Store:
             row["fingerprint"],
             bool(row["enabled"]),
             row["last_seen_at"],
+            row["connection_mode"],
         )
 
     @staticmethod
@@ -136,14 +144,17 @@ class Store:
         endpoint: str | None = None,
         serial: str | None = None,
         fingerprint: str | None = None,
+        connection_mode: str | None = None,
     ) -> Device:
+        mode = self._connection_mode(connection_mode) if connection_mode is not None else "wireless"
         with self._transaction() as db:
             db.execute(
-                """INSERT INTO devices(id,name,endpoint,serial,fingerprint) VALUES(?,?,?,?,?)
+                """INSERT INTO devices(id,name,endpoint,serial,fingerprint,connection_mode) VALUES(?,?,?,?,?,?)
               ON CONFLICT(id) DO UPDATE SET name=excluded.name, endpoint=excluded.endpoint,
               serial=COALESCE(devices.serial,excluded.serial),
-              fingerprint=COALESCE(devices.fingerprint,excluded.fingerprint)""",
-                (device_id, name, endpoint, serial, fingerprint),
+              fingerprint=COALESCE(devices.fingerprint,excluded.fingerprint),
+              connection_mode=CASE WHEN ? IS NULL THEN devices.connection_mode ELSE excluded.connection_mode END""",
+                (device_id, name, endpoint, serial, fingerprint, mode, connection_mode),
             )
             return self._device(db.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone())
 
@@ -152,23 +163,41 @@ class Store:
             row = db.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
         return self._device(row) if row else None
 
-    def update_device(self, device_id: str, *, name: str | None = None, endpoint: str | None = None) -> bool:
+    def update_device(
+        self,
+        device_id: str,
+        *,
+        name: str | None = None,
+        endpoint: str | None = None,
+        connection_mode: str | None = None,
+    ) -> bool:
         """Update an existing TV only; a concurrent forget must never be undone by stale work."""
-        if name is None and endpoint is None:
+        if connection_mode is not None:
+            connection_mode = self._connection_mode(connection_mode)
+        if name is None and endpoint is None and connection_mode is None:
             return self.get_device(device_id) is not None
         with self._transaction() as db:
-            current = db.execute("SELECT name,endpoint FROM devices WHERE id=?", (device_id,)).fetchone()
+            current = db.execute(
+                "SELECT name,endpoint,connection_mode FROM devices WHERE id=?", (device_id,)
+            ).fetchone()
             if not current:
                 return False
             db.execute(
-                "UPDATE devices SET name=?,endpoint=? WHERE id=?",
+                "UPDATE devices SET name=?,endpoint=?,connection_mode=? WHERE id=?",
                 (
                     name if name is not None else current["name"],
                     endpoint if endpoint is not None else current["endpoint"],
+                    connection_mode if connection_mode is not None else current["connection_mode"],
                     device_id,
                 ),
             )
             return True
+
+    @staticmethod
+    def _connection_mode(value: str) -> str:
+        if value not in {"wireless", "tcpip"}:
+            raise ValueError("connection mode must be wireless or tcpip")
+        return value
 
     def list_devices(self) -> list[Device]:
         with closing(self._connect()) as db:

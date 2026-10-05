@@ -34,6 +34,18 @@ class FakeRunner:
         return AdbResult(tuple(argv), response[0], response[1], response[2])
 
 
+class SequencedDevicesRunner(FakeRunner):
+    def __init__(self, responses, device_outputs):
+        super().__init__(responses)
+        self.device_outputs = iter(device_outputs)
+
+    def run(self, argv, *, timeout, env):
+        if tuple(argv[1:]) == ("devices", "-l"):
+            self.calls.append((list(argv), timeout, env.copy()))
+            return AdbResult(tuple(argv), 0, next(self.device_outputs), "")
+        return super().run(argv, timeout=timeout, env=env)
+
+
 def fixture(name):
     return (FIXTURES / name).read_text()
 
@@ -471,6 +483,92 @@ def test_reconnect_keeps_manual_endpoint_when_mdns_is_unavailable(tmp_path):
     assert chosen == endpoint
     assert identity.serial == "serial-a"
     assert client._verified_serials[endpoint] == ("serial-a", "build-a")
+
+
+@pytest.mark.parametrize(
+    ("state", "message"),
+    [
+        ("unauthorized", "authorization prompt"),
+        ("no permissions", "service runtime access"),
+    ],
+)
+def test_reconnect_preserves_candidate_authorization_state_after_connect(tmp_path, state, message):
+    endpoint = "192.168.1.45:5555"
+    runner = SequencedDevicesRunner(
+        {("mdns", "services"): (1, "", "mDNS unavailable"), ("connect", endpoint): (0, "connected", "")},
+        ["List of devices attached\n", f"{endpoint} {state}\n"],
+    )
+    client = AdbClient(tmp_path, runner=runner)
+
+    with pytest.raises(AdbError, match=message):
+        client.reconnect(expected_serial="serial-a", expected_fingerprint="build-a", endpoint=endpoint)
+    assert not client._verified_serials
+
+
+def test_unrelated_unauthorized_adb_device_does_not_mask_intended_connection(tmp_path):
+    endpoint = "192.168.1.45:5555"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (1, "", "mDNS unavailable"),
+            ("devices", "-l"): (
+                0,
+                f"{endpoint} device product:tv\nunrelated:5555 unauthorized\n",
+                "",
+            ),
+            ("-s", endpoint, "shell", "getprop", "ro.serialno"): (0, "serial-a", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.build.fingerprint"): (0, "build-a", ""),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+
+    selected, identity = client.reconnect(
+        expected_serial="serial-a", expected_fingerprint="build-a", endpoint=endpoint
+    )
+    assert selected == endpoint and identity == DeviceIdentity("serial-a", "build-a")
+    assert client._verified_serials[endpoint] == ("serial-a", "build-a")
+
+
+def test_intended_unauthorized_state_survives_unrelated_discovery_failures(tmp_path):
+    endpoint = "192.168.1.45:5555"
+    other_endpoint = "192.168.1.46:5555"
+    guid = "adb-target-guid"
+    other_guid = "adb-other-guid"
+    runner = SequencedDevicesRunner(
+        {
+            ("mdns", "services"): (
+                0,
+                f"{guid} _adb-tls-connect._tcp {endpoint}\n"
+                f"{other_guid} _adb-tls-connect._tcp {other_endpoint}\n",
+                "",
+            ),
+            ("connect", endpoint): (0, "connected", ""),
+            ("connect", other_endpoint): (1, "", "unrelated discovery failure"),
+        },
+        ["List of devices attached\n", f"{endpoint} unauthorized\n"],
+    )
+    client = AdbClient(tmp_path, runner=runner)
+
+    with pytest.raises(AdbError, match="authorization prompt"):
+        client.reconnect(expected_serial="serial-a", expected_fingerprint="build-a", endpoint=endpoint)
+    assert not client._verified_serials
+
+
+def test_target_identity_mismatch_outweighs_a_previous_unauthorized_state(tmp_path):
+    endpoint = "192.168.1.45:5555"
+    runner = SequencedDevicesRunner(
+        {
+            ("mdns", "services"): (1, "", "mDNS unavailable"),
+            ("connect", endpoint): (0, "connected", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.serialno"): (0, "other-serial", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.build.fingerprint"): (0, "other-build", ""),
+        },
+        [f"{endpoint} unauthorized\n", f"{endpoint} device\n"],
+    )
+    client = AdbClient(tmp_path, runner=runner)
+
+    with pytest.raises(AdbError, match="serial does not match the pinned device"):
+        client.reconnect(expected_serial="serial-a", expected_fingerprint="build-a", endpoint=endpoint)
+    assert not client._verified_serials
 
 
 def test_compilation_failure_text_is_not_reported_as_success(tmp_path):

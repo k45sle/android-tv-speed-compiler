@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="tvcompiler-browser-smoke-") as state:
     servers = []
     urls = {}
     try:
-        for mode in ("local", "token"):
+        for mode in ("local", "token", "missing-adb", "noauth"):
             port = available_port()
             server = subprocess.Popen(
                 [sys.executable, str(root / "scripts/fake_browser_server.py"), str(Path(state) / mode)],
@@ -50,6 +50,8 @@ with tempfile.TemporaryDirectory(prefix="tvcompiler-browser-smoke-") as state:
             "PLAYWRIGHT_MODULE": module,
             "SMOKE_URL": urls["token"],
             "SMOKE_LOCAL_URL": urls["local"],
+            "SMOKE_MISSING_ADB_URL": urls["missing-adb"],
+            "SMOKE_NOAUTH_URL": urls["noauth"],
         }
         subprocess.run(["node", str(root / "scripts/browser-smoke.mjs")], cwd=root, env=smoke_env, check=True)
     finally:

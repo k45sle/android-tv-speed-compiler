@@ -607,14 +607,63 @@ class AdbClient:
         endpoints = [requested_endpoint] if requested_endpoint else []
         endpoints.extend(service.endpoint for service in services)
         endpoints = list(dict.fromkeys(endpoints))
-        connected = [serial for serial, state in self.devices(timeout=3.0) if state == "device"]
+        device_states = self.devices(timeout=3.0)
+        connected = [serial for serial, state in device_states if state == "device"]
         endpoint_by_selector: dict[str, str] = {
             service.endpoint: service.endpoint for service in services
         }
+        for candidate in endpoints:
+            endpoint_by_selector.setdefault(candidate, candidate)
         for service in services:
             instance = _mdns_instance(service.service)
             if re.fullmatch(r"adb-[A-Za-z0-9._-]{1,160}", instance):
                 endpoint_by_selector[f"{instance}._adb-tls-connect._tcp"] = service.endpoint
+
+        last_error: AdbError | None = None
+        last_error_priority = 0
+
+        def remember_error(exc: AdbError, candidate: str) -> None:
+            nonlocal last_error, last_error_priority
+            if requested_endpoint is not None and candidate != requested_endpoint:
+                return
+            message = str(exc).lower()
+            priority = (
+                3
+                if exc.operation == "identity" or "identity" in message or "pinned" in message
+                else 2
+                if "unauthorized" in message or "no permissions" in message or "revoked" in message
+                else 1
+            )
+            if priority >= last_error_priority:
+                last_error = exc
+                last_error_priority = priority
+
+        for candidate in endpoints:
+            if requested_endpoint is None or candidate != requested_endpoint:
+                continue
+            if any(
+                state == "unauthorized"
+                and (serial.rstrip(".") == candidate or endpoint_by_selector.get(serial.rstrip(".")) == candidate)
+                for serial, state in device_states
+            ):
+                remember_error(
+                    AdbError(
+                        "reconnect",
+                        "intended TV is unauthorized; approve its ADB authorization prompt and reconnect",
+                    ),
+                    candidate,
+                )
+            elif any(
+                state == "no permissions"
+                and (serial.rstrip(".") == candidate or endpoint_by_selector.get(serial.rstrip(".")) == candidate)
+                for serial, state in device_states
+            ):
+                remember_error(
+                    AdbError(
+                        "reconnect", "ADB reports no permissions for the intended TV; check service runtime access"
+                    ),
+                    candidate,
+                )
 
         # Existing TLS transports are already authenticated by ADB. Match them against the
         # durable identity pins before considering any endpoint connect attempt.
@@ -653,17 +702,35 @@ class AdbClient:
         if len(matched_by_endpoint) > 1:
             raise AdbError("identity", "multiple connected devices match the pinned identity")
 
-        last_error: AdbError | None = None
         for candidate in endpoints:
             try:
                 self.connect(candidate, timeout=3.0)
-                connected = [serial for serial, state in self.devices(timeout=3.0) if state == "device"]
+                device_states = self.devices(timeout=3.0)
+                connected = [serial for serial, state in device_states if state == "device"]
                 # On Android 14 ADB auto-connects secure mDNS transports by GUID. The network
                 # endpoint is still the persisted reconnect address; operations use this selector.
-                mapped = [
-                    serial for serial in connected
-                    if serial.rstrip(".") == candidate or endpoint_by_selector.get(serial.rstrip(".")) == candidate
-                ]
+                mapped = []
+                for serial, state in device_states:
+                    if serial.rstrip(".") != candidate and endpoint_by_selector.get(serial.rstrip(".")) != candidate:
+                        continue
+                    if state == "device":
+                        mapped.append(serial)
+                    elif state == "unauthorized" and candidate == requested_endpoint:
+                        remember_error(
+                            AdbError(
+                                "reconnect",
+                                "intended TV is unauthorized; approve its ADB authorization prompt and reconnect",
+                            ),
+                            candidate,
+                        )
+                    elif state == "no permissions" and candidate == requested_endpoint:
+                        remember_error(
+                            AdbError(
+                                "reconnect",
+                                "ADB reports no permissions for the intended TV; check service runtime access",
+                            ),
+                            candidate,
+                        )
                 for selector in mapped:
                     try:
                         identity = self.identity(selector, timeout=3.0)
@@ -673,13 +740,14 @@ class AdbClient:
                             expected_fingerprint=expected_fingerprint,
                         )
                     except (AdbError, ValueError) as exc:
-                        last_error = exc if isinstance(exc, AdbError) else last_error
+                        if isinstance(exc, AdbError):
+                            remember_error(exc, candidate)
                         continue
                     if expected_serial or expected_fingerprint:
                         self._verified_serials[selector] = (expected_serial, expected_fingerprint)
                     return ReconnectResult(candidate, selector, identity)
             except AdbError as exc:
-                last_error = exc
+                remember_error(exc, candidate)
         raise last_error or AdbError("reconnect", "no TLS ADB connection service matched the pinned device")
 
     def reconnect(

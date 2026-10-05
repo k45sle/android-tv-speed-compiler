@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 JobState = Literal["pending", "running", "succeeded", "failed", "superseded", "cancelled"]
+ConnectionMode = Literal["wireless", "tcpip"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +16,7 @@ class Device:
     fingerprint: str | None
     enabled: bool
     last_seen_at: str | None
+    connection_mode: ConnectionMode = "wireless"
 
 
 @dataclass(frozen=True, slots=True)

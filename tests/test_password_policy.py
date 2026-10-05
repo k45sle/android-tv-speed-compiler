@@ -11,10 +11,10 @@ TOKEN = "password-policy-bootstrap-token-value-long-enough"
 @pytest.mark.parametrize(
     ("mode", "environ", "base_url", "setup_fields"),
     [
-        ("local", {"TVCOMPILER_LOCAL_SETUP": "1"}, "http://localhost", {}),
+        ("local", {"LOGIN_ENABLE": "true", "TVCOMPILER_LOCAL_SETUP": "1"}, "http://localhost", {}),
         (
             "token",
-            {"TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN},
+            {"LOGIN_ENABLE": "true", "TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN},
             "http://127.0.0.1",
             {"token": TOKEN},
         ),
@@ -45,7 +45,7 @@ def test_setup_requires_six_characters_and_six_character_password_survives_resta
         assert COOKIE_NAME in client.cookies
 
     # Reopening the same instance leaves the configured account intact and usable.
-    restarted = create_app(instance, start_scheduler=False, environ={})
+    restarted = create_app(instance, start_scheduler=False, environ={"LOGIN_ENABLE": "true"})
     with TestClient(restarted, base_url="http://localhost") as client:
         client.get("/")
         assert client.get("/api/session").json()["configured"] is True

@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import shutil
 import threading
 import time
 from collections.abc import Callable
@@ -36,6 +37,7 @@ class Scheduler:
         instance_dir: str | Path,
         *,
         poll_interval: float = 60.0,
+        adb_path: str = "adb",
         max_attempts: int = 3,
         base_backoff: float = 30.0,
         max_backoff: float = 900.0,
@@ -50,6 +52,7 @@ class Scheduler:
             raise ValueError("backoff must be bounded to 1 second through 1 day")
         self.store = store
         self.adb = adb
+        self.adb_path = adb_path
         self.instance_dir = Path(instance_dir)
         self.instance_dir.mkdir(parents=True, exist_ok=True)
         self.poll_interval = poll_interval
@@ -63,6 +66,9 @@ class Scheduler:
         self._lock_file = None
         self._state_lock = threading.RLock()
         self._run_lock = threading.Lock()
+        self._connection_lock = threading.RLock()
+        self._connection_checks: dict[str, dict[str, object]] = {}
+        self._next_poll_at: str | None = None
         persisted = self.store.get_settings(("poll_interval", "max_attempts", "base_backoff", "max_backoff"))
         defaults = {
             "poll_interval": str(int(poll_interval)),
@@ -148,10 +154,18 @@ class Scheduler:
     def _run(self) -> None:
         try:
             while not self._stop.is_set():
+                with self._connection_lock:
+                    self._next_poll_at = None
                 try:
                     self.run_once()
                 except Exception as exc:  # Background service must survive transient host/ADB faults.
                     self.store.set_setting("scheduler_error", str(exc)[:500])
+                with self._connection_lock:
+                    self._next_poll_at = (
+                        (self.clock() + timedelta(seconds=self.poll_interval)).isoformat()
+                        if self.store.monitoring_enabled()
+                        else None
+                    )
                 self._stop.wait(self.poll_interval)
         finally:
             self._release_process_lock()
@@ -231,10 +245,10 @@ class Scheduler:
             if not device.enabled:
                 continue
             apps = [app for app in self.store.list_apps(device.id) if app.enabled]
-            if not apps:
-                continue
             try:
                 serial, _identity = self._connect(device)
+                if not apps:
+                    continue
                 installed = set(self.adb.installed_packages(serial))
             except (AdbError, FileNotFoundError, OSError) as exc:
                 errors.append(f"{device.name}: {self._actionable_error(exc)}")
@@ -254,7 +268,8 @@ class Scheduler:
                     errors.append(f"{device.name}/{app.package_id}: {self._actionable_error(exc)}")
                 except ValueError as exc:
                     errors.append(f"{device.name}/{app.package_id}: {exc}")
-        self.store.set_setting("last_poll_at", self.clock().isoformat())
+        completed = self.clock()
+        self.store.set_setting("last_poll_at", completed.isoformat())
         self.store.set_setting("last_poll_error", "; ".join(errors)[:1000])
         return queued
 
@@ -499,16 +514,111 @@ class Scheduler:
 
     def _connect(self, device: Device) -> tuple[str, object]:
         if not device.serial and not device.fingerprint:
-            raise AdbError("identity", "device has no pinned identity; verify or re-add it")
+            error = AdbError("identity", "device has no pinned identity; verify or re-add it")
+            self._record_connection(device.id, "identity_mismatch", self._actionable_error(error))
+            raise error
         reconnect = getattr(self.adb, "reconnect_with_selector", self.adb.reconnect)
-        result = reconnect(
-            expected_serial=device.serial,
-            expected_fingerprint=device.fingerprint,
-            endpoint=device.endpoint,
-        )
+        try:
+            result = reconnect(
+                expected_serial=device.serial,
+                expected_fingerprint=device.fingerprint,
+                endpoint=device.endpoint,
+            )
+        except (AdbError, FileNotFoundError, OSError) as exc:
+            self._record_connection(device.id, self._connection_status_for(exc), self._connection_reason(exc))
+            raise
         if hasattr(result, "selector"):
-            return result.selector, result.identity
-        return result
+            serial, identity = result.selector, result.identity
+        else:
+            serial, identity = result
+        self._record_connection(device.id, "connected", None)
+        return serial, identity
+
+    def record_connection_failure(self, device_id: str, exc: Exception) -> None:
+        """Record a sanitized result from an explicit reconnect operation."""
+        self._record_connection(device_id, self._connection_status_for(exc), self._connection_reason(exc))
+
+    def record_connection_success(self, device_id: str) -> None:
+        self._record_connection(device_id, "connected", None)
+
+    def _record_connection(self, device_id: str, status: str, reason: str | None) -> None:
+        with self._connection_lock:
+            self._connection_checks[device_id] = {
+                "status": status,
+                "reason": reason,
+                "checked_at": self.clock().isoformat(),
+            }
+
+    @staticmethod
+    def _connection_status_for(exc: Exception) -> str:
+        message = str(exc).lower()
+        if isinstance(exc, FileNotFoundError):
+            return "adb_unavailable"
+        if "unauthorized" in message or "revoked" in message:
+            return "unauthorized"
+        if "no permissions" in message:
+            return "error"
+        if (
+            "identity" in message
+            or "pinned" in message
+            or "fingerprint" in message
+            or "serial does not match" in message
+        ):
+            return "identity_mismatch"
+        if "offline" in message or "no tls" in message or "connect" in message or "device not found" in message:
+            return "offline"
+        return "error"
+
+    @classmethod
+    def _connection_reason(cls, exc: Exception) -> str:
+        if "no permissions" in str(exc).lower():
+            return "ADB reports no permissions for this TV; check the service runtime's ADB access"
+        status = cls._connection_status_for(exc)
+        return {
+            "unauthorized": "ADB authorization is missing or revoked; approve the TV pairing prompt and reconnect",
+            "identity_mismatch": "Connected device identity did not match the saved TV; verify the TV or pair it again",
+            "offline": "TV is offline; check network and Wireless debugging, then reconnect",
+            "adb_unavailable": (
+                "ADB executable is unavailable in the service runtime; check its configured path or container image"
+            ),
+            "error": "ADB could not verify the TV connection; check network and Wireless debugging settings",
+        }[status]
+
+    def device_connection(self, device: Device) -> dict[str, object]:
+        """Return the last in-process identity-verified result with an explicit freshness window."""
+        with self._connection_lock:
+            checked = self._connection_checks.get(device.id)
+        now = self.clock()
+        if checked:
+            checked_at = datetime.fromisoformat(str(checked["checked_at"]))
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=UTC)
+            stale = now - checked_at >= timedelta(seconds=2 * self.poll_interval)
+            last_status = str(checked["status"])
+            reason = checked["reason"]
+            checked_at_text = str(checked["checked_at"])
+        else:
+            stale, last_status, reason, checked_at_text = True, "unknown", None, None
+        public_status = "unknown" if stale else last_status
+        if not device.enabled:
+            polling_status = "paused"
+        elif not self.store.monitoring_enabled():
+            polling_status = "paused"
+        elif self._thread and self._thread.is_alive():
+            polling_status = "active"
+        else:
+            polling_status = "stopped"
+        next_check_at = self._next_poll_at if polling_status == "active" else None
+        return {
+            "connection_status": public_status,
+            "last_known_connection_status": last_status,
+            "connection_reason": reason,
+            "connection_checked_at": checked_at_text,
+            "connection_stale": stale,
+            "polling_status": polling_status,
+            "poll_interval_seconds": self.poll_interval,
+            "next_check_at": next_check_at,
+        }
 
     @staticmethod
     def _require_complete_metadata(info: PackageInfo) -> None:
@@ -540,13 +650,20 @@ class Scheduler:
         message = str(exc)
         if "unauthorized" in message.lower() or "revoked" in message.lower():
             return "ADB authorization is missing or revoked; approve the TV pairing prompt and reconnect"
+        if "no permissions" in message.lower():
+            return "ADB reports no permissions for this TV; check the service runtime's ADB access"
+        if "identity" in message.lower() or "fingerprint" in message.lower() or "serial" in message.lower():
+            return "Connected device identity did not match the saved TV; verify the TV or pair it again"
         if "offline" in message.lower() or "no tls" in message.lower() or "connect" in message.lower():
             return "TV is offline; check network and Wireless debugging, then reconnect"
         if isinstance(exc, FileNotFoundError):
-            return "ADB executable is unavailable; install platform-tools or configure its path"
+            return "ADB executable is unavailable in the service runtime; check its configured path or container image"
         return message[:300]
 
     def status(self) -> dict[str, object]:
+        adb_path = getattr(self.adb, "adb_path", self.adb_path)
+        adb_available = shutil.which(str(adb_path)) is not None
+        runtime_source = "docker" if Path("/.dockerenv").exists() else "host"
         return {
             "monitoring_enabled": self.store.monitoring_enabled(),
             "poll_interval_seconds": self.poll_interval,
@@ -554,6 +671,9 @@ class Scheduler:
             "last_poll_at": self.store.get_setting("last_poll_at"),
             "last_poll_error": self.store.get_setting("last_poll_error"),
             "scheduler_error": self.store.get_setting("scheduler_error"),
+            "dependencies": {
+                "adb": {"available": adb_available, "source": runtime_source},
+            },
             "maintenance_window": {
                 "start": self.store.get_setting("window_start") or None,
                 "end": self.store.get_setting("window_end") or None,

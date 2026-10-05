@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import available_timezones
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -24,11 +25,16 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
 from .adb import AdbClient, validate_endpoint
+from .models import ConnectionMode
 from .scheduler import Scheduler
 from .store import Store
 from .validation import validate_package_id
 
 PACKAGE_LABELS = {"com.nuvio.tv": "Nuvio", "com.nuvio.tv.test": "Nuvio Test"}
+TIMEZONE_CHOICES = [
+    (zone, "UTC" if zone == "UTC" else f"{zone.rsplit('/', 1)[-1].replace('_', ' ')} ({zone})")
+    for zone in sorted(available_timezones())
+]
 COOKIE_NAME = "tvcompiler_session"
 CSRF_COOKIE = "tvcompiler_csrf"
 SESSION_AGE_SECONDS = 12 * 60 * 60
@@ -55,6 +61,7 @@ class LoginInput(Input):
 class DeviceInput(Input):
     name: str = Field(min_length=1, max_length=80)
     endpoint: str = Field(min_length=3, max_length=300)
+    connection_mode: ConnectionMode = "wireless"
 
 
 class PairInput(DeviceInput):
@@ -71,6 +78,7 @@ class DeviceUpdate(Input):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     endpoint: str | None = Field(default=None, min_length=3, max_length=300)
     enabled: bool | None = None
+    connection_mode: ConnectionMode | None = None
 
 
 class WatchInput(Input):
@@ -328,17 +336,25 @@ def create_app(
     except OSError:
         pass
     env = os.environ if environ is None else environ
+    login_value = env.get("LOGIN_ENABLE", "false").strip().lower()
+    if login_value not in {"true", "false"}:
+        raise ValueError("LOGIN_ENABLE must be true or false")
+    login_enabled = login_value == "true"
+    public_origin = env.get("TVCOMPILER_PUBLIC_ORIGIN")
+    secure = env.get("TVCOMPILER_COOKIE_SECURE", "0") == "1" or bool(secure_cookies)
+    if not login_enabled and (public_origin or secure):
+        raise ValueError(
+            "LOGIN_ENABLE=false requires loopback-only access without a public origin or secure-cookie setting"
+        )
     store = Store(base / "state.sqlite3")
-    client = adb or AdbClient(base)
-    jobs = scheduler or Scheduler(store, client, base)
-    security = Security(base / "auth.sqlite3")
+    client = adb or AdbClient(base, adb_path=env.get("TVCOMPILER_ADB_PATH", "adb"))
+    jobs = scheduler or Scheduler(store, client, base, adb_path=env.get("TVCOMPILER_ADB_PATH", "adb"))
+    security = Security(base / "auth.sqlite3") if login_enabled else None
     token_path = None
     local_setup_opt_in = env.get("TVCOMPILER_LOCAL_SETUP") == "1"
     supplied_token = bool(env.get("TVCOMPILER_BOOTSTRAP_TOKEN"))
-    secure = env.get("TVCOMPILER_COOKIE_SECURE", "0") == "1" or bool(secure_cookies)
-    public_origin = env.get("TVCOMPILER_PUBLIC_ORIGIN")
     local_setup_opt_in = local_setup_opt_in and not supplied_token and not secure and not public_origin
-    if not security.configured():
+    if login_enabled and security is not None and not security.configured():
         token, token_path = _bootstrap(base, env)
         security.bootstrap_token = token
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -367,10 +383,32 @@ def create_app(
 
     app = FastAPI(title="Android TV Speed Compiler", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.store, app.state.adb, app.state.scheduler, app.state.security = store, client, jobs, security
+    app.state.login_enabled = login_enabled
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
     def current(request: Request) -> tuple[str, str] | None:
+        if not login_enabled:
+            return None
         return security.session(request.cookies.get(COOKIE_NAME))
+
+    def request_csrf_cookie(request: Request) -> str:
+        cookie = request.cookies.get(CSRF_COOKIE, "")
+        return cookie if len(cookie) >= 32 else secrets.token_urlsafe(32)
+
+    def noauth_request_allowed(request: Request) -> bool:
+        proxy_headers = (
+            "forwarded",
+            "x-forwarded-for",
+            "x-forwarded-host",
+            "x-forwarded-proto",
+            "x-forwarded-port",
+            "x-forwarded-prefix",
+            "x-forwarded-ssl",
+            "x-real-ip",
+        )
+        return not any(name in request.headers for name in proxy_headers) and _loopback_host(
+            request.headers.get("host")
+        )
 
     def token_required(request: Request) -> bool:
         proxy_headers = (
@@ -387,6 +425,12 @@ def create_app(
         return not (local_setup_opt_in and not proxied and _loopback_host(request.headers.get("host")))
 
     def require_auth(request: Request) -> tuple[str, str]:
+        if not login_enabled:
+            if not noauth_request_allowed(request):
+                raise HTTPException(
+                    status_code=403, detail="Login-disabled mode is available only on a direct loopback request"
+                )
+            return "", ""
         value = current(request)
         if not value:
             raise HTTPException(status_code=401, detail="Sign in required")
@@ -408,7 +452,18 @@ def create_app(
 
     def verify_csrf(request: Request, _user=Depends(require_auth)):  # noqa: B008
         supplied = request.headers.get("x-csrf-token")
-        if not same_origin(request) or not security.csrf_valid(request.cookies.get(COOKIE_NAME), supplied):
+        if not same_origin(request):
+            raise HTTPException(status_code=403, detail="Request verification failed")
+        if login_enabled:
+            valid = security.csrf_valid(request.cookies.get(COOKIE_NAME), supplied)
+        else:
+            cookie = request.cookies.get(CSRF_COOKIE, "")
+            valid = bool(
+                request.headers.get("origin")
+                and supplied and cookie
+                and hmac.compare_digest(cookie.encode(), supplied.encode())
+            )
+        if not valid:
             raise HTTPException(status_code=403, detail="Request verification failed")
 
     def bootstrap_csrf(request: Request, data: dict) -> None:
@@ -425,7 +480,7 @@ def create_app(
     def safe_error(exc: Exception) -> str:
         message = str(exc).lower()
         if isinstance(exc, FileNotFoundError):
-            return "ADB is unavailable. Install Android platform-tools and restart the service."
+            return "ADB executable is unavailable in the service runtime. Check its configured path or container image."
         if "unauthorized" in message or "authorization" in message or "revoked" in message:
             return "TV authorization is missing. Approve the Wireless debugging prompt, then reconnect."
         if "offline" in message or "connect" in message or "no tls" in message:
@@ -441,6 +496,9 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, _exc: RequestValidationError):
+        if not login_enabled and request.url.path in {"/api/setup", "/api/login"}:
+            action = "account setup" if request.url.path == "/api/setup" else "sign-in"
+            return JSONResponse({"error": f"Login is disabled; {action} is inactive"}, status_code=409)
         action = "setup" if request.url.path == "/api/setup" else "login" if request.url.path == "/api/login" else None
         if action:
             security.failed(request, action)
@@ -454,19 +512,33 @@ def create_app(
 
     @app.get("/")
     def home(request: Request):
+        if not login_enabled and not noauth_request_allowed(request):
+            raise HTTPException(
+                status_code=403, detail="Login-disabled mode is available only on a direct loopback request"
+            )
         logged_in = current(request) is not None
-        csrf_value = current(request)
-        csrf = request.cookies.get(CSRF_COOKIE) or ""
-        if not csrf_value:
-            csrf = secrets.token_urlsafe(32)
+        session = current(request)
+        csrf = session[1] if session else request_csrf_cookie(request)
         response = templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={"authenticated": logged_in, "csrf": csrf, "token_required": token_required(request)},
+            context={
+                "authenticated": logged_in or not login_enabled,
+                "csrf": csrf,
+                "token_required": token_required(request),
+                "login_enabled": login_enabled,
+                "timezone_choices": TIMEZONE_CHOICES,
+            },
         )
-        if not csrf_value:
+        if csrf != request.cookies.get(CSRF_COOKIE):
             response.set_cookie(
-                CSRF_COOKIE, csrf, httponly=False, secure=secure, samesite="strict", max_age=600, path="/"
+                CSRF_COOKIE,
+                csrf,
+                httponly=False,
+                secure=secure,
+                samesite="strict",
+                max_age=SESSION_AGE_SECONDS,
+                path="/",
             )
         return response
 
@@ -477,6 +549,32 @@ def create_app(
 
     @app.get("/api/session")
     def session_info(request: Request):
+        if not login_enabled and not noauth_request_allowed(request):
+            raise HTTPException(
+                status_code=403, detail="Login-disabled mode is available only on a direct loopback request"
+            )
+        if not login_enabled:
+            csrf = request_csrf_cookie(request)
+            response = JSONResponse(
+                {
+                    "authenticated": True,
+                    "configured": False,
+                    "csrf": csrf,
+                    "token_required": False,
+                    "login_enabled": False,
+                }
+            )
+            if csrf != request.cookies.get(CSRF_COOKIE):
+                response.set_cookie(
+                    CSRF_COOKIE,
+                    csrf,
+                    httponly=False,
+                    secure=secure,
+                    samesite="strict",
+                    max_age=SESSION_AGE_SECONDS,
+                    path="/",
+                )
+            return response
         value = current(request)
         csrf = (
             request.cookies.get(CSRF_COOKIE)
@@ -488,10 +586,13 @@ def create_app(
             "configured": security.configured(),
             "csrf": csrf,
             "token_required": token_required(request),
+            "login_enabled": True,
         }
 
     @app.post("/api/setup")
     def setup(data: SetupInput, request: Request, response: Response):
+        if not login_enabled:
+            raise HTTPException(status_code=409, detail="Login is disabled; account setup is inactive")
         bootstrap_csrf(request, data.model_dump())
         if security.throttled(request, "setup"):
             raise HTTPException(status_code=429, detail="Too many setup attempts. Try again later.")
@@ -530,6 +631,8 @@ def create_app(
 
     @app.post("/api/login")
     def login(data: LoginInput, request: Request, response: Response):
+        if not login_enabled:
+            raise HTTPException(status_code=409, detail="Login is disabled; sign-in is inactive")
         bootstrap_csrf(request, data.model_dump())
         if security.throttled(request, "login"):
             raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again later.")
@@ -554,6 +657,8 @@ def create_app(
 
     @app.post("/api/logout")
     def logout(request: Request, _auth=Depends(verify_csrf)):  # noqa: B008
+        if not login_enabled:
+            raise HTTPException(status_code=409, detail="Login is disabled; sign-out is inactive")
         security.revoke(request.cookies.get(COOKIE_NAME))
         response = JSONResponse({"ok": True})
         response.delete_cookie(COOKIE_NAME, path="/")
@@ -589,8 +694,10 @@ def create_app(
                 "name": d.name,
                 "endpoint": d.endpoint,
                 "serial": d.serial,
+                "connection_mode": d.connection_mode,
                 "enabled": d.enabled,
                 "last_seen_at": d.last_seen_at,
+                **jobs.device_connection(d),
                 "apps": [
                     {
                         "package_id": a.package_id,
@@ -614,14 +721,18 @@ def create_app(
         except Exception as exc:
             return api_error(exc)
 
-    def save_device(name: str, endpoint: str, identity):
+    def save_device(name: str, endpoint: str, identity, connection_mode: ConnectionMode = "wireless"):
         device_id = uuid4().hex
-        device = store.upsert_device(device_id, name, endpoint, identity.serial, identity.build_fingerprint)
+        device = store.upsert_device(
+            device_id, name, endpoint, identity.serial, identity.build_fingerprint, connection_mode
+        )
+        jobs.record_connection_success(device_id)
         return {
             "id": device.id,
             "name": device.name,
             "endpoint": device.endpoint,
             "serial": device.serial,
+            "connection_mode": device.connection_mode,
             "enabled": device.enabled,
         }
 
@@ -630,18 +741,22 @@ def create_app(
             endpoint = validate_endpoint(data.endpoint)
             client.connect(endpoint)
             identity = client.identity(endpoint)
-            return save_device(data.name, endpoint, identity)
+            return save_device(data.name, endpoint, identity, data.connection_mode)
         except Exception as exc:
             return api_error(exc)
 
     @app.post("/api/pair")
     def pair(data: PairInput, _auth=Depends(verify_csrf)):  # noqa: B008
         try:
+            if data.connection_mode != "wireless":
+                raise ValueError(
+                    "Pairing supports wireless ADB only; choose TCP/IP when adding an already configured TV"
+                )
             pairing_endpoint = validate_endpoint(data.pairing_endpoint)
             if data.endpoint is not None:
                 endpoint = validate_endpoint(data.endpoint)
                 client.pair(pairing_endpoint, data.pairing_code)
-                return add_device(DeviceInput(name=data.name, endpoint=endpoint))
+                return add_device(DeviceInput(name=data.name, endpoint=endpoint, connection_mode="wireless"))
 
             guid = client.pair(pairing_endpoint, data.pairing_code, require_confirmation=True)
             if not guid:
@@ -649,6 +764,7 @@ def create_app(
                     "status": "paired",
                     "connection_endpoint_required": True,
                     "name": data.name,
+                    "connection_mode": "wireless",
                 }
             resolved = client.resolve_paired_device(guid)
             if resolved is None:
@@ -656,9 +772,10 @@ def create_app(
                     "status": "paired",
                     "connection_endpoint_required": True,
                     "name": data.name,
+                    "connection_mode": "wireless",
                 }
             endpoint, identity = resolved
-            return save_device(data.name, endpoint, identity)
+            return save_device(data.name, endpoint, identity, "wireless")
         except Exception as exc:
             return api_error(exc)
 
@@ -679,8 +796,10 @@ def create_app(
             # ADB discovery may return a fresh endpoint; pin the refreshed connection address.
             if not store.update_device(device.id, endpoint=transport):
                 raise ValueError("TV was forgotten while reconnecting")
+            jobs.record_connection_success(device.id)
             return {"ok": True, "endpoint": transport, "serial": identity.serial}
         except Exception as exc:
+            jobs.record_connection_failure(device.id, exc)
             return api_error(exc)
 
     @app.patch("/api/devices/{device_id}")
@@ -701,13 +820,23 @@ def create_app(
                 client.reconnect(
                     expected_serial=device.serial, expected_fingerprint=device.fingerprint, endpoint=endpoint
                 )
-                if not store.update_device(device_id, name=name, endpoint=endpoint):
+                if not store.update_device(
+                    device_id,
+                    name=name,
+                    endpoint=endpoint,
+                    connection_mode=data.connection_mode,
+                ):
                     raise ValueError("TV was forgotten while verifying its endpoint")
+                jobs.record_connection_success(device_id)
             except Exception as exc:
+                jobs.record_connection_failure(device_id, exc)
                 return api_error(exc)
         elif data.name is not None:
-            if not store.update_device(device_id, name=name):
+            if not store.update_device(device_id, name=name, connection_mode=data.connection_mode):
                 raise ValueError("TV was forgotten while saving its name")
+        elif data.connection_mode is not None:
+            if not store.update_device(device_id, connection_mode=data.connection_mode):
+                raise HTTPException(status_code=404, detail="TV was forgotten while saving its connection mode")
         return {"ok": True}
 
     @app.delete("/api/devices/{device_id}")
@@ -850,10 +979,18 @@ def create_app(
             "generated_at": datetime.now(UTC).isoformat(),
             "monitoring_enabled": status["monitoring_enabled"],
             "poll_interval_seconds": status["poll_interval_seconds"],
+            "dependencies": status["dependencies"],
             "last_poll_at": status["last_poll_at"],
             "maintenance_window": status["maintenance_window"],
             "devices": [
-                {"id": d.id, "name": d.name, "enabled": d.enabled, "last_seen_at": d.last_seen_at}
+                {
+                    "id": d.id,
+                    "name": d.name,
+                    "enabled": d.enabled,
+                    "last_seen_at": d.last_seen_at,
+                    "connection_mode": d.connection_mode,
+                    **jobs.device_connection(d),
+                }
                 for d in store.list_devices()
             ],
             "jobs": [
