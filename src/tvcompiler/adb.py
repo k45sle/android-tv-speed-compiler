@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,13 @@ class AdbResult:
 class DeviceIdentity:
     serial: str
     build_fingerprint: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconnectResult:
+    endpoint: str
+    selector: str
+    identity: DeviceIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +129,14 @@ def parse_mdns_services(text: str) -> list[DiscoveredService]:
                 continue
             results.append(DiscoveredService(parsed[0], parsed[2], endpoint))
     return results
+
+
+def _mdns_instance(service: str) -> str:
+    """Return a TLS connect mDNS instance name, excluding its service type."""
+    columns = service.split()
+    if len(columns) == 2 and columns[1].rstrip(".") == "_adb-tls-connect._tcp":
+        return columns[0]
+    return re.sub(r"\.?_adb-tls-connect\.(_tcp)\.?$", "", service)
 
 
 def parse_connected_devices(text: str) -> list[tuple[str, str]]:
@@ -426,7 +442,7 @@ class AdbClient:
             raise AdbError(args[0] if args else "adb", detail or f"exit status {result.returncode}")
         return result
 
-    def pair(self, endpoint: str, pairing_code: str) -> str:
+    def pair(self, endpoint: str, pairing_code: str, *, require_confirmation: bool = False) -> str | None:
         validate_endpoint(endpoint)
         # Codes are strings to preserve leading zeroes, passed only to adb and never included in errors.
         if not isinstance(pairing_code, str) or not re.fullmatch(r"\d{4,12}", pairing_code):
@@ -439,11 +455,20 @@ class AdbClient:
         # adb may echo the command input or protocol text; never return or propagate raw output.
         if result.returncode != 0:
             raise AdbError("pair", "pairing failed; verify the code and pairing endpoint")
+        if require_confirmation:
+            success = re.compile(
+                rf"^Successfully paired to {re.escape(endpoint)}(?: \[guid=(?P<guid>adb-[A-Za-z0-9._-]{{1,160}})\])?$"
+            )
+            for line in (result.stdout + "\n" + result.stderr).splitlines():
+                match = success.fullmatch(line.strip())
+                if match:
+                    return match.group("guid")
+            raise AdbError("pair", "pairing did not return a recognized success result")
         return "paired"
 
-    def connect(self, endpoint: str) -> str:
+    def connect(self, endpoint: str, *, timeout: float | None = None) -> str:
         validate_endpoint(endpoint)
-        output = self._run(["connect", endpoint]).stdout.strip()
+        output = self._run(["connect", endpoint], timeout=timeout).stdout.strip()
         # adb connect output is constrained by bounded output. Keep only an endpoint-free result.
         if "connected" in output.lower():
             return "connected"
@@ -455,20 +480,77 @@ class AdbClient:
         validate_endpoint(endpoint)
         self._run(["disconnect", endpoint])
 
-    def discover(self) -> list[DiscoveredService]:
-        return parse_mdns_services(self._run(["mdns", "services"]).stdout)
+    def discover(self, *, timeout: float | None = None) -> list[DiscoveredService]:
+        return parse_mdns_services(self._run(["mdns", "services"], timeout=timeout).stdout)
 
-    def devices(self) -> list[tuple[str, str]]:
-        return parse_connected_devices(self._run(["devices", "-l"]).stdout)
+    def resolve_paired_device(self, guid: str) -> tuple[str, DeviceIdentity] | None:
+        """Resolve only the exact code-pairing GUID to one verified connect endpoint."""
+        if not re.fullmatch(r"adb-[A-Za-z0-9._-]{1,160}", guid):
+            return None
+        # A few short, bounded mDNS refreshes account for services appearing just after pairing.
+        for attempt in range(3):
+            try:
+                matches = [
+                    service
+                    for service in self.discover(timeout=2.0)
+                    if service.kind == "connect" and _mdns_instance(service.service) == guid
+                ]
+            except (AdbError, ValueError):
+                return None
+            endpoints = {item.endpoint for item in matches}
+            if len(endpoints) == 1:
+                endpoint = next(iter(endpoints))
+                try:
+                    # Pairing auto-connects by the GUID service name. Inspect that secure
+                    # transport first; connecting the IP alias can fail or select a different TV.
+                    connected = [serial for serial, state in self.devices(timeout=3.0) if state == "device"]
+                    guid_transports = [
+                        serial
+                        for serial in connected
+                        if serial.rstrip(".") == f"{guid}._adb-tls-connect._tcp"
+                    ]
+                    if not guid_transports:
+                        if attempt < 2:
+                            time.sleep(0.2)
+                            continue
+                        return None
+                    if len(guid_transports) != 1:
+                        return None
+                    transport = guid_transports[0]
+                    # mDNS names are unauthenticated LAN metadata. Verify the device-side GUID
+                    # over the selected ADB transport before trusting it as the paired TV.
+                    actual_guid = self._run(
+                        ["shell", "getprop", "persist.adb.wifi.guid"], serial=transport, timeout=3.0
+                    ).stdout.strip()
+                    if not re.fullmatch(r"adb-[A-Za-z0-9._-]{1,160}", actual_guid) or actual_guid != guid:
+                        return None
+                    identity = self.identity(transport, timeout=3.0)
+                    if not identity.build_fingerprint:
+                        return None
+                    return endpoint, identity
+                except (AdbError, ValueError):
+                    return None
+            if len(endpoints) > 1:
+                return None
+            if attempt < 2:
+                time.sleep(0.2)
+        return None
 
-    def identity(self, serial: str) -> DeviceIdentity:
+    def devices(self, *, timeout: float | None = None) -> list[tuple[str, str]]:
+        return parse_connected_devices(self._run(["devices", "-l"], timeout=timeout).stdout)
+
+    def identity(self, serial: str, *, timeout: float | None = None) -> DeviceIdentity:
         """Read durable Android hardware identity, never the endpoint-shaped ADB transport ID."""
         if not isinstance(serial, str) or not re.fullmatch(r"[A-Za-z0-9_.:\-\[\]]{1,300}", serial):
             raise ValueError("invalid ADB serial")
-        durable_serial = self._run(["shell", "getprop", "ro.serialno"], serial=serial).stdout.strip()
+        durable_serial = self._run(["shell", "getprop", "ro.serialno"], serial=serial, timeout=timeout).stdout.strip()
         if not durable_serial:
-            durable_serial = self._run(["shell", "getprop", "ro.boot.serialno"], serial=serial).stdout.strip()
-        fingerprint = self._run(["shell", "getprop", "ro.build.fingerprint"], serial=serial).stdout.strip()
+            durable_serial = self._run(
+                ["shell", "getprop", "ro.boot.serialno"], serial=serial, timeout=timeout
+            ).stdout.strip()
+        fingerprint = self._run(
+            ["shell", "getprop", "ro.build.fingerprint"], serial=serial, timeout=timeout
+        ).stdout.strip()
         if not durable_serial or durable_serial.lower() in {"unknown", "offline", "0"}:
             raise AdbError("identity", "device does not expose a durable hardware serial")
         return DeviceIdentity(durable_serial, fingerprint or None)
@@ -508,6 +590,98 @@ class AdbClient:
         if expected_fingerprint and actual.build_fingerprint != expected_fingerprint:
             raise AdbError("identity", "connected device build identity changed; verification required")
 
+    def reconnect_with_selector(
+        self,
+        *,
+        expected_serial: str | None = None,
+        expected_fingerprint: str | None = None,
+        endpoint: str | None = None,
+    ) -> ReconnectResult:
+        """Reconnect with a validated network endpoint and separately retain the ADB selector."""
+        requested_endpoint = validate_endpoint(endpoint) if endpoint else None
+        services: list[DiscoveredService] = []
+        try:
+            services = [service for service in self.discover(timeout=3.0) if service.kind == "connect"]
+        except AdbError:
+            pass
+        endpoints = [requested_endpoint] if requested_endpoint else []
+        endpoints.extend(service.endpoint for service in services)
+        endpoints = list(dict.fromkeys(endpoints))
+        connected = [serial for serial, state in self.devices(timeout=3.0) if state == "device"]
+        endpoint_by_selector: dict[str, str] = {
+            service.endpoint: service.endpoint for service in services
+        }
+        for service in services:
+            instance = _mdns_instance(service.service)
+            if re.fullmatch(r"adb-[A-Za-z0-9._-]{1,160}", instance):
+                endpoint_by_selector[f"{instance}._adb-tls-connect._tcp"] = service.endpoint
+
+        # Existing TLS transports are already authenticated by ADB. Match them against the
+        # durable identity pins before considering any endpoint connect attempt.
+        selectors = [serial for serial in connected if serial.rstrip(".") in endpoint_by_selector]
+        for candidate in endpoints:
+            if candidate in connected and candidate not in selectors:
+                selectors.append(candidate)
+        matched_by_endpoint: dict[str, ReconnectResult] = {}
+        for selector in selectors:
+            try:
+                identity = self.identity(selector, timeout=3.0)
+                if expected_serial or expected_fingerprint:
+                    self.verify_identity(
+                        identity,
+                        expected_serial=expected_serial,
+                        expected_fingerprint=expected_fingerprint,
+                    )
+                actual_endpoint = endpoint_by_selector.get(selector.rstrip("."), requested_endpoint or selector)
+                if actual_endpoint == selector and ":" not in selector and not selector.startswith("["):
+                    continue
+                result = ReconnectResult(actual_endpoint, selector, identity)
+                previous = matched_by_endpoint.get(actual_endpoint)
+                # ADB can show one TV as both its secure GUID service and its IP alias.
+                # Prefer the GUID selector for operations, but keep distinct endpoints ambiguous.
+                if previous is None or (selector != actual_endpoint and previous.selector == actual_endpoint):
+                    matched_by_endpoint[actual_endpoint] = result
+            except AdbError:
+                continue
+            except ValueError:
+                continue
+        if len(matched_by_endpoint) == 1:
+            result = next(iter(matched_by_endpoint.values()))
+            if expected_serial or expected_fingerprint:
+                self._verified_serials[result.selector] = (expected_serial, expected_fingerprint)
+            return result
+        if len(matched_by_endpoint) > 1:
+            raise AdbError("identity", "multiple connected devices match the pinned identity")
+
+        last_error: AdbError | None = None
+        for candidate in endpoints:
+            try:
+                self.connect(candidate, timeout=3.0)
+                connected = [serial for serial, state in self.devices(timeout=3.0) if state == "device"]
+                # On Android 14 ADB auto-connects secure mDNS transports by GUID. The network
+                # endpoint is still the persisted reconnect address; operations use this selector.
+                mapped = [
+                    serial for serial in connected
+                    if serial.rstrip(".") == candidate or endpoint_by_selector.get(serial.rstrip(".")) == candidate
+                ]
+                for selector in mapped:
+                    try:
+                        identity = self.identity(selector, timeout=3.0)
+                        self.verify_identity(
+                            identity,
+                            expected_serial=expected_serial,
+                            expected_fingerprint=expected_fingerprint,
+                        )
+                    except (AdbError, ValueError) as exc:
+                        last_error = exc if isinstance(exc, AdbError) else last_error
+                        continue
+                    if expected_serial or expected_fingerprint:
+                        self._verified_serials[selector] = (expected_serial, expected_fingerprint)
+                    return ReconnectResult(candidate, selector, identity)
+            except AdbError as exc:
+                last_error = exc
+        raise last_error or AdbError("reconnect", "no TLS ADB connection service matched the pinned device")
+
     def reconnect(
         self,
         *,
@@ -515,31 +689,12 @@ class AdbClient:
         expected_fingerprint: str | None = None,
         endpoint: str | None = None,
     ) -> tuple[str, DeviceIdentity]:
-        candidates: list[str] = []
-        if endpoint:
-            candidates.append(validate_endpoint(endpoint))
-        last_error: AdbError | None = None
-        try:
-            for service in self.discover():
-                if service.kind == "connect" and service.endpoint not in candidates:
-                    candidates.append(service.endpoint)
-        except AdbError as exc:
-            last_error = exc
-        for candidate in candidates:
-            try:
-                self.connect(candidate)
-                identity = self.identity(candidate)
-                if expected_serial or expected_fingerprint:
-                    self.verify_identity(
-                        identity,
-                        expected_serial=expected_serial,
-                        expected_fingerprint=expected_fingerprint,
-                    )
-                    self._verified_serials[candidate] = (expected_serial, expected_fingerprint)
-                return candidate, identity
-            except AdbError as exc:
-                last_error = exc
-        raise last_error or AdbError("reconnect", "no TLS ADB connection service was discovered")
+        result = self.reconnect_with_selector(
+            expected_serial=expected_serial,
+            expected_fingerprint=expected_fingerprint,
+            endpoint=endpoint,
+        )
+        return result.endpoint, result.identity
 
     def installed_packages(self, serial: str) -> list[str]:
         self._require_verified(serial)

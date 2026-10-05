@@ -5,6 +5,11 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 15m
+    cpus: ${TVCOMPILER_CPUS_LIMIT:-0.5}
+    mem_limit: ${TVCOMPILER_MEM_LIMIT:-512m}
+    mem_reservation: ${TVCOMPILER_MEM_RESERVATION:-128m}
+    memswap_limit: ${TVCOMPILER_MEMSWAP_LIMIT:-512m}
+    pids_limit: ${TVCOMPILER_PIDS_LIMIT:-128}
     environment:
       TVCOMPILER_LOCAL_SETUP: ${TVCOMPILER_LOCAL_SETUP:-1}
       TVCOMPILER_BOOTSTRAP_TOKEN: ${TVCOMPILER_BOOTSTRAP_TOKEN:-}

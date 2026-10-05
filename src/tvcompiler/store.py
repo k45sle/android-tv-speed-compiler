@@ -277,6 +277,80 @@ class Store:
     def monitoring_enabled(self) -> bool:
         return self.get_setting("monitoring_enabled", "0") == "1"
 
+    def finish_setup(
+        self, device_id: str, package_ids: list[str], *, queue_initial_compiles: bool, enable_monitoring: bool
+    ) -> dict[str, object]:
+        """Apply explicit Finish choices and queue current baselines atomically."""
+        for package_id in package_ids:
+            validate_package_id(package_id)
+        if len(package_ids) != len(set(package_ids)):
+            raise ValueError("duplicate app selection")
+        with self._transaction() as db:
+            device = db.execute("SELECT enabled FROM devices WHERE id=?", (device_id,)).fetchone()
+            if not device or not device["enabled"]:
+                raise ValueError("TV is missing or paused; refresh setup before finishing")
+            apps = {}
+            if package_ids:
+                placeholders = ",".join("?" for _ in package_ids)
+                apps = {
+                    row["package_id"]: row
+                    for row in db.execute(
+                        f"SELECT * FROM apps WHERE device_id=? AND package_id IN ({placeholders}) AND enabled=1",
+                        (device_id, *package_ids),
+                    )
+                }
+            missing = sorted(set(package_ids) - apps.keys())
+            if missing:
+                raise ValueError("A selected app is no longer watched. Refresh the app list before finishing.")
+
+            outcomes: list[dict[str, object]] = []
+            if queue_initial_compiles:
+                for package_id in package_ids:
+                    app = apps[package_id]
+                    fingerprint = "|".join(
+                        (
+                            package_id,
+                            str(app["version_code"]) if app["version_code"] is not None else "",
+                            app["last_update_time"] or "",
+                            app["apk_path"] or "",
+                        )
+                    )
+                    active = db.execute(
+                        """SELECT id FROM jobs WHERE device_id=? AND package_id=? AND fingerprint=?
+                           AND state IN ('pending','running')""",
+                        (device_id, package_id, fingerprint),
+                    ).fetchone()
+                    terminal = db.execute(
+                        """SELECT state FROM jobs WHERE device_id=? AND package_id=? AND fingerprint=?
+                           AND state IN ('succeeded','failed') LIMIT 1""",
+                        (device_id, package_id, fingerprint),
+                    ).fetchone()
+                    job = self._enqueue_job(
+                        db, device_id, package_id, fingerprint, manual_override=False, manual=True, force=False
+                    )
+                    if active:
+                        outcomes.append({"package_id": package_id, "status": "already_queued", "job_id": active["id"]})
+                    elif job:
+                        outcomes.append({"package_id": package_id, "status": "queued", "job_id": job.id})
+                    elif terminal:
+                        outcomes.append(
+                            {
+                                "package_id": package_id,
+                                "status": "already_succeeded" if terminal["state"] == "succeeded" else "already_failed",
+                                "state": terminal["state"],
+                            }
+                        )
+                    else:
+                        raise RuntimeError("Could not queue a selected app")
+            if enable_monitoring:
+                db.execute(
+                    """INSERT INTO settings(key,value) VALUES('monitoring_enabled','1')
+                       ON CONFLICT(key) DO UPDATE SET value='1',
+                       updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')"""
+                )
+            monitoring = db.execute("SELECT value FROM settings WHERE key='monitoring_enabled'").fetchone()
+            return {"monitoring_enabled": bool(monitoring and monitoring["value"] == "1"), "jobs": outcomes}
+
     def observe_app(
         self,
         device_id: str,

@@ -500,11 +500,15 @@ class Scheduler:
     def _connect(self, device: Device) -> tuple[str, object]:
         if not device.serial and not device.fingerprint:
             raise AdbError("identity", "device has no pinned identity; verify or re-add it")
-        return self.adb.reconnect(
+        reconnect = getattr(self.adb, "reconnect_with_selector", self.adb.reconnect)
+        result = reconnect(
             expected_serial=device.serial,
             expected_fingerprint=device.fingerprint,
             endpoint=device.endpoint,
         )
+        if hasattr(result, "selector"):
+            return result.selector, result.identity
+        return result
 
     @staticmethod
     def _require_complete_metadata(info: PackageInfo) -> None:

@@ -2,7 +2,7 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const csrf = () => $('meta[name="csrf-token"]').content;
   const state = { csrf: csrf(), configured: false, authenticated: false, tokenRequired: document.body.dataset.tokenRequired === 'true', devices: [], monitoringEnabled: false, session: 0 };
-  const wizard = { open: false, run: 0, step: 0, busy: false, device: null, inventory: [], saved: new Set(), pairingMode: 'new' };
+  const wizard = { open: false, run: 0, step: 0, busy: false, device: null, inventory: [], saved: new Set(), pairingMode: 'new', pairingDone: false, enableMonitoring: false, queueInitialCompiles: false };
   const authPanel = $('#auth-panel');
   const dashboard = $('#dashboard');
   const notice = $('#notice');
@@ -29,9 +29,9 @@
     $('#token').required = !configured && tokenRequired;
     $('#token').disabled = configured || !tokenRequired;
     $('#password').autocomplete = configured ? 'current-password' : 'new-password';
-    $('#password').minLength = configured ? 1 : 12;
+    $('#password').minLength = configured ? 1 : 6;
     $('#auth-title').textContent = configured ? 'Sign in' : 'Set up your local account';
-    $('#auth-copy').textContent = configured ? 'Sign in to manage TVs and queued work on this service.' : tokenRequired ? 'Enter the one-time token and choose a strong password of at least 12 characters.' : 'Choose a password of at least 12 characters to create your local account.';
+    $('#auth-copy').textContent = configured ? 'Sign in to manage TVs and queued work on this service.' : tokenRequired ? 'Enter the one-time token and choose a strong password of at least 6 characters.' : 'Choose a password of at least 6 characters to create your local account.';
     $('#auth-submit').textContent = configured ? 'Sign in' : 'Create account';
   };
   const loadSession = async () => {
@@ -80,8 +80,11 @@
       if (!device.isConnected || device.dataset.id !== deviceId) return;
       list.replaceChildren();
       if (!apps.length) { list.textContent = 'No third-party apps found. System apps are not changed.'; return; }
+      const search=document.createElement('input');search.type='search';search.placeholder='Search by app name or package ID';search.setAttribute('aria-label','Search watched apps');
+      const count=document.createElement('p');count.className='muted';count.setAttribute('role','status');list.append(search,count);
+      const rows=[];
       for (const app of apps) {
-        const row = document.createElement('div'); row.className = 'app-row';
+        const row = document.createElement('div'); row.className = 'app-row'; row.dataset.search=`${app.label||''} ${app.package_id}`.toLocaleLowerCase(); rows.push(row);
         const label = document.createElement('label'); const check = document.createElement('input'); check.type = 'checkbox'; check.checked = app.watched; check.setAttribute('aria-label', `Watch ${app.label}`);
         const title = document.createElement('span'); title.textContent = `${app.label} · ${app.version_name || 'version unknown'}`;
         const packageId = document.createElement('code'); packageId.className = 'package'; packageId.textContent = app.package_id;
@@ -111,6 +114,8 @@
           finally { check.disabled = false; }
         });
       }
+      const filter=()=>{const query=search.value.trim().toLocaleLowerCase();let visible=0;for(const row of rows){row.classList.toggle('hidden',!row.dataset.search.includes(query));if(!row.classList.contains('hidden'))visible+=1;}count.textContent=query?`${visible} of ${rows.length} apps shown${visible?'':' · No apps match this search.'}`:`${rows.length} apps`;};
+      search.addEventListener('input',filter);filter();
     } catch(error) { if (device.isConnected && device.dataset.id === deviceId) list.textContent = error.message; }
   };
   const renderDevices = devices => {
@@ -132,6 +137,7 @@
       tools.append(button(info.enabled ? 'Pause TV' : 'Enable TV', async () => { try { await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'PATCH',body:{enabled:!info.enabled}}); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
       tools.append(button('Forget TV', async () => { if (!window.confirm(`Forget ${info.name} and its saved app/job history?`)) return; try { await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'DELETE'}); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
       const fields=document.createElement('div');fields.className='form-grid compact';fields.append(nameField.label,endpointField.label); manage.append(fields,tools);
+      const rebootHelp=document.createElement('p');rebootHelp.className='muted';rebootHelp.textContent='After a reboot, saved pairing keys and watched apps remain. Keep this service and its Docker host running. If Wireless debugging is off, the endpoint changed, or discovery is blocked, enable it and save the current connection IP:port above. Revoked keys or a changed verified identity require confirming the TV and pairing again.';manage.append(rebootHelp);
       const appsDetails=document.createElement('details'); appsDetails.className='app-management'; const appsSummary=document.createElement('summary'); appsSummary.textContent='Manage watched apps'; appsDetails.append(appsSummary);
       const apps=document.createElement('div');apps.className='app-list';apps.textContent='App inventory has not been loaded.';appsDetails.append(apps);
       appsDetails.append(button('Load fresh app inventory',()=>loadInventory(card)));
@@ -161,14 +167,17 @@
   const errorText = error => error?.message || 'Request failed. Try again.';
   const setWizardBusy = busy => {
     wizard.busy=busy;
+    const selectedAppCount=wizard.inventory.filter(app=>app.watched || wizard.saved.has(app.package_id)).length;
     $('#wizard-back').disabled=busy || wizard.step===0 || Boolean(wizard.device && wizard.step===3);
     $('#wizard-next').disabled=busy;
     $('#wizard-cancel').disabled=busy;
     $('#wizard-discover').disabled=busy;
+    $('#wizard-discover-pair').disabled=busy;
     $('#wizard-app-save').disabled=busy;
     $('#wizard-app-skip').disabled=busy;
     $('#wizard-app-retry').disabled=busy;
-    $('#wizard-monitoring').querySelectorAll('button').forEach(button=>{button.disabled=busy;});
+    $('#wizard-enable-monitoring').disabled=busy || state.monitoringEnabled;
+    $('#wizard-queue-compiles').disabled=busy || selectedAppCount===0;
     $('#wizard-apps').querySelectorAll('input[type="checkbox"]').forEach(input=>{input.disabled=busy || wizard.saved.has(input.value);});
     $('#wizard-next').textContent=busy?'Working…':(wizard.step===3?'Save selected apps':wizard.step===4?'Finish':'Continue');
   };
@@ -178,7 +187,7 @@
     if (message) setNotice(message);
     if(state.authenticated) $('#start-setup').focus({preventScroll:true});
   };
-  const stepOrder = () => wizard.pairingMode === 'new' ? [0,1,2,3,4] : [0,1,3,4];
+  const stepOrder = () => wizard.pairingMode === 'new' && !wizard.pairingDone ? [0,1,2,3,4] : [0,2,3,4];
   const visibleIndex = () => stepOrder().indexOf(wizard.step);
   const showWizardStep = (step, focus = true) => {
     wizard.step=step;
@@ -194,23 +203,28 @@
   };
   const openWizard = async () => {
     if(!state.authenticated || wizard.open || wizard.busy) return;
-    wizard.open=true; wizard.run += 1; wizardBox.dataset.run=String(wizard.run); wizard.step=0; wizard.device=null; wizard.inventory=[]; wizard.saved=new Set(); wizard.pairingMode='new';
+    wizard.open=true; wizard.run += 1; wizardBox.dataset.run=String(wizard.run); wizard.step=0; wizard.device=null; wizard.inventory=[]; wizard.saved=new Set(); wizard.pairingMode='new'; wizard.pairingDone=false; wizard.enableMonitoring=!state.monitoringEnabled; wizard.queueInitialCompiles=false;
     $('#wizard-name').value=''; $('#wizard-endpoint').value=''; $('#wizard-pair-endpoint').value=''; clearPairingCode();
-    $('#wizard-services').replaceChildren(); $('#wizard-apps').replaceChildren(); $('#wizard-error').textContent=''; $('#wizard-app-error').textContent='';
+    $('#wizard-connection-copy').textContent='On the TV’s main Wireless debugging screen, enter its current IP address and connection port. “Already paired” means this service has the TV’s pairing keys saved.';
+    $('#wizard-services').replaceChildren(); $('#wizard-pair-services').replaceChildren(); $('#wizard-apps').replaceChildren(); $('#wizard-error').textContent=''; $('#wizard-app-error').textContent='';
     $('input[name="pairing-mode"][value="new"]').checked=true;
     wizardBox.classList.remove('hidden'); setDashboardForWizard(true); showWizardStep(0); setWizardBusy(false);
     await refreshAll();
   };
   const createWizardDevice = async run => {
     if(wizard.device) { await loadWizardInventory(run); return; }
-    const payload={name:$('#wizard-name').value.trim(),endpoint:$('#wizard-endpoint').value.trim()};
-    if(wizard.pairingMode==='new'){payload.pairing_endpoint=$('#wizard-pair-endpoint').value.trim();payload.pairing_code=$('#wizard-code').value;}
-    clearPairingCode(); setWizardBusy(true); $('#wizard-error').textContent='';
+    const pairing=wizard.pairingMode==='new' && !wizard.pairingDone;
+    const payload=pairing
+      ? {name:$('#wizard-name').value.trim(),pairing_endpoint:$('#wizard-pair-endpoint').value.trim(),pairing_code:$('#wizard-code').value}
+      : {name:$('#wizard-name').value.trim(),endpoint:$('#wizard-endpoint').value.trim()};
+    if(pairing) clearPairingCode(); setWizardBusy(true); $('#wizard-error').textContent='';
     let device;
     try {
-      device=await api(wizard.pairingMode==='new'?'/api/pair':'/api/devices',{method:'POST',body:payload});
+      device=await api(pairing?'/api/pair':'/api/devices',{method:'POST',body:payload});
     } catch(error) { if(currentRun(run)) $('#wizard-error').textContent=`${errorText(error)} Check the TV’s current IP, port, and Wireless debugging state, then try again.`; if(currentRun(run)) setWizardBusy(false); return; }
     if(!currentRun(run)) return;
+    if(pairing && device.connection_endpoint_required){wizard.pairingDone=true;$('#wizard-connection-copy').textContent='Pairing succeeded and the service saved its pairing keys. Enter the TV’s current connection IP:port to finish adding it; do not pair again.';$('#wizard-error').textContent='Pairing succeeded. Enter the current connection IP:port below to continue.';$('#wizard-code').value='';showWizardStep(2);setWizardBusy(false);return;}
+    if(pairing)wizard.pairingDone=true;
     wizard.device=device; wizard.saved=new Set(); showWizardStep(3,false);
     try { const devices=await api('/api/devices'); if(currentRun(run)) renderDevices(devices); }
     catch(error) { if(currentRun(run)) $('#wizard-error').textContent=`${errorText(error)} The TV is saved. Retry loading apps or continue later from your TV list.`; }
@@ -228,12 +242,16 @@
   };
   const renderWizardApps = () => {
     const holder=$('#wizard-apps'); holder.replaceChildren();
+    const search=document.createElement('input');search.type='search';search.placeholder='Search by app name or package ID';search.setAttribute('aria-label','Search installed apps');
+    const count=document.createElement('p');count.className='muted';count.setAttribute('role','status');holder.append(search,count);
+    const rows=[];
     for(const app of wizard.inventory){
-      const row=document.createElement('label');row.className='wizard-app';
+      const row=document.createElement('label');row.className='wizard-app';row.dataset.search=`${app.label||''} ${app.package_id}`.toLocaleLowerCase();rows.push(row);
       const check=document.createElement('input');check.type='checkbox';check.value=app.package_id;check.checked=app.watched || wizard.saved.has(app.package_id);check.disabled=wizard.saved.has(app.package_id);
       const copy=document.createElement('span');copy.textContent=`${app.label} · ${app.package_id}${app.version_name?` · ${app.version_name}`:''}`;
       row.append(check,copy);holder.append(row);
     }
+    const filter=()=>{const query=search.value.trim().toLocaleLowerCase();let visible=0;for(const row of rows){row.classList.toggle('hidden',!row.dataset.search.includes(query));if(!row.classList.contains('hidden'))visible+=1;}count.textContent=query?`${visible} of ${rows.length} apps shown${visible?'':' · No apps match this search.'}`:`${rows.length} apps`;};search.addEventListener('input',filter);filter();
     updateWizardAppState();
     const actions=$('#wizard-app-actions'); actions.classList.remove('hidden');
   };
@@ -264,17 +282,46 @@
     const title=document.createElement('p');title.textContent=`${wizard.device?.name || $('#wizard-name').value.trim()} is saved.`;review.append(title);
     const selected=wizard.inventory.filter(app=>app.watched || wizard.saved.has(app.package_id)).map(app=>app.label || app.package_id);
     const apps=document.createElement('p');apps.textContent=selected.length?`Watching: ${selected.join(', ')}`:'No apps selected. You can select them later from Manage watched apps.';review.append(apps);
-    const current=document.createElement('p');current.className='muted';current.textContent=state.monitoringEnabled?'Monitoring is currently on. Finish keeps it on.':'Monitoring is currently paused. Finish keeps it paused.';review.append(current);
-    const actions=$('#wizard-monitoring');actions.replaceChildren();
-    if(!state.monitoringEnabled) { const resume=button('Resume monitoring',async()=>{if(wizard.busy || !currentRun(wizard.run))return;const run=wizard.run;setWizardBusy(true);$('#wizard-error').textContent='';try{await api('/api/monitoring',{method:'PUT',body:{enabled:true}});if(!currentRun(run))return;state.monitoringEnabled=true;await loadStatus();renderReview();}catch(error){if(currentRun(run))$('#wizard-error').textContent=`${errorText(error)} The monitoring state could not be confirmed. Check its current state before retrying.`;}finally{if(currentRun(run))setWizardBusy(false);}},'secondary'); resume.disabled=wizard.busy; actions.append(resume); }
+    const selectedCount=wizard.inventory.filter(app=>app.watched || wizard.saved.has(app.package_id)).length;
+    const current=document.createElement('p');current.className='muted';current.textContent=state.monitoringEnabled?'Automatic monitoring is already enabled globally; Finish keeps it enabled.':'Automatic monitoring is paused globally. The checked option enables it for all watched TVs.';review.append(current);
+    $('#wizard-enable-monitoring').checked=state.monitoringEnabled || wizard.enableMonitoring;
+    $('#wizard-enable-monitoring').disabled=state.monitoringEnabled || wizard.busy;
+    $('#wizard-queue-compiles').checked=wizard.queueInitialCompiles;
+    $('#wizard-queue-compiles').disabled=wizard.busy || selectedCount===0;
+  };
+  const finishWizard = async () => {
+    if(wizard.busy || !currentRun(wizard.run) || !wizard.device)return;
+    const run=wizard.run;
+    const packageIds=wizard.queueInitialCompiles
+      ? wizard.inventory.filter(app=>app.watched || wizard.saved.has(app.package_id)).map(app=>app.package_id)
+      : [];
+    const enableMonitoring=wizard.enableMonitoring && !state.monitoringEnabled;
+    setWizardBusy(true);$('#wizard-error').textContent='';
+    try{
+      const result=await api(`/api/devices/${encodeURIComponent(wizard.device.id)}/finish`,{method:'POST',body:{package_ids:packageIds,queue_initial_compiles:wizard.queueInitialCompiles,enable_monitoring:enableMonitoring}});
+      if(!currentRun(run))return;
+      state.monitoringEnabled=result.monitoring_enabled;
+      const queued=result.jobs.filter(job=>job.status==='queued').length;
+      const existing=result.jobs.filter(job=>job.status==='already_queued').length;
+      const completed=result.jobs.filter(job=>job.status==='already_succeeded').length;
+      const failed=result.jobs.filter(job=>job.status==='already_failed').length;
+      const pieces=[];
+      if(enableMonitoring)pieces.push('Automatic monitoring enabled for all watched TVs');
+      else if(state.monitoringEnabled)pieces.push('Automatic monitoring remains enabled');
+      else pieces.push('Automatic monitoring remains paused');
+      if(wizard.queueInitialCompiles)pieces.push(`${queued} new compile job${queued===1?'':'s'} queued${existing?`, ${existing} already queued`:''}${completed?`, ${completed} already succeeded`:''}${failed?`, ${failed} already failed and not retried`:''}`);
+      else pieces.push('No initial compiles queued');
+      await refreshAll();if(!currentRun(run))return;closeWizard(`${pieces.join('. ')}. Check Recent work for wait reasons and results.`);
+    }catch(error){if(currentRun(run))$('#wizard-error').textContent=`${errorText(error)} Your Finish choices are still selected. You can retry safely; duplicate or completed fingerprints will not be queued again.`;}
+    finally{if(currentRun(run))setWizardBusy(false);}
   };
   const advanceWizard = async () => {
     if(wizard.busy) return;
     $('#wizard-error').textContent='';
-    if(wizard.step===0){const name=$('#wizard-name');if(!name.value.trim()){name.setCustomValidity('Enter a name for this TV.');name.reportValidity();name.setCustomValidity('');return;}wizard.pairingMode=$('input[name="pairing-mode"]:checked').value;showWizardStep(1);return;}
-    if(wizard.step===1){const endpoint=$('#wizard-endpoint');if(!endpoint.value.trim()){endpoint.setCustomValidity('Enter the connection IP and port shown on the TV.');endpoint.reportValidity();endpoint.setCustomValidity('');return;}if(wizard.pairingMode==='new')showWizardStep(2);else await createWizardDevice(wizard.run);return;}
-    if(wizard.step===2){const pairing=$('#wizard-pair-endpoint'), code=$('#wizard-code');if(!pairing.value.trim()){pairing.setCustomValidity('Enter the pairing IP and port from the pairing popup.');pairing.reportValidity();pairing.setCustomValidity('');return;}if(!/^[0-9]{4,12}$/.test(code.value)){code.setCustomValidity('Enter the 4 to 12 digit pairing code.');code.reportValidity();code.setCustomValidity('');return;}await createWizardDevice(wizard.run);return;}
-    if(wizard.step===4) closeWizard('Setup finished. Your monitoring setting was preserved.');
+    if(wizard.step===0){const name=$('#wizard-name');if(!name.value.trim()){name.setCustomValidity('Enter a name for this TV.');name.reportValidity();name.setCustomValidity('');return;}wizard.pairingMode=$('input[name="pairing-mode"]:checked').value;showWizardStep(wizard.pairingMode==='new' && !wizard.pairingDone?1:2);return;}
+    if(wizard.step===1){const pairing=$('#wizard-pair-endpoint'), code=$('#wizard-code');if(!pairing.value.trim()){pairing.setCustomValidity('Enter the pairing IP and port from the pairing popup.');pairing.reportValidity();pairing.setCustomValidity('');return;}if(!/^[0-9]{4,12}$/.test(code.value)){code.setCustomValidity('Enter the 4 to 12 digit pairing code.');code.reportValidity();code.setCustomValidity('');return;}await createWizardDevice(wizard.run);return;}
+    if(wizard.step===2){const endpoint=$('#wizard-endpoint');if(!endpoint.value.trim()){endpoint.setCustomValidity('Enter the connection IP and port shown on the TV.');endpoint.reportValidity();endpoint.setCustomValidity('');return;}await createWizardDevice(wizard.run);return;}
+    if(wizard.step===4) await finishWizard();
   };
   $('#start-setup').addEventListener('click',openWizard);
   $('#wizard-cancel').addEventListener('click',()=>closeWizard(wizard.device?'Setup closed. The saved TV and selected apps are kept.':'Setup cancelled. No TV was added.'));
@@ -288,13 +335,17 @@
   $('#wizard-endpoint').addEventListener('input',()=>$('#wizard-endpoint').setCustomValidity(''));
   $('#wizard-pair-endpoint').addEventListener('input',()=>$('#wizard-pair-endpoint').setCustomValidity(''));
   $('#wizard-code').addEventListener('input',()=>$('#wizard-code').setCustomValidity(''));
+  $('#wizard-enable-monitoring').addEventListener('change',event=>{wizard.enableMonitoring=event.currentTarget.checked;});
+  $('#wizard-queue-compiles').addEventListener('change',event=>{wizard.queueInitialCompiles=event.currentTarget.checked;});
   wizardBox.addEventListener('keydown',event=>{if(event.key==='Enter' && event.target.matches('input:not([type="radio"]):not([type="checkbox"])') && wizard.step!==3){event.preventDefault();advanceWizard();}});
-  $('#wizard-discover').addEventListener('click',async()=>{
-    const run=wizard.run;const list=$('#wizard-services');list.textContent='Looking for Wireless debugging services…';$('#wizard-discover').disabled=true;
-    try{const services=await api('/api/discover',{method:'POST'});if(!currentRun(run))return;list.replaceChildren();if(!services.length){list.textContent='No TLS services found. Confirm Wireless debugging is enabled and the TV is on this network.';return;}
-      for(const service of services){const row=document.createElement('div');row.className='service';const text=document.createElement('span');text.textContent=`${service.kind}: ${service.endpoint}`;row.append(text);const target=service.kind==='pairing'?$('#wizard-pair-endpoint'):$('#wizard-endpoint');const action=button(service.kind==='pairing'?'Use pairing endpoint':'Use connection endpoint',()=>{target.value=service.endpoint;target.focus();});row.append(action);list.append(row);}
-    }catch(error){if(currentRun(run))list.textContent=`${errorText(error)} Try again or enter the TV’s current endpoint manually.`;}finally{if(currentRun(run))$('#wizard-discover').disabled=false;}
+  const discoverWizard = (buttonId, listId, kind) => $(`#${buttonId}`).addEventListener('click',async()=>{
+    const run=wizard.run;const list=$(`#${listId}`);list.textContent='Looking for Wireless debugging services…';$('#wizard-discover').disabled=true;$('#wizard-discover-pair').disabled=true;
+    try{const services=await api('/api/discover',{method:'POST'});if(!currentRun(run))return;list.replaceChildren();const matches=services.filter(service=>service.kind===kind);if(!matches.length){list.textContent='No matching endpoint found. Confirm Wireless debugging is enabled and enter the current IP:port manually.';return;}
+      for(const service of matches){const row=document.createElement('div');row.className='service';const text=document.createElement('span');text.textContent=`${service.kind}: ${service.endpoint}`;row.append(text);const target=kind==='pairing'?$('#wizard-pair-endpoint'):$('#wizard-endpoint');const action=button(kind==='pairing'?'Use pairing endpoint':'Use connection endpoint',()=>{target.value=service.endpoint;target.focus();});row.append(action);list.append(row);}
+    }catch(error){if(currentRun(run))list.textContent=`${errorText(error)} Try again or enter the TV’s current endpoint manually.`;}finally{if(currentRun(run)){const busy=wizard.busy;$('#wizard-discover').disabled=busy;$('#wizard-discover-pair').disabled=busy;}}
   });
+  discoverWizard('wizard-discover','wizard-services','connect');
+  discoverWizard('wizard-discover-pair','wizard-pair-services','pairing');
 
   $('#monitor-toggle')?.addEventListener('click',async()=>{try{const status=await api('/api/status');await api('/api/monitoring',{method:'PUT',body:{enabled:!status.monitoring_enabled}});await loadStatus();}catch(error){setNotice(error.message,true);}});
   $('#refresh').addEventListener('click',()=>refreshAll());
