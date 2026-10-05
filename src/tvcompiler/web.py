@@ -39,7 +39,7 @@ class Input(BaseModel):
 
 
 class SetupInput(Input):
-    token: str = Field(max_length=256)
+    token: str = Field(default="", max_length=256)
     password: str = Field(max_length=256)
     csrf: str = Field(min_length=32, max_length=128)
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
@@ -259,6 +259,51 @@ def _bootstrap(instance_dir: Path, environ: dict[str, str]) -> tuple[str, Path |
     return token, path
 
 
+def _loopback_host(value: str | None) -> bool:
+    """Accept only syntactically valid localhost and IP loopback Host values."""
+    if not value or len(value) > 300 or any(char in value for char in "\r\n/@\\") or value != value.strip():
+        return False
+    host: str
+    port: str | None = None
+    if value.startswith("["):
+        closing = value.find("]")
+        if closing < 0 or value.find("[", 1) >= 0 or value.find("]", closing + 1) >= 0:
+            return False
+        host = value[1:closing]
+        try:
+            import ipaddress
+
+            if "%" in host or not isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address):
+                return False
+        except ValueError:
+            return False
+        suffix = value[closing + 1 :]
+        if suffix:
+            if not suffix.startswith(":"):
+                return False
+            port = suffix[1:]
+    else:
+        if value.count(":") > 1:
+            return False
+        host, separator, candidate_port = value.partition(":")
+        if separator:
+            port = candidate_port
+    if port is not None:
+        if not port.isascii() or not port.isdigit() or len(port) > 5 or not 1 <= int(port) <= 65535:
+            return False
+    if not host or any(char.isspace() for char in host):
+        return False
+    lowered = host.lower()
+    if lowered == "localhost":
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(lowered).is_loopback
+    except ValueError:
+        return False
+
+
 def create_app(
     instance_dir: str | Path = "./instance",
     *,
@@ -280,12 +325,15 @@ def create_app(
     jobs = scheduler or Scheduler(store, client, base)
     security = Security(base / "auth.sqlite3")
     token_path = None
+    local_setup_opt_in = env.get("TVCOMPILER_LOCAL_SETUP") == "1"
+    supplied_token = bool(env.get("TVCOMPILER_BOOTSTRAP_TOKEN"))
+    secure = env.get("TVCOMPILER_COOKIE_SECURE", "0") == "1" or bool(secure_cookies)
+    public_origin = env.get("TVCOMPILER_PUBLIC_ORIGIN")
+    local_setup_opt_in = local_setup_opt_in and not supplied_token and not secure and not public_origin
     if not security.configured():
         token, token_path = _bootstrap(base, env)
         security.bootstrap_token = token
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-    secure = (env.get("TVCOMPILER_COOKIE_SECURE", "0") == "1") if secure_cookies is None else secure_cookies
-    public_origin = env.get("TVCOMPILER_PUBLIC_ORIGIN")
     if public_origin:
         parsed_origin = urlsplit(public_origin)
         if parsed_origin.scheme not in {"http", "https"} or not parsed_origin.netloc or parsed_origin.path:
@@ -315,6 +363,20 @@ def create_app(
 
     def current(request: Request) -> tuple[str, str] | None:
         return security.session(request.cookies.get(COOKIE_NAME))
+
+    def token_required(request: Request) -> bool:
+        proxy_headers = (
+            "forwarded",
+            "x-forwarded-for",
+            "x-forwarded-host",
+            "x-forwarded-proto",
+            "x-forwarded-port",
+            "x-forwarded-prefix",
+            "x-forwarded-ssl",
+            "x-real-ip",
+        )
+        proxied = any(name in request.headers for name in proxy_headers)
+        return not (local_setup_opt_in and not proxied and _loopback_host(request.headers.get("host")))
 
     def require_auth(request: Request) -> tuple[str, str]:
         value = current(request)
@@ -390,7 +452,9 @@ def create_app(
         if not csrf_value:
             csrf = secrets.token_urlsafe(32)
         response = templates.TemplateResponse(
-            request=request, name="index.html", context={"authenticated": logged_in, "csrf": csrf}
+            request=request,
+            name="index.html",
+            context={"authenticated": logged_in, "csrf": csrf, "token_required": token_required(request)},
         )
         if not csrf_value:
             response.set_cookie(
@@ -411,18 +475,33 @@ def create_app(
             if value and security.csrf_valid(request.cookies.get(COOKIE_NAME), request.cookies.get(CSRF_COOKIE))
             else None
         )
-        return {"authenticated": bool(value), "configured": security.configured(), "csrf": csrf}
+        return {
+            "authenticated": bool(value),
+            "configured": security.configured(),
+            "csrf": csrf,
+            "token_required": token_required(request),
+        }
 
     @app.post("/api/setup")
     def setup(data: SetupInput, request: Request, response: Response):
         bootstrap_csrf(request, data.model_dump())
         if security.throttled(request, "setup"):
             raise HTTPException(status_code=429, detail="Too many setup attempts. Try again later.")
+        needs_token = token_required(request)
+        token = data.token
+        if not needs_token and not token:
+            # This uses only the server-held credential after the request passed the
+            # explicit local opt-in, loopback Host, and no-forwarded-header checks.
+            token = security.bootstrap_token or ""
         if len(data.password) < 12 or not security.setup(
-            data.token, data.password, request.cookies.get(CSRF_COOKIE, ""), data.csrf
+            token, data.password, request.cookies.get(CSRF_COOKIE, ""), data.csrf
         ):
             security.failed(request, "setup")
-            raise HTTPException(status_code=400, detail="Setup failed. Check the one-time token and try again.")
+            if needs_token:
+                message = "Setup failed. Check the one-time token and try again."
+            else:
+                message = "Setup failed. Check the password and request settings and try again."
+            raise HTTPException(status_code=400, detail=message)
         security.cleared(request, "setup")
         if token_path and token_path.exists():
             token_path.unlink(missing_ok=True)
