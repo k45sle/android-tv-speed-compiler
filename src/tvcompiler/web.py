@@ -32,6 +32,7 @@ PACKAGE_LABELS = {"com.nuvio.tv": "Nuvio", "com.nuvio.tv.test": "Nuvio Test"}
 COOKIE_NAME = "tvcompiler_session"
 CSRF_COOKIE = "tvcompiler_csrf"
 SESSION_AGE_SECONDS = 12 * 60 * 60
+PASSWORD_MIN_LENGTH = 6
 
 
 class Input(BaseModel):
@@ -57,6 +58,7 @@ class DeviceInput(Input):
 
 
 class PairInput(DeviceInput):
+    endpoint: str | None = Field(default=None, min_length=3, max_length=300)
     pairing_endpoint: str = Field(min_length=3, max_length=300)
     pairing_code: str = Field(min_length=4, max_length=12, pattern=r"^\d{4,12}$")
 
@@ -83,6 +85,12 @@ class ManualInput(Input):
 
 class MonitoringInput(Input):
     enabled: bool
+
+
+class FinishInput(Input):
+    package_ids: list[str] = Field(default_factory=list, max_length=200)
+    queue_initial_compiles: bool = False
+    enable_monitoring: bool = False
 
 
 class SettingsInput(Input):
@@ -128,7 +136,7 @@ class Security:
         return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32)
 
     def setup(self, token: str, password: str, csrf_cookie: str, csrf: str) -> bool:
-        if len(password) < 12 or not hmac.compare_digest(csrf_cookie.encode(), csrf.encode()):
+        if len(password) < PASSWORD_MIN_LENGTH or not hmac.compare_digest(csrf_cookie.encode(), csrf.encode()):
             return False
         with self.lock, closing(self._connect()) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -493,7 +501,7 @@ def create_app(
             # This uses only the server-held credential after the request passed the
             # explicit local opt-in, loopback Host, and no-forwarded-header checks.
             token = security.bootstrap_token or ""
-        if len(data.password) < 12 or not security.setup(
+        if len(data.password) < PASSWORD_MIN_LENGTH or not security.setup(
             token, data.password, request.cookies.get(CSRF_COOKIE, ""), data.csrf
         ):
             security.failed(request, "setup")
@@ -606,29 +614,53 @@ def create_app(
         except Exception as exc:
             return api_error(exc)
 
-    def add_device(data: DeviceInput, *, pairing_endpoint: str | None = None, pairing_code: str | None = None):
+    def save_device(name: str, endpoint: str, identity):
+        device_id = uuid4().hex
+        device = store.upsert_device(device_id, name, endpoint, identity.serial, identity.build_fingerprint)
+        return {
+            "id": device.id,
+            "name": device.name,
+            "endpoint": device.endpoint,
+            "serial": device.serial,
+            "enabled": device.enabled,
+        }
+
+    def add_device(data: DeviceInput):
         try:
             endpoint = validate_endpoint(data.endpoint)
-            if pairing_endpoint is not None:
-                pairing_endpoint = validate_endpoint(pairing_endpoint)
-                client.pair(pairing_endpoint, pairing_code or "")
             client.connect(endpoint)
             identity = client.identity(endpoint)
-            device_id = uuid4().hex
-            device = store.upsert_device(device_id, data.name, endpoint, identity.serial, identity.build_fingerprint)
-            return {
-                "id": device.id,
-                "name": device.name,
-                "endpoint": device.endpoint,
-                "serial": device.serial,
-                "enabled": device.enabled,
-            }
+            return save_device(data.name, endpoint, identity)
         except Exception as exc:
             return api_error(exc)
 
     @app.post("/api/pair")
     def pair(data: PairInput, _auth=Depends(verify_csrf)):  # noqa: B008
-        return add_device(data, pairing_endpoint=data.pairing_endpoint, pairing_code=data.pairing_code)
+        try:
+            pairing_endpoint = validate_endpoint(data.pairing_endpoint)
+            if data.endpoint is not None:
+                endpoint = validate_endpoint(data.endpoint)
+                client.pair(pairing_endpoint, data.pairing_code)
+                return add_device(DeviceInput(name=data.name, endpoint=endpoint))
+
+            guid = client.pair(pairing_endpoint, data.pairing_code, require_confirmation=True)
+            if not guid:
+                return {
+                    "status": "paired",
+                    "connection_endpoint_required": True,
+                    "name": data.name,
+                }
+            resolved = client.resolve_paired_device(guid)
+            if resolved is None:
+                return {
+                    "status": "paired",
+                    "connection_endpoint_required": True,
+                    "name": data.name,
+                }
+            endpoint, identity = resolved
+            return save_device(data.name, endpoint, identity)
+        except Exception as exc:
+            return api_error(exc)
 
     @app.post("/api/devices")
     def add_paired(data: DeviceInput, _auth=Depends(verify_csrf)):  # noqa: B008
@@ -770,6 +802,21 @@ def create_app(
                 "foreground_override": job.manual_override,
                 "reason": job.reason,
             }
+        except Exception as exc:
+            return api_error(exc)
+
+    @app.post("/api/devices/{device_id}/finish")
+    def finish_setup(device_id: str, data: FinishInput, _auth=Depends(verify_csrf)):  # noqa: B008
+        try:
+            if not data.queue_initial_compiles and data.package_ids:
+                raise ValueError("App selections were provided without opting in to initial compiles")
+            result = store.finish_setup(
+                device_id,
+                data.package_ids,
+                queue_initial_compiles=data.queue_initial_compiles,
+                enable_monitoring=data.enable_monitoring,
+            )
+            return {"ok": True, **result}
         except Exception as exc:
             return api_error(exc)
 

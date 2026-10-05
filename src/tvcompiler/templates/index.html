@@ -14,7 +14,7 @@
   <main>
     <section id="auth-panel" class="card auth-card" aria-labelledby="auth-title">
       <h2 id="auth-title">Set up your local account</h2>
-      <p id="auth-copy">{% if token_required %}Enter the one-time token and choose a strong password of at least 12 characters.{% else %}Choose a password of at least 12 characters to create your local account.{% endif %}</p>
+      <p id="auth-copy">{% if token_required %}Enter the one-time token and choose a strong password of at least 6 characters.{% else %}Choose a password of at least 6 characters to create your local account.{% endif %}</p>
       <section id="bootstrap-help" aria-labelledby="bootstrap-help-title"{% if not token_required %} class="hidden"{% endif %}>
         <h3 id="bootstrap-help-title">Find your one-time token</h3>
         <p>In Docker Desktop, open <strong>Containers</strong>, select the <strong>android-tv-speed-compiler</strong> container, then open <strong>Exec</strong> (called <strong>Terminal</strong> in some versions). Run this command:</p>
@@ -30,7 +30,7 @@
       </section>
       <form id="auth-form">
         <label id="token-label"{% if not token_required %} class="hidden"{% endif %}>One-time setup token<input id="token" name="token" autocomplete="off"{% if token_required %} required{% endif %}></label>
-        <label>Password<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <label>Password<input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required></label>
         <button id="auth-submit" type="submit">Create account</button>
       </form><p id="auth-message" class="message" role="status" aria-live="polite"></p>
     </section>
@@ -52,17 +52,19 @@
           <fieldset><legend>Wireless debugging status</legend><label class="choice"><input type="radio" name="pairing-mode" value="new" checked> This TV needs pairing</label><label class="choice"><input type="radio" name="pairing-mode" value="paired"> This TV is already paired with this service</label></fieldset>
         </section>
         <section class="wizard-step hidden" data-step="1" aria-labelledby="step-title-1">
-          <h3 id="step-title-1">Connect to the TV</h3>
-          <p class="muted">On the TV’s main Wireless debugging screen, enter its IP address and connection port. Pairing uses a separate port. “Already paired” means this service has the TV’s pairing keys saved; pairing through another ADB installation does not count.</p>
+          <h3 id="step-title-1">Pair this TV</h3>
+          <p class="muted">On the TV, choose Pair device with pairing code. Enter the pairing IP:port and short code shown in that popup. The service will find the connection when possible.</p>
+          <label for="wizard-pair-endpoint">Pairing IP:port</label><input id="wizard-pair-endpoint" maxlength="300" placeholder="192.168.1.45:37821" autocomplete="off" required>
+          <label for="wizard-code">Pairing code</label><input id="wizard-code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required>
+          <button id="wizard-discover-pair" class="secondary" type="button">Find pairing endpoints</button>
+          <div id="wizard-pair-services" class="service-list" aria-live="polite"></div>
+        </section>
+        <section class="wizard-step hidden" data-step="2" aria-labelledby="step-title-2">
+          <h3 id="step-title-2">Connect to the TV</h3>
+          <p id="wizard-connection-copy" class="muted">On the TV’s main Wireless debugging screen, enter its current IP address and connection port. “Already paired” means this service has the TV’s pairing keys saved.</p>
           <label for="wizard-endpoint">Connection IP:port</label><input id="wizard-endpoint" maxlength="300" placeholder="192.168.1.45:41267" autocomplete="off" required>
           <button id="wizard-discover" class="secondary" type="button">Find TVs</button>
           <div id="wizard-services" class="service-list" aria-live="polite"></div>
-        </section>
-        <section class="wizard-step hidden" data-step="2" aria-labelledby="step-title-2">
-          <h3 id="step-title-2">Pair this TV</h3>
-          <p class="muted">On the TV, choose Pair device with pairing code. Enter the IP:port and short code shown in that popup. This pairing port is separate from the connection port.</p>
-          <label for="wizard-pair-endpoint">Pairing IP:port</label><input id="wizard-pair-endpoint" maxlength="300" placeholder="192.168.1.45:37821" autocomplete="off" required>
-          <label for="wizard-code">Pairing code</label><input id="wizard-code" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="one-time-code" maxlength="12" required>
         </section>
         <section class="wizard-step hidden" data-step="3" aria-labelledby="step-title-3">
           <h3 id="step-title-3">Choose apps to watch</h3>
@@ -74,7 +76,14 @@
         <section class="wizard-step hidden" data-step="4" aria-labelledby="step-title-4">
           <h3 id="step-title-4">Review setup</h3>
           <div id="wizard-review"></div>
-          <div id="wizard-monitoring"></div>
+          <fieldset id="wizard-finish-options">
+            <legend>Choose what Finish does</legend>
+            <label class="choice"><input id="wizard-enable-monitoring" type="checkbox"> Enable automatic monitoring after Finish for all watched TVs</label>
+            <p class="muted">Monitoring checks for app updates on every watched TV. It does not force a foreground compile.</p>
+            <label class="choice"><input id="wizard-queue-compiles" type="checkbox"> Queue a one-time speed compile for selected watched apps</label>
+            <p class="muted">No initial compile is queued by default. Queued work waits for an idle TV and any maintenance window; awake, playback, unknown status, or a closed window can defer it. Queueing does not mean it starts or finishes now.</p>
+          </fieldset>
+          <p id="wizard-reboot-help" class="muted">After a reboot, paired keys and watch settings remain saved. Keep this service and its Docker host running. If the connection changes, Wireless debugging is off, or discovery is blocked, turn it back on and save the current connection IP:port under Manage TV details. If keys were revoked or the verified TV identity changed, confirm the TV and pair it again.</p>
         </section>
         <div class="wizard-actions"><button id="wizard-back" class="secondary" type="button">Back</button><button id="wizard-next" type="button">Continue</button></div>
       </section>

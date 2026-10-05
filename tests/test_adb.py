@@ -16,6 +16,9 @@ from tvcompiler.adb import (
     parse_package_info,
     validate_endpoint,
 )
+from tvcompiler.models import Device
+from tvcompiler.scheduler import Scheduler
+from tvcompiler.store import Store
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -159,6 +162,244 @@ def test_pair_keeps_leading_zero_code_and_never_exposes_it_on_failure(tmp_path):
     assert (tmp_path / "instance/home/.android").is_dir()
 
 
+def test_auto_pair_parses_only_constrained_guid_and_keeps_code_private(tmp_path):
+    endpoint = "10.0.0.5:41267"
+    guid = "adb-serial-a-R4nd0m"
+    pairing = "10.0.0.5:37123"
+    transport = f"{guid}._adb-tls-connect._tcp"
+    runner = FakeRunner(
+        {
+            ("pair", pairing, "001234"): (0, f"Successfully paired to {pairing} [guid={guid}]", ""),
+            ("mdns", "services"): (
+                0,
+                f"{guid} _adb-tls-connect._tcp {endpoint}\nadb-unrelated _adb-tls-connect._tcp 10.0.0.6:55555\n",
+                "",
+            ),
+            ("devices", "-l"): (0, f"{transport} device product:tv\n", ""),
+            ("-s", transport, "shell", "getprop", "persist.adb.wifi.guid"): (0, f"{guid}\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.build.fingerprint"): (0, "vendor/tv/build:1\n", ""),
+        }
+    )
+    client = AdbClient(tmp_path / "instance", runner=runner)
+    parsed_guid = client.pair(pairing, "001234", require_confirmation=True)
+    resolved = client.resolve_paired_device(parsed_guid)
+    assert parsed_guid == guid
+    assert resolved == (endpoint, DeviceIdentity("serial-tv-a", "vendor/tv/build:1"))
+    assert runner.calls[0][0][-1] == "001234"
+    assert not any(call[0][1] == "connect" for call in runner.calls)
+
+
+@pytest.mark.parametrize(
+    "mdns",
+    [
+        "other-device _adb-tls-connect._tcp 10.0.0.8:5555\n",
+        "adb-target _adb-tls-connect._tcp 10.0.0.8:5555\nadb-target _adb-tls-connect._tcp 10.0.0.9:5555\n",
+    ],
+)
+def test_paired_guid_requires_one_exact_mdns_connect_record(tmp_path, mdns):
+    runner = FakeRunner({("mdns", "services"): (0, mdns, "")})
+    client = AdbClient(tmp_path, runner=runner)
+    assert client.resolve_paired_device("adb-target") is None
+    assert not any(call[0][1] == "connect" for call in runner.calls)
+
+
+def test_auto_pair_rejects_rc_zero_without_recognized_success_line(tmp_path):
+    code = "001234"
+    runner = FakeRunner({("pair", "tv.local:37123", code): (0, f"error: protocol echoed {code}", "")})
+    client = AdbClient(tmp_path, runner=runner)
+    with pytest.raises(AdbError) as caught:
+        client.pair("tv.local:37123", code, require_confirmation=True)
+    assert code not in str(caught.value)
+
+
+def test_auto_pair_success_without_guid_requires_manual_endpoint(tmp_path):
+    runner = FakeRunner(
+        {("pair", "tv.local:37123", "001234"): (0, "Successfully paired to tv.local:37123", "")}
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    assert client.pair("tv.local:37123", "001234", require_confirmation=True) is None
+
+
+def test_exact_guid_without_connected_transport_requires_manual_endpoint(tmp_path):
+    guid = "adb-target"
+    endpoint = "10.0.0.8:5555"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (0, f"{guid} _adb-tls-connect._tcp {endpoint}\n", ""),
+            ("connect", endpoint): (0, "connection pending", ""),
+            ("devices", "-l"): (0, "List of devices attached\n", ""),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    assert client.resolve_paired_device(guid) is None
+    assert not any(call[0][1:2] == ["-s"] for call in runner.calls)
+
+
+def test_misleading_exact_guid_mdns_record_cannot_authorize_another_connected_tv(tmp_path):
+    paired_guid = "adb-target-123456"
+    other_guid = "adb-other-654321"
+    endpoint = "10.0.0.8:5555"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (0, f"{paired_guid} _adb-tls-connect._tcp {endpoint}\n", ""),
+            ("connect", endpoint): (0, "already connected", ""),
+            ("devices", "-l"): (0, f"{endpoint} device product:other-tv\n", ""),
+            ("-s", endpoint, "shell", "getprop", "persist.adb.wifi.guid"): (0, f"{other_guid}\n", ""),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    assert client.resolve_paired_device(paired_guid) is None
+    assert not any(call[0][-3:] == ["shell", "getprop", "ro.serialno"] for call in runner.calls)
+
+
+def test_pair_resolve_scheduler_reconnect_and_inventory_use_verified_guid_selector(tmp_path):
+    endpoint = "10.0.0.5:41267"
+    pairing = "10.0.0.5:37123"
+    guid = "adb-serial-a-R4nd0m"
+    transport = f"{guid}._adb-tls-connect._tcp."
+    runner = FakeRunner(
+        {
+            ("pair", pairing, "001234"): (0, f"Successfully paired to {pairing} [guid={guid}]", ""),
+            ("mdns", "services"): (0, f"{guid} _adb-tls-connect._tcp {endpoint}\n", ""),
+            ("devices", "-l"): (0, f"{transport} device product:tv\n", ""),
+            ("-s", transport, "shell", "getprop", "persist.adb.wifi.guid"): (0, f"{guid}\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.build.fingerprint"): (0, "vendor/tv/build:1\n", ""),
+            ("-s", transport, "shell", "pm", "list", "packages", "-3", "-f"): (
+                0,
+                "package:/data/app/com.example.stream/base.apk=com.example.stream\n",
+                "",
+            ),
+        }
+    )
+    client = AdbClient(tmp_path / "instance", runner=runner)
+    assert client.resolve_paired_device(guid) == (
+        endpoint,
+        DeviceIdentity("serial-tv-a", "vendor/tv/build:1"),
+    )
+    store = Store(tmp_path / "state.db")
+    scheduler = Scheduler(store, client, tmp_path / "instance")
+    device = Device("tv-a", "Living Room", endpoint, "serial-tv-a", "vendor/tv/build:1", True, None)
+    selector, identity = scheduler._connect(device)
+    assert selector == transport
+    assert identity.serial == "serial-tv-a"
+    assert client.installed_packages(selector) == ["com.example.stream"]
+    assert not any(call[0][1] == "connect" for call in runner.calls)
+    assert all(endpoint not in call[0] or call[0][1] != "-s" for call in runner.calls)
+
+
+def test_reconnect_skips_wrong_online_guid_transport_and_uses_matching_pinned_endpoint(tmp_path):
+    endpoint = "10.0.0.5:41267"
+    other_endpoint = "10.0.0.6:41267"
+    guid = "adb-serial-a-R4nd0m"
+    other_guid = "adb-other-tv-R4nd0m"
+    transport = f"{other_guid}._adb-tls-connect._tcp"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (
+                0,
+                f"{other_guid} _adb-tls-connect._tcp {other_endpoint}\n"
+                f"{guid} _adb-tls-connect._tcp {endpoint}\n",
+                "",
+            ),
+            ("devices", "-l"): (0, f"{transport} device\n{endpoint} device\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.serialno"): (0, "other-tv\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.build.fingerprint"): (0, "build-other\n", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.build.fingerprint"): (0, "build-tv-a\n", ""),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    resolved = client.reconnect_with_selector(
+        expected_serial="serial-tv-a",
+        expected_fingerprint="build-tv-a",
+        endpoint=endpoint,
+    )
+    assert resolved.endpoint == endpoint
+    assert resolved.selector == endpoint
+    assert not any(call[0][1] == "connect" for call in runner.calls)
+    assert transport not in client._verified_serials
+    assert client._verified_serials[endpoint] == ("serial-tv-a", "build-tv-a")
+
+
+def test_reconnect_deduplicates_guid_and_ip_aliases_and_prefers_guid_selector(tmp_path):
+    endpoint = "10.0.0.5:41267"
+    guid = "adb-serial-a-R4nd0m"
+    transport = f"{guid}._adb-tls-connect._tcp"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (0, f"{guid} _adb-tls-connect._tcp {endpoint}\n", ""),
+            ("devices", "-l"): (0, f"{endpoint} device\n{transport} device\n", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", endpoint, "shell", "getprop", "ro.build.fingerprint"): (0, "build-tv-a\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", transport, "shell", "getprop", "ro.build.fingerprint"): (0, "build-tv-a\n", ""),
+            ("-s", transport, "shell", "pm", "list", "packages", "-3", "-f"): (
+                0,
+                "package:/data/app/com.example.stream/base.apk=com.example.stream\n",
+                "",
+            ),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    result = client.reconnect_with_selector(
+        expected_serial="serial-tv-a",
+        expected_fingerprint="build-tv-a",
+        endpoint=endpoint,
+    )
+    assert result.endpoint == endpoint
+    assert result.selector == transport
+    assert client.installed_packages(result.selector) == ["com.example.stream"]
+    assert endpoint not in client._verified_serials
+    assert client._verified_serials[transport] == ("serial-tv-a", "build-tv-a")
+
+
+def test_reconnect_fails_closed_when_pinned_identity_matches_distinct_endpoints(tmp_path):
+    first_endpoint = "10.0.0.5:41267"
+    second_endpoint = "10.0.0.6:41267"
+    first_guid = "adb-serial-a-R4nd0m"
+    second_guid = "adb-serial-a-Other"
+    first_transport = f"{first_guid}._adb-tls-connect._tcp"
+    second_transport = f"{second_guid}._adb-tls-connect._tcp"
+    runner = FakeRunner(
+        {
+            ("mdns", "services"): (
+                0,
+                f"{first_guid} _adb-tls-connect._tcp {first_endpoint}\n"
+                f"{second_guid} _adb-tls-connect._tcp {second_endpoint}\n",
+                "",
+            ),
+            ("devices", "-l"): (0, f"{first_transport} device\n{second_transport} device\n", ""),
+            ("-s", first_transport, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", first_transport, "shell", "getprop", "ro.build.fingerprint"): (0, "build-tv-a\n", ""),
+            ("-s", second_transport, "shell", "getprop", "ro.serialno"): (0, "serial-tv-a\n", ""),
+            ("-s", second_transport, "shell", "getprop", "ro.build.fingerprint"): (0, "build-tv-a\n", ""),
+        }
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    with pytest.raises(AdbError, match="multiple connected devices"):
+        client.reconnect_with_selector(
+            expected_serial="serial-tv-a",
+            expected_fingerprint="build-tv-a",
+            endpoint=first_endpoint,
+        )
+    assert not client._verified_serials
+
+
+def test_pair_timeout_is_sanitized_and_code_is_not_returned(tmp_path):
+    class TimeoutRunner(FakeRunner):
+        def run(self, argv, *, timeout, env):
+            self.calls.append((list(argv), timeout, env.copy()))
+            raise TimeoutError
+
+    runner = TimeoutRunner()
+    client = AdbClient(tmp_path, runner=runner)
+    with pytest.raises(AdbError) as caught:
+        client.pair("tv.local:37123", "001234", require_confirmation=True)
+    assert "001234" not in str(caught.value)
+
+
 def test_client_only_uses_fixed_command_templates(tmp_path):
     runner = FakeRunner(
         {
@@ -220,6 +461,7 @@ def test_reconnect_keeps_manual_endpoint_when_mdns_is_unavailable(tmp_path):
         {
             ("mdns", "services"): (1, "", "mDNS unavailable"),
             ("connect", endpoint): (0, "connected to endpoint", ""),
+            ("devices", "-l"): (0, f"{endpoint} device product:tv\n", ""),
             ("-s", endpoint, "shell", "getprop", "ro.serialno"): (0, "serial-a", ""),
             ("-s", endpoint, "shell", "getprop", "ro.build.fingerprint"): (0, "build-a", ""),
         }

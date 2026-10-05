@@ -43,6 +43,11 @@ class FakeAdb:
             DiscoveredService("connect", "adb-tv._adb-tls-connect._tcp", "10.0.0.5:41267"),
         ]
         self.pair_code_seen = None
+        self.pair_calls = 0
+        self.pair_guid = "adb-serial-a-R4nd0m"
+        self.pair_confirmed = True
+        self.pair_failures_remaining = 0
+        self.pair_resolution = None
         self.block_reconnect = False
         self.reconnect_entered = threading.Event()
         self.reconnect_release = threading.Event()
@@ -51,10 +56,18 @@ class FakeAdb:
         self.inventory_release = threading.Event()
         self.compile_calls = []
 
-    def pair(self, endpoint: str, pairing_code: str):
+    def pair(self, endpoint: str, pairing_code: str, *, require_confirmation=False):
+        self.pair_calls += 1
         self.pair_code_seen = pairing_code
+        if self.pair_failures_remaining:
+            self.pair_failures_remaining -= 1
+            raise AdbError("pair", "pairing failed; verify the code and pairing endpoint")
         if endpoint in self.fail:
             raise self.fail[endpoint]
+        if require_confirmation:
+            if not self.pair_confirmed:
+                raise AdbError("pair", "pairing did not return a recognized success result")
+            return self.pair_guid
         return "paired"
 
     def connect(self, endpoint: str):
@@ -70,6 +83,17 @@ class FakeAdb:
 
     def discover(self):
         return self.discovered
+
+    def resolve_paired_device(self, guid):
+        if self.pair_resolution is not None:
+            return self.pair_resolution
+        if not self.discovered:
+            return None
+        endpoint = next((item.endpoint for item in self.discovered if item.kind == "connect"), None)
+        if endpoint is None:
+            return None
+        identity = self.devices.setdefault(endpoint, DeviceIdentity(f"serial-{endpoint}", f"build-{endpoint}"))
+        return endpoint, identity
 
     def reconnect(self, *, expected_serial, expected_fingerprint, endpoint):
         self.reconnect_entered.set()
@@ -370,6 +394,97 @@ def test_pair_inventory_watch_baseline_manual_override_pause_and_settings(tmp_pa
         assert c.get(f"/api/jobs/{status['jobs'][0]['id']}/events").status_code == 200
 
 
+def test_finish_actions_are_atomic_idle_gated_and_safe_to_retry(tmp_path):
+    client, _adb, store, _scheduler, _instance = authenticated(tmp_path)
+    with client:
+        csrf = {"X-CSRF-Token": client.cookies[CSRF_COOKIE]}
+        device = add_tv(client)
+        store.upsert_app(
+            device["id"], "com.nuvio.tv", label="Nuvio", version_code=4,
+            last_update_time="today", apk_path="/data/app/a/base.apk", enabled=True,
+        )
+        body = {
+            "package_ids": ["com.nuvio.tv"],
+            "queue_initial_compiles": True,
+            "enable_monitoring": True,
+        }
+        first = client.post(f"/api/devices/{device['id']}/finish", json=body, headers=csrf)
+        assert first.status_code == 200, first.text
+        queued = first.json()["jobs"]
+        assert queued[0]["status"] == "queued"
+        saved_job = store.get_job(queued[0]["job_id"])
+        assert saved_job.manual and not saved_job.manual_override and saved_job.state == "pending"
+        assert store.monitoring_enabled() is True
+
+        retry = client.post(f"/api/devices/{device['id']}/finish", json=body, headers=csrf)
+        assert retry.status_code == 200
+        assert retry.json()["jobs"] == [
+            {"package_id": "com.nuvio.tv", "status": "already_queued", "job_id": saved_job.id}
+        ]
+        assert len(store.list_jobs()) == 1
+
+        store.upsert_app(
+            device["id"], "com.nuvio.tv.test", version_code=2,
+            last_update_time="today", apk_path="/data/app/b/base.apk", enabled=True,
+        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            concurrent = list(
+                pool.map(
+                    lambda _: store.finish_setup(
+                        device["id"], ["com.nuvio.tv.test"],
+                        queue_initial_compiles=True, enable_monitoring=False,
+                    ),
+                    range(2),
+                )
+            )
+        states = [result["jobs"][0]["status"] for result in concurrent]
+        assert sorted(states) == ["already_queued", "queued"]
+        assert len(store.list_jobs()) == 2
+        test_job = next(job for job in store.list_jobs() if job.package_id == "com.nuvio.tv.test")
+        assert store.claim_job(test_job.id) is not None
+        store.finish_job(test_job.id, state="failed", reason="synthetic failure")
+        failed_retry = client.post(
+            f"/api/devices/{device['id']}/finish",
+            json={"package_ids": ["com.nuvio.tv.test"], "queue_initial_compiles": True},
+            headers=csrf,
+        )
+        assert failed_retry.status_code == 200
+        assert failed_retry.json()["jobs"][0]["status"] == "already_failed"
+
+        assert store.claim_job(saved_job.id) is not None
+        store.finish_job(saved_job.id, state="succeeded")
+        repeated = client.post(f"/api/devices/{device['id']}/finish", json=body, headers=csrf)
+        assert repeated.status_code == 200
+        assert repeated.json()["jobs"][0]["status"] == "already_succeeded"
+        assert repeated.json()["jobs"][0]["state"] == "succeeded"
+        assert len(store.list_jobs()) == 2
+
+        store.set_monitoring(False)
+        store.set_app_enabled(device["id"], "com.nuvio.tv", False)
+        stale = client.post(f"/api/devices/{device['id']}/finish", json=body, headers=csrf)
+        assert stale.status_code == 400
+        assert store.monitoring_enabled() is False, "stale selection must not partially enable monitoring"
+        assert client.post(f"/api/devices/{device['id']}/finish", json=body).status_code == 403
+
+
+def test_finish_without_compile_consent_does_not_queue_or_pause_monitoring(tmp_path):
+    client, _adb, store, _scheduler, _instance = authenticated(tmp_path)
+    with client:
+        csrf = {"X-CSRF-Token": client.cookies[CSRF_COOKIE]}
+        device = add_tv(client)
+        store.upsert_app(device["id"], "com.nuvio.tv", version_code=4, enabled=True)
+        store.set_monitoring(True)
+        response = client.post(
+            f"/api/devices/{device['id']}/finish",
+            json={"package_ids": [], "queue_initial_compiles": False, "enable_monitoring": False},
+            headers=csrf,
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "monitoring_enabled": True, "jobs": []}
+        assert store.list_jobs() == []
+        assert store.monitoring_enabled() is True
+
+
 def test_multiple_tvs_wrong_identity_rename_preserves_endpoint_and_reconnect(tmp_path):
     adb = FakeAdb()
     app, adb, store, _scheduler, _ = make_app(tmp_path, adb)
@@ -393,6 +508,97 @@ def test_multiple_tvs_wrong_identity_rename_preserves_endpoint_and_reconnect(tmp
             f"/api/devices/{first['id']}/reconnect", json={"endpoint": "10.0.0.1:41268"}, headers={"X-CSRF-Token": csrf}
         )
         assert good.status_code == 200 and store.get_device(first["id"]).endpoint == "10.0.0.1:41268"
+
+
+def test_pair_auto_resolves_and_saves_exact_paired_device(tmp_path):
+    adb = FakeAdb()
+    app, adb, store, _scheduler, _instance = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        response = client.post(
+            "/api/pair",
+            json={"name": "Living", "pairing_endpoint": "10.0.0.5:37123", "pairing_code": "001234"},
+            headers={"X-CSRF-Token": client.cookies[CSRF_COOKIE]},
+        )
+        assert response.status_code == 200, response.text
+        device = response.json()
+        assert device["endpoint"] == "10.0.0.5:41267"
+        assert device["serial"] == "serial-10.0.0.5:41267"
+        assert adb.pair_calls == 1 and adb.pair_code_seen == "001234"
+        assert [saved.endpoint for saved in store.list_devices()] == ["10.0.0.5:41267"]
+
+
+def test_pair_auto_resolution_fallback_does_not_save_or_retain_code(tmp_path):
+    adb = FakeAdb()
+    adb.pair_resolution = None
+    adb.discovered = []
+    app, adb, store, _scheduler, instance = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        code = "004321"
+        response = client.post(
+            "/api/pair",
+            json={"name": "Living", "pairing_endpoint": "10.0.0.5:37123", "pairing_code": code},
+            headers={"X-CSRF-Token": client.cookies[CSRF_COOKIE]},
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "status": "paired",
+            "connection_endpoint_required": True,
+            "name": "Living",
+        }
+        assert adb.pair_calls == 1 and store.list_devices() == []
+        assert code not in response.text and code.encode() not in (instance / "state.sqlite3").read_bytes()
+
+
+def test_pair_auto_missing_guid_returns_manual_endpoint_contract(tmp_path):
+    adb = FakeAdb()
+    adb.pair_guid = None
+    app, adb, store, _scheduler, _instance = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        response = client.post(
+            "/api/pair",
+            json={"name": "Living", "pairing_endpoint": "10.0.0.5:37123", "pairing_code": "001234"},
+            headers={"X-CSRF-Token": client.cookies[CSRF_COOKIE]},
+        )
+        assert response.status_code == 200
+        assert response.json()["connection_endpoint_required"] is True
+        assert store.list_devices() == []
+        assert adb.pair_calls == 1
+
+
+def test_pair_failure_can_be_retried_without_saved_code_or_duplicate_tv(tmp_path):
+    adb = FakeAdb()
+    adb.pair_failures_remaining = 1
+    app, adb, store, _scheduler, instance = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        csrf = {"X-CSRF-Token": client.cookies[CSRF_COOKIE]}
+        payload = {"name": "Living", "pairing_endpoint": "10.0.0.5:37123", "pairing_code": "001234"}
+        failed = client.post("/api/pair", json=payload, headers=csrf)
+        assert failed.status_code == 400 and "001234" not in failed.text
+        assert store.list_devices() == []
+        paired = client.post("/api/pair", json=payload, headers=csrf)
+        assert paired.status_code == 200 and paired.json()["endpoint"] == "10.0.0.5:41267"
+        assert adb.pair_calls == 2 and len(store.list_devices()) == 1
+        assert b"001234" not in (instance / "state.sqlite3").read_bytes()
+
+
+def test_pair_auto_unrecognized_success_output_is_not_reported_as_paired(tmp_path):
+    adb = FakeAdb()
+    adb.pair_confirmed = False
+    app, adb, store, _scheduler, _instance = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        code = "123456"
+        response = client.post(
+            "/api/pair",
+            json={"name": "Living", "pairing_endpoint": "10.0.0.5:37123", "pairing_code": code},
+            headers={"X-CSRF-Token": client.cookies[CSRF_COOKIE]},
+        )
+        assert response.status_code == 400 and code not in response.text
+        assert store.list_devices() == []
 
 
 def test_bad_input_pairing_secrets_diagnostics_and_arbitrary_commands_are_not_exposed(tmp_path):
@@ -527,7 +733,7 @@ def test_local_setup_is_loopback_opt_in_only_and_preserves_security_controls(tmp
         assert 'id="token-label" class="hidden"' in page.text
         assert client.get("/api/session").json()["token_required"] is False
         csrf = client.cookies[CSRF_COOKIE]
-        assert client.post("/api/setup", json={"password": "too short", "csrf": csrf}).status_code == 400
+        assert client.post("/api/setup", json={"password": "12345", "csrf": csrf}).status_code == 400
         result = client.post("/api/setup", json={"password": PASSWORD, "csrf": csrf})
         assert result.status_code == 200
         assert (tmp_path / "instance" / "bootstrap.token").exists() is False

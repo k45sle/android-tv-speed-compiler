@@ -1,6 +1,6 @@
 # Password-only local account setup
 
-The user testing first run requested account creation without terminal/token retrieval. Bundled loopback-only Compose deployments now explicitly enable `TVCOMPILER_LOCAL_SETUP=1`; their first-run page asks only for a password of at least 12 characters. This replaces the earlier assumption that every deployment requires manual ownership-token retrieval.
+The user testing first run requested account creation without terminal/token retrieval. Bundled loopback-only Compose deployments now explicitly enable `TVCOMPILER_LOCAL_SETUP=1`; their first-run page asks only for a password of at least 6 characters. Longer passwords remain recommended, especially for remote access. This replaces the earlier assumption that every deployment requires manual ownership-token retrieval.
 
 The app default remains token-required. Password-only setup additionally requires a valid loopback Host and no forwarded/proxy indicators. A public origin, secure-cookie configuration, or supplied bootstrap token disables the shortcut. The existing setup transaction receives the server-held token internally; no bootstrap secret is exposed through HTML, APIs, URLs, clipboard, or logs. CSRF, origin checks, credential throttling, password hashing, session handling, and exactly-one-account creation remain enforced. Existing accounts and device state are preserved.
 
