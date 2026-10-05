@@ -17,14 +17,18 @@ The repository is private; `git clone` requires GitHub authentication with acces
 
 The published UI port binds to loopback only. To use another local port, change the host side of the Compose mapping, for example `127.0.0.1:8088:8000`; keep the container port at 8000. Do not publish this service to the public internet.
 
-## Pair and select apps
+## Set up a TV
 
 1. On the TV, enable Developer options (usually tap **Build** seven times under **Settings → System → About**; menu wording varies), then open **Developer options → Wireless debugging** and enable it.
-2. In the dashboard, choose **Discover TLS services**. Enter the TV name and the pairing and connection IP:port values separately. Enter the short pairing code shown by the TV and choose **Pair and add TV**. The code is sent to ADB and is not saved. Already paired TVs can use the separate add form.
-3. Select **Load fresh app inventory**. Package IDs are always shown; `com.nuvio.tv` and `com.nuvio.tv.test` have distinct names. Select only the apps to watch. Watching saves the current installation as its baseline. An initial compilation is optional and unchecked by default.
-4. Resume monitoring when ready. Automatic work waits while the TV is offline, awake, playing media, or idle state is unknown. Set an optional IANA time-zone maintenance window. A manual compile remains gated unless you explicitly select the foreground override.
+2. Choose **Start setup** and follow the steps. The TV’s connection IP:port comes from the main **Wireless debugging** screen. For a new pairing, the separate pairing IP:port and short code come from **Pair device with pairing code**. The code is sent to ADB and cleared after submission or cancellation.
+3. Select apps from the fresh inventory and choose **Save selected apps**. Saving records each selected app’s current version as its baseline and does not queue a compile. **Skip for now** leaves app selection for later under **Manage watched apps** on that TV.
+4. Finish keeps the existing global monitoring setting. Resume it only when you choose **Resume monitoring** in the final review or in **Advanced settings → Monitoring control**. Scheduling defaults remain unchanged; maintenance windows and retry settings are under **Advanced settings → Global scheduling**.
 
-Wireless debugging can use a different connection port after a TV reboot or network change. Re-enable Wireless debugging, discover services, then save the current connection endpoint using **Save name and reconnect endpoint**. Discovery can fail on some host networks; enter the current connection IP:port manually. A changed serial or Android build fingerprint fails closed and requires removing and pairing the TV again.
+Already paired means paired with this service’s saved ADB keys. Pairing the TV through another ADB installation does not satisfy that choice. Experienced users can open **Advanced settings → Manual TV setup** for direct pairing or add of a TV that this service already paired.
+
+Choose **Appearance** in the header to follow the device theme or select Light or Night. The choice is saved in this browser.
+
+Wireless debugging can use a different connection port after a TV reboot or network change. Re-enable Wireless debugging, discover services, then save the current connection endpoint using **Manage TV details → Save name and reconnect**. Discovery can fail on some host networks; enter the current connection IP:port manually. A changed serial or Android build fingerprint fails closed and requires removing and pairing the TV again. To change an existing app allowlist, open **Manage watched apps** on that TV and load its fresh inventory; the setup wizard is for adding a TV.
 
 ## Where it works and network limits
 

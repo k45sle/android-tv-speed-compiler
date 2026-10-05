@@ -1,5 +1,7 @@
 # Progress ledger
 
+UI follow-up complete: System/Light/Night appearance follows the device preference by default; guided TV setup shows one step at a time and hides the ordinary dashboard while active. App selection saves baselines without compiling, and Finish preserves monitoring. Sequential gpt-6-luna/high tasks, parent review, and independent scoped re-review resolved pairing re-entry, saved-TV navigation, duplicate app saves, and app-summary/inventory placement. Final local checks passed: Ruff, 65 tests in 2.00s, wheel/sdist contents, both Compose variants, browser regressions/contrast/mobile layout, JavaScript syntax, whitespace, and final native ARM64 container build/health/assets/non-root writability. See [ui-update-checks.md](ui-update-checks.md). No live TV operation occurred. Source publication and hosted multi-architecture CI results are reported in delivery.
+
 Plan: docs/implementation-plan.md
 
 Initial state: assessment only, no application or existing repository. No applicable filesystem AGENTS.md found in workspace ancestors; user-supplied working agreement applies.

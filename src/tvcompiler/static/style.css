@@ -103,7 +103,6 @@ body {
 .topbar h1 { font-size: 1.4rem; margin: 0; }
 .topbar-tools { display: flex; align-items: center; gap: .8rem; }
 .appearance-control { display: flex; align-items: center; gap: .55rem; white-space: nowrap; }
-.eyebrow { font-size: .875rem; font-weight: 750; letter-spacing: .12em; color: var(--blue); margin: .1rem 0 .4rem; }
 main { max-width: 1160px; margin: 1.5rem auto; padding: 0 1rem 2rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.3rem; box-shadow: 0 3px 14px var(--shadow); margin-bottom: 1rem; }
 .auth-card { max-width: 560px; margin: 3rem auto; }
@@ -112,6 +111,7 @@ main { max-width: 1160px; margin: 1.5rem auto; padding: 0 1rem 2rem; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .section-card { margin-bottom: 1rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.section-heading h2 { margin: 0; }
 .muted { color: var(--muted); font-size: .92rem; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin: 1rem 0; }
 .form-grid.compact { grid-template-columns: 1fr 1fr; }
@@ -143,6 +143,25 @@ button:disabled { opacity: .58; cursor: wait; }
 
 details { border-top: 1px solid var(--line); padding-top: .8rem; margin-top: .8rem; }
 summary { cursor: pointer; font-weight: 700; }
+.advanced-settings { padding: 1rem 1.3rem; }
+.advanced-settings > summary { font-size: 1.05rem; }
+.wizard-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.wizard-heading h2 { margin: .15rem 0 .25rem; font-size: 1.25rem; }
+.wizard-step h3 { margin: .6rem 0 .8rem; font-size: 1.05rem; }
+.wizard-step > label { margin: .5rem 0 .3rem; }
+.wizard-step > input { margin-bottom: .7rem; }
+.wizard-step fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 1rem 0; padding: .8rem; }
+.wizard-step legend { font-weight: 650; padding: 0 .25rem; }
+.choice, .wizard-app { display: flex; flex-direction: row; align-items: flex-start; gap: .55rem; margin: .45rem 0; font-weight: 500; }
+.choice input, .wizard-app input { width: auto; margin-top: .25rem; }
+.wizard-actions, .wizard-app-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+.wizard-apps { display: grid; gap: .25rem; }
+.wizard-app { padding: .55rem .65rem; border-radius: 8px; background: var(--inset); overflow-wrap: anywhere; }
+.service { display: flex; justify-content: space-between; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.service button { font-size: .85rem; padding: .45rem .65rem; }
+.device-manage, .app-management { border-top: 1px solid var(--line); padding-top: .55rem; margin-top: .55rem; }
+.device-manage .form-grid { margin-bottom: .4rem; }
+.watched-summary { margin: .35rem 0; overflow-wrap: anywhere; }
 .service-list { display: grid; gap: .4rem; }
 .service { padding: .55rem .7rem; background: var(--inset); border-radius: 8px; font-family: ui-monospace, monospace; font-size: .875rem; }
 .device-list { display: grid; gap: .8rem; }
@@ -159,6 +178,8 @@ summary { cursor: pointer; font-weight: 700; }
 .app-row input[type="checkbox"] { width: auto; }
 .package { display: block; color: var(--muted); font: .875rem ui-monospace, monospace; overflow-wrap: anywhere; }
 .app-actions { display: flex; gap: .35rem; }
+.app-actions > * { min-width: 0; max-width: 100%; }
+.app-actions .muted { overflow-wrap: anywhere; }
 .app-actions button { font-size: .78rem; padding: .4rem .55rem; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: .875rem; }
@@ -176,12 +197,13 @@ footer { padding: 0 .3rem; }
   main { margin: 1rem auto; padding: 0 .7rem; }
   .grid { grid-template-columns: 1fr; }
   .topbar { padding: 1rem; }
-  .hero, .section-heading { align-items: flex-start; flex-direction: column; }
+  .hero, .section-heading, .wizard-heading { align-items: flex-start; flex-direction: column; }
   .form-grid, .form-grid.compact { grid-template-columns: 1fr; }
   .form-grid .full { grid-column: auto; }
   .device-head { flex-direction: column; }
   .app-row { grid-template-columns: auto minmax(0, 1fr); }
   .app-actions { grid-column: 2; }
+  .app-actions { flex-wrap: wrap; }
   .auth-card { margin: 1.5rem auto; }
 }
 
