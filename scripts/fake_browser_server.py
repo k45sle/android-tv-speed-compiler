@@ -25,11 +25,14 @@ class BrowserAdb(FakeAdb):
         return BusyStatus(True, True, ("screen active", "playback active"))
 
 
+mode = os.environ.get("SMOKE_MODE", "token")
 app = create_app(
     Path(sys.argv[1]) / "instance",
     adb=BrowserAdb(),
     start_scheduler=True,
-    environ={"TVCOMPILER_BOOTSTRAP_TOKEN": "fake-browser-smoke-bootstrap-token-2026-only"},
+    environ={"TVCOMPILER_LOCAL_SETUP": "1"} if mode == "local" else {
+        "TVCOMPILER_BOOTSTRAP_TOKEN": "fake-browser-smoke-bootstrap-token-2026-only"
+    },
 )
 
 fail_second_app_once = True

@@ -106,6 +106,14 @@ body {
 main { max-width: 1160px; margin: 1.5rem auto; padding: 0 1rem 2rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.3rem; box-shadow: 0 3px 14px var(--shadow); margin-bottom: 1rem; }
 .auth-card { max-width: 560px; margin: 3rem auto; }
+.auth-card h3 { margin: 1rem 0 .35rem; font-size: 1rem; }
+#bootstrap-help { margin: 1.1rem 0 1.25rem; }
+#bootstrap-help > p { margin: .45rem 0; }
+.command-row { display: flex; align-items: center; gap: .6rem; margin: .65rem 0; }
+.command-row code, .command-block { min-width: 0; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--inset); color: var(--ink); font: .88rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.command-row code { flex: 1; user-select: text; }
+.command-block { white-space: pre-wrap; margin: .55rem 0; }
+.command-row button { flex: 0 0 auto; white-space: nowrap; }
 .hero { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--hero); }
 .hero h2, .section-card h2, .auth-card h2 { margin: .15rem 0 .5rem; font-size: 1.25rem; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -205,6 +213,8 @@ footer { padding: 0 .3rem; }
   .app-actions { grid-column: 2; }
   .app-actions { flex-wrap: wrap; }
   .auth-card { margin: 1.5rem auto; }
+  .command-row { align-items: stretch; flex-direction: column; }
+  .command-row button { align-self: flex-start; }
 }
 
 @media (max-width: 440px) {

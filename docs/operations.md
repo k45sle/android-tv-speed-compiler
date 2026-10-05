@@ -11,7 +11,7 @@ On Docker Desktop, multicast discovery may not cross the VM bridge. Use the curr
 
 The Compose named volume stores `/data/instance/state.sqlite3`, `/data/instance/auth.sqlite3`, scheduler lock and the private ADB home at `/data/instance/home/.android`. The runtime account uses stable UID/GID `10001:10001` so volume ownership persists across image upgrades. Do not share the volume among replicas; one process owns its scheduler lock.
 
-The initial token file is mode 0600, contains a randomly generated one-time token, and is removed once setup succeeds. With a pre-provisioned `TVCOMPILER_BOOTSTRAP_TOKEN`, use 32–256 random characters and provide it through a secret mechanism, never a checked-in `.env` file. Do not paste tokens or pairing codes into support requests.
+The bundled loopback-only Compose files opt in to password-only local first setup. Choose a unique password of at least 12 characters and select **Create account**; no token retrieval is required. Source and custom installations default to token-required setup. The generated token file is mode 0600 and removed once setup succeeds. With a pre-provisioned `TVCOMPILER_BOOTSTRAP_TOKEN`, use 32–256 random characters and provide it through a secret mechanism, never a checked-in `.env` file. Do not paste tokens or pairing codes into support requests.
 
 ## Stop, backup, restore
 
@@ -31,7 +31,7 @@ The TV's mDNS TLS connection endpoint can change independently of its pairing en
 
 ## Security controls and limits
 
-The dashboard starts on loopback. For intentional private-network access, put a maintained HTTPS reverse proxy in front, restrict its network ingress, configure `TVCOMPILER_COOKIE_SECURE=1` and the exact public origin in `TVCOMPILER_PUBLIC_ORIGIN`, and keep proxy header trust disabled unless code is deliberately reviewed. Authentication, CSRF, origin checks, and a bounded login/setup throttle reduce browser and guessing risks; ADB remains a highly privileged TV channel. Never make the dashboard publicly reachable.
+The bundled local setup option (`TVCOMPILER_LOCAL_SETUP=1`) is an operator declaration used with the bundled loopback-only bind; a Host header cannot prove the full route is private. Before exposing, proxying, or changing the bind, set `TVCOMPILER_LOCAL_SETUP=0`. Custom/source app configuration defaults to token-required setup. The server also requires token setup when `TVCOMPILER_PUBLIC_ORIGIN` or `TVCOMPILER_COOKIE_SECURE=1` is configured, a bootstrap token is supplied, proxy-forwarding headers are present, or the request Host is non-loopback. For intentional private-network access, put a maintained HTTPS reverse proxy in front, restrict its network ingress, configure `TVCOMPILER_COOKIE_SECURE=1` and the exact public origin in `TVCOMPILER_PUBLIC_ORIGIN`, and keep proxy header trust disabled unless code is deliberately reviewed. Authentication, CSRF, origin checks, and a bounded login/setup throttle reduce browser and guessing risks; ADB remains a highly privileged TV channel. Never make the dashboard publicly reachable.
 
 Diagnostics are a limited operational export but can still identify device names and app usage. Inspect before sharing. Pairing secrets, ADB keys, authentication data, shell output, and Android dumpsys data are not included.
 

@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector, root = document) => root.querySelector(selector);
   const csrf = () => $('meta[name="csrf-token"]').content;
-  const state = { csrf: csrf(), configured: false, authenticated: false, devices: [], monitoringEnabled: false, session: 0 };
+  const state = { csrf: csrf(), configured: false, authenticated: false, tokenRequired: document.body.dataset.tokenRequired === 'true', devices: [], monitoringEnabled: false, session: 0 };
   const wizard = { open: false, run: 0, step: 0, busy: false, device: null, inventory: [], saved: new Set(), pairingMode: 'new' };
   const authPanel = $('#auth-panel');
   const dashboard = $('#dashboard');
@@ -19,16 +19,19 @@
   const formData = form => Object.fromEntries(new FormData(form));
   const button = (text, fn, kind = 'secondary') => { const b = document.createElement('button'); b.type = 'button'; b.className = kind; b.textContent = text; b.addEventListener('click', fn); return b; };
   const clearPairingCode = () => { $('#wizard-code').value = ''; const manual = $('#pair-form [name="pairing_code"]'); if (manual) manual.value = ''; };
-  const showAuth = (configured) => {
-    state.configured = configured; state.authenticated = false; state.session += 1;
+  const showAuth = (configured, tokenRequired = state.tokenRequired) => {
+    state.configured = configured; state.authenticated = false; state.tokenRequired = tokenRequired; state.session += 1;
     closeWizard(); clearPairingCode();
     authPanel.classList.remove('hidden'); dashboard.classList.add('hidden');
-    $('#token-label').classList.toggle('hidden', configured);
-    $('#token').required = !configured;
+    $('#bootstrap-help').classList.toggle('hidden', configured || !tokenRequired);
+    $('#bootstrap-copy-status').textContent = '';
+    $('#token-label').classList.toggle('hidden', configured || !tokenRequired);
+    $('#token').required = !configured && tokenRequired;
+    $('#token').disabled = configured || !tokenRequired;
     $('#password').autocomplete = configured ? 'current-password' : 'new-password';
     $('#password').minLength = configured ? 1 : 12;
     $('#auth-title').textContent = configured ? 'Sign in' : 'Set up your local account';
-    $('#auth-copy').textContent = configured ? 'Sign in to manage TVs and queued work on this service.' : 'Enter the one-time token from instance/bootstrap.token and choose a strong password of at least 12 characters.';
+    $('#auth-copy').textContent = configured ? 'Sign in to manage TVs and queued work on this service.' : tokenRequired ? 'Enter the one-time token and choose a strong password of at least 12 characters.' : 'Choose a password of at least 12 characters to create your local account.';
     $('#auth-submit').textContent = configured ? 'Sign in' : 'Create account';
   };
   const loadSession = async () => {
@@ -37,19 +40,34 @@
       state.session += 1; const session = state.session; state.authenticated = true; state.csrf = data.csrf;
       $('#logout').classList.remove('hidden'); dashboard.classList.remove('hidden'); authPanel.classList.add('hidden');
       await refreshAll(session);
-    } else showAuth(data.configured);
+    } else showAuth(data.configured, data.token_required);
   };
   $('#auth-form').addEventListener('submit', async event => {
     event.preventDefault(); const fields = formData(event.currentTarget); fields.csrf = state.csrf;
     try {
       const login = state.configured;
-      if (login) delete fields.token;
+      if (login || !state.tokenRequired) delete fields.token;
       const result = await api(login ? '/api/login' : '/api/setup', { method: 'POST', body: fields });
       state.csrf = result.csrf; $('meta[name="csrf-token"]').content = result.csrf;
       $('#password').value = ''; $('#token').value = '';
       await loadSession();
     }
     catch (error) { $('#auth-message').textContent = error.message; }
+  });
+  $('#copy-bootstrap-command').addEventListener('click', async () => {
+    const command = $('#bootstrap-command');
+    try {
+      await navigator.clipboard.writeText(command.textContent);
+      $('#bootstrap-copy-status').textContent = 'Command copied. Run it in the service container console.';
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(command);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      command.focus();
+      $('#bootstrap-copy-status').textContent = 'Could not copy automatically. The command is selected; copy it manually with Ctrl+C or ⌘C.';
+    }
   });
   $('#logout').addEventListener('click', async () => { clearPairingCode(); closeWizard(); try { await api('/api/logout', { method: 'POST' }); location.reload(); } catch (error) { setNotice(error.message, true); } });
   const makeField = (labelText, value, type = 'text') => { const label = document.createElement('label'); label.append(document.createTextNode(labelText)); const input = document.createElement('input'); input.value = value || ''; input.type = type; input.maxLength = 300; label.append(input); return {label,input}; };

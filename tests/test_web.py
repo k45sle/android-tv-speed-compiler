@@ -20,7 +20,7 @@ from tvcompiler.adb import (
 )
 from tvcompiler.scheduler import Scheduler
 from tvcompiler.store import Store
-from tvcompiler.web import COOKIE_NAME, CSRF_COOKIE, create_app
+from tvcompiler.web import COOKIE_NAME, CSRF_COOKIE, _loopback_host, create_app
 
 TOKEN = "bootstrap-token-test-value-should-be-long-enough-12345"
 PASSWORD = "correct horse battery staple"
@@ -485,3 +485,120 @@ def test_secure_cookie_configuration_and_invalid_bootstrap_token(tmp_path):
         assert "secure" in secure_result.headers["set-cookie"].lower()
     with pytest.raises(ValueError, match="32-256"):
         create_app(tmp_path / "bad", start_scheduler=False, environ={"TVCOMPILER_BOOTSTRAP_TOKEN": "too-short"})
+
+
+@pytest.mark.parametrize("host", ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000", "[::1]", "[::1]:8000"])
+def test_loopback_host_parser_accepts_loopback_authorities(host):
+    assert _loopback_host(host)
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        None,
+        "example.com",
+        "192.168.1.2",
+        "[::2]",
+        "[127.0.0.1]",
+        "localhost.evil",
+        "localhost..",
+        "user@localhost",
+        "localhost:",
+        "localhost:0",
+        "localhost:65536",
+        "localhost:" + "9" * 1000,
+        "[::1",
+        "[::1%25lo]",
+        "::1",
+        "localhost/path",
+        " localhost",
+        "localhost\n.evil",
+    ],
+)
+def test_loopback_host_parser_rejects_invalid_or_remote_authorities(host):
+    assert not _loopback_host(host)
+
+
+def test_local_setup_is_loopback_opt_in_only_and_preserves_security_controls(tmp_path):
+    app, *_ = make_app(tmp_path, env={"TVCOMPILER_LOCAL_SETUP": "1"})
+    with TestClient(app, base_url="http://localhost") as client:
+        page = client.get("/")
+        assert 'data-token-required="false"' in page.text
+        assert 'id="token-label" class="hidden"' in page.text
+        assert client.get("/api/session").json()["token_required"] is False
+        csrf = client.cookies[CSRF_COOKIE]
+        assert client.post("/api/setup", json={"password": "too short", "csrf": csrf}).status_code == 400
+        result = client.post("/api/setup", json={"password": PASSWORD, "csrf": csrf})
+        assert result.status_code == 200
+        assert (tmp_path / "instance" / "bootstrap.token").exists() is False
+
+    # App configuration never activates password-only setup without the exact opt-in.
+    default_app, *_ = make_app(tmp_path / "default", env={})
+    with TestClient(default_app, base_url="http://localhost") as default:
+        default.get("/")
+        assert default.get("/api/session").json()["token_required"] is True
+        result = default.post("/api/setup", json={"password": PASSWORD, "csrf": default.cookies[CSRF_COOKIE]})
+        assert result.status_code == 400
+
+    guards = [
+        {"TVCOMPILER_LOCAL_SETUP": "1", "TVCOMPILER_PUBLIC_ORIGIN": "https://tv.example"},
+        {"TVCOMPILER_LOCAL_SETUP": "1", "TVCOMPILER_COOKIE_SECURE": "1"},
+        {"TVCOMPILER_LOCAL_SETUP": "1", "TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN},
+    ]
+    for index, env in enumerate(guards):
+        guarded, *_ = make_app(tmp_path / f"guard-{index}", env=env)
+        with TestClient(guarded, base_url="https://localhost") as guarded_client:
+            guarded_client.get("/")
+            session = guarded_client.get("/api/session").json()
+            assert session["token_required"] is True
+            csrf = guarded_client.cookies[CSRF_COOKIE]
+            assert guarded_client.post("/api/setup", json={"password": PASSWORD, "csrf": csrf}).status_code == 400
+            result = guarded_client.post(
+                "/api/setup", json={"token": "wrong" * 8, "password": PASSWORD, "csrf": csrf}
+            )
+            assert result.status_code == 400
+
+    proxied, *_ = make_app(tmp_path / "proxy", env={"TVCOMPILER_LOCAL_SETUP": "1"})
+    with TestClient(proxied, base_url="http://localhost") as proxy_client:
+        proxy_client.get("/")
+        for header in (
+            "Forwarded",
+            "X-Forwarded-For",
+            "X-Forwarded-Host",
+            "X-Forwarded-Proto",
+            "X-Forwarded-Port",
+            "X-Forwarded-Prefix",
+            "X-Forwarded-Ssl",
+            "X-Real-IP",
+        ):
+            assert proxy_client.get("/api/session", headers={header: ""}).json()["token_required"] is True
+        assert proxy_client.get("/api/session", headers={"Host": "remote.example"}).json()["token_required"] is True
+        csrf = proxy_client.cookies[CSRF_COOKIE]
+        assert proxy_client.post(
+            "/api/setup", json={"password": PASSWORD, "csrf": csrf}, headers={"Sec-Fetch-Site": "cross-site"}
+        ).status_code == 403
+
+
+def test_local_setup_exactly_one_account_and_mode_change_keeps_existing_account(tmp_path):
+    app, *_ = make_app(tmp_path, env={"TVCOMPILER_LOCAL_SETUP": "1"})
+
+    def setup_request(_):
+        with TestClient(app, base_url="http://127.0.0.1") as client:
+            client.get("/")
+            result = client.post("/api/setup", json={"password": PASSWORD, "csrf": client.cookies[CSRF_COOKIE]})
+            return result.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(setup_request, range(2))) == [200, 400]
+    restarted = create_app(tmp_path / "instance", start_scheduler=False, environ={})
+    with TestClient(restarted, base_url="http://localhost") as client:
+        client.get("/")
+        session = client.get("/api/session").json()
+        assert session["configured"] is True
+        assert session["token_required"] is True
+        result = client.post(
+            "/api/setup", json={"password": "another long password", "csrf": client.cookies[CSRF_COOKIE]}
+        )
+        assert result.status_code == 400
+        result = client.post("/api/login", json={"password": PASSWORD, "csrf": client.cookies[CSRF_COOKIE]})
+        assert result.status_code == 200

@@ -8,6 +8,7 @@ if (!packagePath) throw new Error('Set PLAYWRIGHT_MODULE to the installed Playwr
 const require = createRequire(import.meta.url);
 const { chromium } = require(packagePath);
 const baseURL = process.env.SMOKE_URL || 'http://127.0.0.1:8765';
+const localURL = process.env.SMOKE_LOCAL_URL;
 const password = 'fake browser smoke password only';
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true, colorScheme: 'dark' });
@@ -24,11 +25,33 @@ page.on('request', request => {
 });
 const work = path.resolve('../../work');
 const capture = name => page.screenshot({ path: path.join(work, name), fullPage: true });
+const captureLocal = (target, name) => target.screenshot({ path: path.join(work, name), fullPage: true });
 const wizardStep = number => page.locator(`.wizard-step[data-step="${number}"]`);
 const status = async () => page.evaluate(async () => (await (await fetch('/api/status')).json()));
 
 try {
   await mkdir(work, { recursive: true });
+  assert.ok(localURL, 'smoke runner provides a separate local-setup fake server');
+  const localPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'light' });
+  let localSetupBody;
+  localPage.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/setup')) localSetupBody = request.postDataJSON();
+  });
+  await localPage.goto(localURL);
+  assert.equal(await localPage.locator('#bootstrap-help').isVisible(), false, 'bundled local setup hides token help in initial HTML');
+  assert.equal(await localPage.locator('#token-label').isVisible(), false, 'bundled local setup hides token input in initial HTML');
+  assert.equal(await localPage.locator('#token').isDisabled(), true);
+  await localPage.locator('#appearance').selectOption('light');
+  await captureLocal(localPage, 'local-account-light.png');
+  await localPage.locator('#appearance').selectOption('night');
+  await captureLocal(localPage, 'local-account-night.png');
+  await localPage.locator('#password').fill(password);
+  await localPage.locator('#auth-submit').click();
+  await localPage.locator('#start-setup').waitFor();
+  assert.deepEqual(Object.keys(localSetupBody).sort(), ['csrf', 'password'], 'password-only setup sends no token field');
+  assert.equal(await localPage.evaluate(async () => (await (await fetch('/api/session')).json()).configured), true);
+  await localPage.close();
+
   await page.goto(baseURL);
   const appearance = page.locator('#appearance');
   assert.equal(await appearance.inputValue(), 'system');
@@ -36,7 +59,21 @@ try {
   assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
   await appearance.selectOption('light');
   assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'light');
+  assert.equal(await page.locator('#bootstrap-help').isVisible(), true, 'setup help is visible before an account exists');
+  assert.equal(await page.locator('#bootstrap-command').textContent(), 'cat /data/instance/bootstrap.token');
+  await capture('account-setup-light.png');
   await appearance.selectOption('night');
+  await capture('account-setup-night.png');
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { window.__copiedCommand = value; } } }));
+  await page.locator('#copy-bootstrap-command').click();
+  await page.getByRole('status').filter({ hasText: 'Command copied.' }).waitFor();
+  assert.equal(await page.evaluate(() => window.__copiedCommand), 'cat /data/instance/bootstrap.token', 'copy writes only the static retrieval command');
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('clipboard unavailable'); } } }));
+  await page.locator('#copy-bootstrap-command').click();
+  await page.getByRole('status').filter({ hasText: 'Could not copy automatically.' }).waitFor();
+  assert.equal(await page.evaluate(() => window.getSelection().toString()), 'cat /data/instance/bootstrap.token', 'failed copy selects the static command for manual copying');
+  assert.equal(await page.evaluate(() => Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).some(value => value?.includes('fake-browser-smoke-bootstrap-token'))), false, 'bootstrap token is never persisted in browser storage');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'first-run help fits the mobile viewport');
   await page.reload();
   assert.equal(await page.locator('#appearance').inputValue(), 'night');
   assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'dark');
@@ -45,6 +82,7 @@ try {
   await page.locator('#password').fill(password);
   await page.locator('#auth-submit').click();
   await page.locator('#start-setup').waitFor();
+  assert.equal(await page.locator('#bootstrap-help').isVisible(), false, 'setup help is hidden on the dashboard');
   assert.equal(await page.locator('#appearance').inputValue(), 'night');
   assert.equal(await page.locator('#advanced-settings').getAttribute('open'), null);
   assert.equal(await page.locator('#settings-form').isVisible(), false);
@@ -57,6 +95,7 @@ try {
   await page.locator('#auth-title').waitFor();
   assert.equal(await page.locator('#appearance').inputValue(), 'night');
   assert.equal(await page.locator('#auth-title').textContent(), 'Sign in');
+  assert.equal(await page.locator('#bootstrap-help').isVisible(), false, 'setup help is hidden on sign-in');
   await page.locator('#password').fill(password);
   await page.locator('#auth-submit').click();
   await page.locator('#start-setup').waitFor();
@@ -346,9 +385,9 @@ try {
   await blockedStoragePage.close();
 
   assert.deepEqual(pageErrors, [], 'browser must not report JavaScript errors');
-  console.log('browser smoke passed: wizard pairing branches, endpoint selection, validation, code clearing, duplicate protection, partial-save retry, compile/monitoring defaults, TV/app management, settings/diagnostics, Appearance, mobile overflow; screenshots saved under ../../work');
+  console.log('browser smoke passed: password-only local account setup, token-required setup with static command copy success/failure, token storage exclusion, login/dashboard help visibility, wizard pairing branches, endpoint selection, validation, code clearing, duplicate protection, partial-save retry, compile/monitoring defaults, TV/app management, settings/diagnostics, Appearance, mobile overflow; screenshots saved under ../../work');
 } catch (error) {
-  for (const filename of ['wizard-first-screen.png','wizard-name-step.png','wizard-connection-step.png','wizard-pair-step.png','wizard-app-step.png','wizard-review-step.png','wizard-night-desktop.png','dashboard-light-desktop.png','dashboard-night-desktop.png','dashboard-light-mobile.png','dashboard-night-mobile.png','wizard-light-mobile.png']) await rm(path.join(work, filename), { force: true });
+  for (const filename of ['account-setup-light.png','account-setup-night.png','wizard-first-screen.png','wizard-name-step.png','wizard-connection-step.png','wizard-pair-step.png','wizard-app-step.png','wizard-review-step.png','wizard-night-desktop.png','dashboard-light-desktop.png','dashboard-night-desktop.png','dashboard-light-mobile.png','dashboard-night-mobile.png','wizard-light-mobile.png']) await rm(path.join(work, filename), { force: true });
   throw error;
 } finally {
   await browser.close();

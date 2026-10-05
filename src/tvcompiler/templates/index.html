@@ -9,14 +9,27 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
-<body data-authenticated="{{ 'true' if authenticated else 'false' }}">
+<body data-authenticated="{{ 'true' if authenticated else 'false' }}" data-token-required="{{ 'true' if token_required else 'false' }}">
   <header class="topbar"><h1>Speed Compiler</h1><div class="topbar-tools"><label class="appearance-control" for="appearance">Appearance<select id="appearance" name="appearance"><option value="system">System</option><option value="light">Light</option><option value="night">Night</option></select></label><button id="logout" class="quiet hidden" type="button">Sign out</button></div></header>
   <main>
     <section id="auth-panel" class="card auth-card" aria-labelledby="auth-title">
       <h2 id="auth-title">Set up your local account</h2>
-      <p id="auth-copy">Enter the one-time token from <code>instance/bootstrap.token</code> and choose a strong password of at least 12 characters.</p>
+      <p id="auth-copy">{% if token_required %}Enter the one-time token and choose a strong password of at least 12 characters.{% else %}Choose a password of at least 12 characters to create your local account.{% endif %}</p>
+      <section id="bootstrap-help" aria-labelledby="bootstrap-help-title"{% if not token_required %} class="hidden"{% endif %}>
+        <h3 id="bootstrap-help-title">Find your one-time token</h3>
+        <p>In Docker Desktop, open <strong>Containers</strong>, select the <strong>android-tv-speed-compiler</strong> container, then open <strong>Exec</strong> (called <strong>Terminal</strong> in some versions). Run this command:</p>
+        <div class="command-row"><code id="bootstrap-command" tabindex="0">cat /data/instance/bootstrap.token</code><button id="copy-bootstrap-command" class="secondary" type="button">Copy command</button></div>
+        <p id="bootstrap-copy-status" class="muted" role="status" aria-live="polite"></p>
+        <p class="muted">Copy the token printed by the command and paste it into <strong>One-time setup token</strong> below. This one-time step proves you control this installation; after setup, sign in with your password.</p>
+        <details>
+          <summary>Using Docker Compose or a custom installation</summary>
+          <p>From the correct repository and deployment, run this in a terminal on the Docker host:</p>
+          <pre class="command-block"><code>docker compose exec android-tv-speed-compiler cat /data/instance/bootstrap.token</code></pre>
+          <p class="muted">Run it from the same deployment directory with the same Compose file and project options used to start the service. For a Linux host deployment, include <code>-f compose.linux-host.yaml</code> and the same <code>-p</code> project name if one was used. For a source or custom installation, read the token from the configured instance directory’s <code>bootstrap.token</code> file. If your owner supplied <code>TVCOMPILER_BOOTSTRAP_TOKEN</code>, use that provisioned value; do not expose environment dumps or logs.</p>
+        </details>
+      </section>
       <form id="auth-form">
-        <label id="token-label">One-time setup token<input id="token" name="token" autocomplete="off" required></label>
+        <label id="token-label"{% if not token_required %} class="hidden"{% endif %}>One-time setup token<input id="token" name="token" autocomplete="off"{% if token_required %} required{% endif %}></label>
         <label>Password<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></label>
         <button id="auth-submit" type="submit">Create account</button>
       </form><p id="auth-message" class="message" role="status" aria-live="polite"></p>

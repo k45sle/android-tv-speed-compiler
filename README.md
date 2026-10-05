@@ -10,12 +10,13 @@ Requirements: Docker Engine/Desktop with Compose v2; an Android TV with Wireless
 git clone https://github.com/k45sle/android-tv-speed-compiler.git
 cd android-tv-speed-compiler
 docker compose up -d --build
-docker compose exec android-tv-speed-compiler cat /data/instance/bootstrap.token
 ```
 
-The repository is private; `git clone` requires GitHub authentication with access granted by `k45sle`. Open <http://127.0.0.1:8000>, enter the one-time token, and set a unique password of at least 12 characters. The token is readable only by the container user and is removed after successful setup. Keep the Docker named volume `tvcompiler-data`; it contains account/session data, SQLite state, and this instance's ADB keys. The service starts while every TV is offline. Monitoring starts paused.
+The repository is private; `git clone` requires GitHub authentication with access granted by `k45sle`. Open <http://127.0.0.1:8000>. On the bundled Compose first run, choose a unique password of at least 12 characters and select **Create account**. No terminal or token retrieval is needed. This password-only setup is enabled by `TVCOMPILER_LOCAL_SETUP=1` in the bundled files, which bind the service to host loopback.
 
-The published UI port binds to loopback only. To use another local port, change the host side of the Compose mapping, for example `127.0.0.1:8088:8000`; keep the container port at 8000. Do not publish this service to the public internet.
+Source and custom installations default to token-required setup. The token is generated in the instance directory or supplied through `TVCOMPILER_BOOTSTRAP_TOKEN`; use the private local retrieval instructions shown by the setup page. The bundled local option is an operator declaration, not proof that every route is private: do not expose, proxy, or change the bind for a service with local setup enabled. Set `TVCOMPILER_LOCAL_SETUP=0` before any such change. Public origin, secure cookies, a supplied token, proxy headers, and non-loopback Host requests require the token. The token is never returned to a browser or placed in a URL or log, and the generated token file is removed after successful setup. Keep the Docker named volume `tvcompiler-data`; it contains account/session data, SQLite state, and this instance's ADB keys. The service starts while every TV is offline. Monitoring starts paused.
+
+The published UI port binds to loopback only. To use another local port, change the host side of the Compose mapping, for example `127.0.0.1:8088:8000`; keep the container port at 8000. Keep `TVCOMPILER_LOCAL_SETUP=1` only with bundled loopback-only access. Before exposing or proxying the service, set it to `0` and retain token setup. Do not publish this service to the public internet.
 
 ## Set up a TV
 
@@ -55,7 +56,7 @@ Stop the service before taking a consistent volume snapshot. Back up the entire 
 
 Upgrade by fetching reviewed source changes and rebuilding with `docker compose up -d --build`. Keep a backup first. The application applies additive SQLite migrations at startup. If an upgrade cannot read or migrate state, it should fail visibly; restore the previous image and volume snapshot rather than deleting files to make startup succeed. Rebuilding the image preserves the named volume.
 
-To intentionally reset a forgotten account password while preserving TV/app/job state, stop the service and back up the volume. Remove only `/data/instance/auth.sqlite3` and its `-wal`/`-shm` sidecars while stopped; leave `state.sqlite3`, `home/.android`, and keys in place. Start the service and complete first-run setup with the newly generated `bootstrap.token`. This revokes previous sessions. The bootstrap token must be read locally from the mounted volume/container and is never printed to logs.
+To intentionally reset a forgotten account password while preserving TV/app/job state, stop the service and back up the volume. Remove only `/data/instance/auth.sqlite3` and its `-wal`/`-shm` sidecars while stopped; leave `state.sqlite3`, `home/.android`, and keys in place. Start the service and complete first-run setup. Bundled local Compose uses password-only setup; custom/remote setup requires its newly generated or provisioned `bootstrap.token`. This revokes previous sessions. The bootstrap token is never returned to a browser or printed to logs.
 
 ## Security and remote access
 
