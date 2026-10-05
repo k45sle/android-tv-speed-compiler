@@ -49,13 +49,18 @@ class BrowserAdb(FakeAdb):
 
 mode = os.environ.get("SMOKE_MODE", "token")
 browser_adb = BrowserAdb()
+environ = {"LOGIN_ENABLE": "false"} if mode == "noauth" else {"LOGIN_ENABLE": "true"}
+if mode == "local":
+    environ["TVCOMPILER_LOCAL_SETUP"] = "1"
+elif mode != "noauth":
+    environ["TVCOMPILER_BOOTSTRAP_TOKEN"] = "fake-browser-smoke-bootstrap-token-2026-only"
+if mode == "missing-adb":
+    environ["TVCOMPILER_ADB_PATH"] = "tvcompiler-browser-smoke-missing-adb"
 app = create_app(
     Path(sys.argv[1]) / "instance",
     adb=browser_adb,
     start_scheduler=True,
-    environ={"TVCOMPILER_LOCAL_SETUP": "1"} if mode == "local" else {
-        "TVCOMPILER_BOOTSTRAP_TOKEN": "fake-browser-smoke-bootstrap-token-2026-only"
-    },
+    environ=environ,
 )
 
 fail_second_app_once = True

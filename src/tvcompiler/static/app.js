@@ -1,13 +1,20 @@
 (() => {
   const $ = (selector, root = document) => root.querySelector(selector);
   const csrf = () => $('meta[name="csrf-token"]').content;
-  const state = { csrf: csrf(), configured: false, authenticated: false, tokenRequired: document.body.dataset.tokenRequired === 'true', devices: [], monitoringEnabled: false, session: 0 };
-  const wizard = { open: false, run: 0, step: 0, busy: false, device: null, inventory: [], saved: new Set(), pairingMode: 'new', pairingDone: false, enableMonitoring: false, queueInitialCompiles: false };
+  const state = { csrf: csrf(), configured: false, authenticated: false, loginEnabled: document.body.dataset.loginEnabled === 'true', tokenRequired: document.body.dataset.tokenRequired === 'true', devices: [], monitoringEnabled: false, session: 0 };
+  const wizard = { open: false, run: 0, step: 0, busy: false, device: null, inventory: [], saved: new Set(), connectionMode: 'wireless', pairingMode: 'new', pairingDone: false, enableMonitoring: false, queueInitialCompiles: false };
   const authPanel = $('#auth-panel');
   const dashboard = $('#dashboard');
   const notice = $('#notice');
   const setNotice = (message, error = false) => { notice.textContent = message || ''; notice.style.color = error ? 'var(--red)' : 'var(--green)'; };
   const api = async (url, options = {}) => {
+    if (options.method && options.method !== 'GET' && !state.loginEnabled) {
+      const sessionResponse=await fetch('/api/session',{credentials:'same-origin'});
+      const session=sessionResponse.ok?await sessionResponse.json().catch(()=>({})):{};
+      if(!sessionResponse.ok || !session.csrf) throw new Error('Could not refresh request verification. Reload this page and try again.');
+      state.csrf=session.csrf;
+      $('meta[name="csrf-token"]').content=session.csrf;
+    }
     const headers = new Headers(options.headers || {});
     if (options.method && options.method !== 'GET') headers.set('X-CSRF-Token', state.csrf);
     if (options.body && typeof options.body !== 'string') { headers.set('Content-Type', 'application/json'); options.body = JSON.stringify(options.body); }
@@ -20,6 +27,7 @@
   const button = (text, fn, kind = 'secondary') => { const b = document.createElement('button'); b.type = 'button'; b.className = kind; b.textContent = text; b.addEventListener('click', fn); return b; };
   const clearPairingCode = () => { $('#wizard-code').value = ''; const manual = $('#pair-form [name="pairing_code"]'); if (manual) manual.value = ''; };
   const showAuth = (configured, tokenRequired = state.tokenRequired) => {
+    if (!state.loginEnabled) return;
     state.configured = configured; state.authenticated = false; state.tokenRequired = tokenRequired; state.session += 1;
     closeWizard(); clearPairingCode();
     authPanel.classList.remove('hidden'); dashboard.classList.add('hidden');
@@ -36,9 +44,10 @@
   };
   const loadSession = async () => {
     const data = await api('/api/session');
+    state.loginEnabled = data.login_enabled !== false;
     if (data.authenticated && data.csrf) {
       state.session += 1; const session = state.session; state.authenticated = true; state.csrf = data.csrf;
-      $('#logout').classList.remove('hidden'); dashboard.classList.remove('hidden'); authPanel.classList.add('hidden');
+      $('#logout').classList.toggle('hidden', !state.loginEnabled); dashboard.classList.remove('hidden'); authPanel.classList.add('hidden');
       await refreshAll(session);
     } else showAuth(data.configured, data.token_required);
   };
@@ -71,7 +80,38 @@
   });
   $('#logout').addEventListener('click', async () => { clearPairingCode(); closeWizard(); try { await api('/api/logout', { method: 'POST' }); location.reload(); } catch (error) { setNotice(error.message, true); } });
   const makeField = (labelText, value, type = 'text') => { const label = document.createElement('label'); label.append(document.createTextNode(labelText)); const input = document.createElement('input'); input.value = value || ''; input.type = type; input.maxLength = 300; label.append(input); return {label,input}; };
+  const connectionMethodLabel = mode => mode === 'tcpip' ? 'Unencrypted fixed TCP/IP' : 'Encrypted Wireless debugging';
+  const makeConnectionModeField = value => {
+    const label=document.createElement('label');label.append(document.createTextNode('Connection method'));
+    const select=document.createElement('select');select.setAttribute('aria-label','Connection method');
+    for(const mode of ['wireless','tcpip']){const option=document.createElement('option');option.value=mode;option.textContent=connectionMethodLabel(mode);select.append(option);}
+    select.value=value==='tcpip'?'tcpip':'wireless';label.append(select);return {label,select};
+  };
   const watchedNames = info => info.apps.filter(app => app.enabled).map(app => app.label || app.package_id);
+  const connectionLabels = {connected:'Connected',offline:'Offline',unauthorized:'Authorization needed',identity_mismatch:'Identity mismatch',adb_unavailable:'ADB unavailable',error:'Connection error',unknown:'Status unknown'};
+  const renderConnectionStatus = info => {
+    const lines=[];
+    const status=info.connection_status || 'unknown';
+    const stale=Boolean(info.connection_stale);
+    const previous=info.last_known_connection_status;
+    lines.push(stale && previous && previous!=='unknown'
+      ? `Status not fresh · last known: ${connectionLabels[previous] || previous}`
+      : connectionLabels[status] || status);
+    if(info.connection_reason) lines.push(info.connection_reason);
+    if(info.connection_checked_at){
+      const checked=new Date(info.connection_checked_at);
+      if(!Number.isNaN(checked.valueOf())) lines.push(`${stale?'Last checked':'Checked'} ${checked.toLocaleString()}`);
+    } else lines.push('No connection check recorded yet.');
+    const seconds=info.poll_interval_seconds==null?NaN:Number(info.poll_interval_seconds);
+    if(Number.isFinite(seconds)) lines.push(`Polling interval: ${seconds} seconds.`);
+    if(info.polling_status==='active'){
+      const next=info.next_check_at?new Date(info.next_check_at):null;
+      lines.push(`Monitoring checks are active.${next&&!Number.isNaN(next.valueOf())?` Next check: ${next.toLocaleString()}.`:''}`);
+    } else if(info.polling_status==='paused') lines.push('Automatic polling is paused.');
+    else if(info.polling_status==='stopped') lines.push('Automatic polling is stopped.');
+    else if(!Number.isFinite(seconds)) lines.push('Polling state is unknown.');
+    return lines.join(' ');
+  };
   const loadInventory = async device => {
     const list = $('.app-list', device); const deviceId = device.dataset.id;
     list.textContent = 'Loading installed third-party apps…';
@@ -126,18 +166,23 @@
       const card = document.createElement('article'); card.className = 'device'; card.dataset.id = info.id;
       const head = document.createElement('div'); head.className = 'device-head';
       const identity = document.createElement('div'); const title = document.createElement('h3'); title.textContent = info.name; identity.append(title);
-      const badge = document.createElement('span'); badge.className = `badge${info.enabled ? '' : ' off'}`; badge.textContent = info.enabled ? 'Monitoring available' : 'TV paused'; head.append(identity,badge); card.append(head);
+      const status=info.connection_status || 'unknown';
+      const badge = document.createElement('span'); badge.className = `badge connection-badge ${status==='connected'?'connected':status==='unknown'?'off':'warning'}`; badge.textContent = connectionLabels[status] || status; head.append(identity,badge); card.append(head);
+      const method=document.createElement('p');method.className='muted connection-method';method.textContent=`Connection method: ${connectionMethodLabel(info.connection_mode)}. This is the selected setup method; encryption is not verified.`;card.append(method);
+      const connection=document.createElement('p');connection.className='muted connection-status';connection.dataset.status=status;connection.textContent=`${info.enabled?'':'Monitoring is paused for this TV. '}${renderConnectionStatus(info)}`;card.append(connection);
       const names = watchedNames(info); const summary = document.createElement('p'); summary.className = 'muted watched-summary'; summary.textContent = names.length ? `Watching: ${names.join(', ')}` : 'No apps selected'; card.append(summary);
       const manage = document.createElement('details'); manage.className = 'device-manage'; const summaryManage = document.createElement('summary'); summaryManage.textContent = 'Manage TV details'; manage.append(summaryManage);
       const serial = document.createElement('p'); serial.className = 'muted'; serial.textContent = `Pinned TV serial: ${info.serial}`; manage.append(serial);
       const endpointField = makeField('Connection IP:port', info.endpoint); endpointField.input.setAttribute('aria-label', `Connection IP:port for ${info.name}`);
       const nameField = makeField('TV name', info.name); nameField.input.maxLength = 80;
+      const connectionMethod = makeConnectionModeField(info.connection_mode);
       const tools = document.createElement('div'); tools.className='device-tools';
       tools.append(button('Save name and reconnect', async () => { try { await api(`/api/devices/${encodeURIComponent(info.id)}/reconnect`,{method:'POST',body:{endpoint:endpointField.input.value}}); await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'PATCH',body:{name:nameField.input.value}}); setNotice('TV endpoint verified against its pinned identity and saved.'); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
+      tools.append(button('Save connection method', async () => { try { await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'PATCH',body:{connection_mode:connectionMethod.select.value}}); setNotice('Connection method choice saved. The TV endpoint and pinned identity were not changed.'); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
       tools.append(button(info.enabled ? 'Pause TV' : 'Enable TV', async () => { try { await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'PATCH',body:{enabled:!info.enabled}}); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
       tools.append(button('Forget TV', async () => { if (!window.confirm(`Forget ${info.name} and its saved app/job history?`)) return; try { await api(`/api/devices/${encodeURIComponent(info.id)}`,{method:'DELETE'}); await refreshAll(); } catch(error){setNotice(error.message,true);} }));
-      const fields=document.createElement('div');fields.className='form-grid compact';fields.append(nameField.label,endpointField.label); manage.append(fields,tools);
-      const rebootHelp=document.createElement('p');rebootHelp.className='muted';rebootHelp.textContent='After a reboot, saved pairing keys and watched apps remain. Keep this service and its Docker host running. If Wireless debugging is off, the endpoint changed, or discovery is blocked, enable it and save the current connection IP:port above. Revoked keys or a changed verified identity require confirming the TV and pairing again.';manage.append(rebootHelp);
+      const fields=document.createElement('div');fields.className='form-grid compact';fields.append(nameField.label,endpointField.label,connectionMethod.label); manage.append(fields,tools);
+      const rebootHelp=document.createElement('p');rebootHelp.className='muted';rebootHelp.textContent='Changing the connection method stores your choice only; it does not switch the TV settings or verify encryption. The current endpoint and pinned TV identity stay saved. For fixed TCP/IP, configure compatible TV software or firmware and approve this service’s ADB authorization prompt. The fixed TCP/IP connection is unencrypted; use a trusted private network.';manage.append(rebootHelp);
       const appsDetails=document.createElement('details'); appsDetails.className='app-management'; const appsSummary=document.createElement('summary'); appsSummary.textContent='Manage watched apps'; appsDetails.append(appsSummary);
       const apps=document.createElement('div');apps.className='app-list';apps.textContent='App inventory has not been loaded.';appsDetails.append(apps);
       appsDetails.append(button('Load fresh app inventory',()=>loadInventory(card)));
@@ -157,7 +202,24 @@
       values.forEach((value,index)=>{const cell=document.createElement('td');if(index===2){cell.textContent=value||'—';cell.className=`status ${job.state}`;}else cell.textContent=value||'—';if(index===3){const eventList=document.createElement('div');eventList.className='muted';cell.append(button('View events',async()=>{if(eventList.textContent){eventList.textContent='';return;}try{const events=await api(`/api/jobs/${encodeURIComponent(job.id)}/events`);eventList.textContent=events.map(item=>`${new Date(item.created_at).toLocaleString()} · ${item.event}${item.detail?`: ${item.detail}`:''}`).join('\n')||'No event details.';}catch(error){eventList.textContent=error.message;}}));cell.append(eventList);}row.append(cell);});body.append(row);}
     $('#poll-status').textContent = status.last_poll_at ? `Last check: ${new Date(status.last_poll_at).toLocaleString()}${status.last_poll_error ? ` · ${status.last_poll_error}` : ''}` : 'No scheduler check has completed yet.';
     const cfg=status.maintenance_window||{}; const form=$('#settings-form');
-    if (!form.dataset.dirty && !form.contains(document.activeElement)) {form.elements.poll_interval_seconds.value=status.poll_interval_seconds;form.elements.max_attempts.value=status.max_attempts;form.elements.window_start.value=cfg.start||'';form.elements.window_end.value=cfg.end||'';form.elements.timezone.value=cfg.timezone||'UTC';}
+    const adb=status.dependencies?.adb;
+    const adbSource=status.source || adb?.source;
+    const runtimeStatus=$('#runtime-status');
+    runtimeStatus.classList.toggle('runtime-status-warning',Boolean(adb&&!adb.available));
+    runtimeStatus.textContent=adb&&!adb.available
+      ? `ADB is unavailable in this service runtime. Check its configured executable or container image.${adbSource?` Source: ${adbSource}.`:''}`
+      : adb?`ADB is available${adbSource?` · source: ${adbSource}`:''}.`:(adbSource?`ADB source: ${adbSource}.`:'');
+    if (!form.dataset.dirty && !form.contains(document.activeElement)) {
+      form.elements.poll_interval_seconds.value=status.poll_interval_seconds;
+      form.elements.max_attempts.value=status.max_attempts;
+      form.elements.window_start.value=cfg.start||'';
+      form.elements.window_end.value=cfg.end||'';
+      const timezone=cfg.timezone||'UTC';
+      if(!Array.from(form.elements.timezone.options).some(option=>option.value===timezone)){
+        const option=document.createElement('option');option.value=timezone;option.textContent=timezone;form.elements.timezone.append(option);
+      }
+      form.elements.timezone.value=timezone;
+    }
     if (wizard.open && wizard.step === 4) renderReview();
   };
   const refreshAll = async (session = state.session) => { try { const devices=await api('/api/devices'); if (session !== state.session || !state.authenticated) return; renderDevices(devices); await loadStatus(); } catch(error){if (session === state.session) setNotice(error.message,true);} };
@@ -187,7 +249,22 @@
     if (message) setNotice(message);
     if(state.authenticated) $('#start-setup').focus({preventScroll:true});
   };
-  const stepOrder = () => wizard.pairingMode === 'new' && !wizard.pairingDone ? [0,1,2,3,4] : [0,2,3,4];
+  const stepOrder = () => wizard.connectionMode === 'wireless' && wizard.pairingMode === 'new' && !wizard.pairingDone ? [0,1,2,3,4] : [0,2,3,4];
+  const updateWizardConnectionMode = () => {
+    const fixed=wizard.connectionMode==='tcpip';
+    $('#wireless-pairing-options').classList.toggle('hidden',fixed);
+    $('#wizard-discover').classList.toggle('hidden',fixed);
+    $('#wizard-services').classList.toggle('hidden',fixed);
+    $('#wizard-discover-pair').classList.toggle('hidden',fixed);
+    $('#wizard-pair-services').classList.toggle('hidden',fixed);
+    $('#wizard-connection-copy').textContent=fixed
+      ? 'Use the fixed IP:port configured in the TV’s companion app or firmware. Approve this service’s RSA authorization prompt on the TV. Traditional TCP/IP is unencrypted; this setting records your choice and does not change the TV or verify encryption.'
+      : wizard.pairingDone
+        ? 'Pairing succeeded and this service saved its keys. Enter the TV’s current connection IP:port from the main Wireless debugging screen.'
+        : wizard.pairingMode==='paired'
+          ? 'Enter the current connection IP:port from the TV’s main Wireless debugging screen. “Already paired” means this service has the TV’s pairing keys saved.'
+          : 'After pairing, enter the current connection IP:port from the TV’s main Wireless debugging screen. The service can find Wireless debugging endpoints when discovery works.';
+  };
   const visibleIndex = () => stepOrder().indexOf(wizard.step);
   const showWizardStep = (step, focus = true) => {
     wizard.step=step;
@@ -203,27 +280,28 @@
   };
   const openWizard = async () => {
     if(!state.authenticated || wizard.open || wizard.busy) return;
-    wizard.open=true; wizard.run += 1; wizardBox.dataset.run=String(wizard.run); wizard.step=0; wizard.device=null; wizard.inventory=[]; wizard.saved=new Set(); wizard.pairingMode='new'; wizard.pairingDone=false; wizard.enableMonitoring=!state.monitoringEnabled; wizard.queueInitialCompiles=false;
+    wizard.open=true; wizard.run += 1; wizardBox.dataset.run=String(wizard.run); wizard.step=0; wizard.device=null; wizard.inventory=[]; wizard.saved=new Set(); wizard.connectionMode='wireless'; wizard.pairingMode='new'; wizard.pairingDone=false; wizard.enableMonitoring=!state.monitoringEnabled; wizard.queueInitialCompiles=true;
     $('#wizard-name').value=''; $('#wizard-endpoint').value=''; $('#wizard-pair-endpoint').value=''; clearPairingCode();
-    $('#wizard-connection-copy').textContent='On the TV’s main Wireless debugging screen, enter its current IP address and connection port. “Already paired” means this service has the TV’s pairing keys saved.';
     $('#wizard-services').replaceChildren(); $('#wizard-pair-services').replaceChildren(); $('#wizard-apps').replaceChildren(); $('#wizard-error').textContent=''; $('#wizard-app-error').textContent='';
+    $('input[name="connection-mode"][value="wireless"]').checked=true;
     $('input[name="pairing-mode"][value="new"]').checked=true;
+    updateWizardConnectionMode();
     wizardBox.classList.remove('hidden'); setDashboardForWizard(true); showWizardStep(0); setWizardBusy(false);
     await refreshAll();
   };
   const createWizardDevice = async run => {
     if(wizard.device) { await loadWizardInventory(run); return; }
-    const pairing=wizard.pairingMode==='new' && !wizard.pairingDone;
+    const pairing=wizard.connectionMode==='wireless' && wizard.pairingMode==='new' && !wizard.pairingDone;
     const payload=pairing
       ? {name:$('#wizard-name').value.trim(),pairing_endpoint:$('#wizard-pair-endpoint').value.trim(),pairing_code:$('#wizard-code').value}
-      : {name:$('#wizard-name').value.trim(),endpoint:$('#wizard-endpoint').value.trim()};
+      : {name:$('#wizard-name').value.trim(),endpoint:$('#wizard-endpoint').value.trim(),connection_mode:wizard.connectionMode};
     if(pairing) clearPairingCode(); setWizardBusy(true); $('#wizard-error').textContent='';
     let device;
     try {
       device=await api(pairing?'/api/pair':'/api/devices',{method:'POST',body:payload});
-    } catch(error) { if(currentRun(run)) $('#wizard-error').textContent=`${errorText(error)} Check the TV’s current IP, port, and Wireless debugging state, then try again.`; if(currentRun(run)) setWizardBusy(false); return; }
+    } catch(error) { if(currentRun(run)) $('#wizard-error').textContent=wizard.connectionMode==='tcpip'?`${errorText(error)} Check the TV’s configured fixed IP:port and approve this service’s RSA authorization prompt on the TV.`:`${errorText(error)} Check the TV’s current IP, port, and Wireless debugging state, then try again.`; if(currentRun(run)) setWizardBusy(false); return; }
     if(!currentRun(run)) return;
-    if(pairing && device.connection_endpoint_required){wizard.pairingDone=true;$('#wizard-connection-copy').textContent='Pairing succeeded and the service saved its pairing keys. Enter the TV’s current connection IP:port to finish adding it; do not pair again.';$('#wizard-error').textContent='Pairing succeeded. Enter the current connection IP:port below to continue.';$('#wizard-code').value='';showWizardStep(2);setWizardBusy(false);return;}
+    if(pairing && device.connection_endpoint_required){wizard.pairingDone=true;updateWizardConnectionMode();$('#wizard-error').textContent='Pairing succeeded. Enter the current connection IP:port below to continue.';$('#wizard-code').value='';showWizardStep(2);setWizardBusy(false);return;}
     if(pairing)wizard.pairingDone=true;
     wizard.device=device; wizard.saved=new Set(); showWizardStep(3,false);
     try { const devices=await api('/api/devices'); if(currentRun(run)) renderDevices(devices); }
@@ -311,14 +389,14 @@
       else pieces.push('Automatic monitoring remains paused');
       if(wizard.queueInitialCompiles)pieces.push(`${queued} new compile job${queued===1?'':'s'} queued${existing?`, ${existing} already queued`:''}${completed?`, ${completed} already succeeded`:''}${failed?`, ${failed} already failed and not retried`:''}`);
       else pieces.push('No initial compiles queued');
-      await refreshAll();if(!currentRun(run))return;closeWizard(`${pieces.join('. ')}. Check Recent work for wait reasons and results.`);
+      await refreshAll();if(!currentRun(run))return;closeWizard(`${pieces.join('. ')}. Check the Run log for wait reasons and results.`);
     }catch(error){if(currentRun(run))$('#wizard-error').textContent=`${errorText(error)} Your Finish choices are still selected. You can retry safely; duplicate or completed fingerprints will not be queued again.`;}
     finally{if(currentRun(run))setWizardBusy(false);}
   };
   const advanceWizard = async () => {
     if(wizard.busy) return;
     $('#wizard-error').textContent='';
-    if(wizard.step===0){const name=$('#wizard-name');if(!name.value.trim()){name.setCustomValidity('Enter a name for this TV.');name.reportValidity();name.setCustomValidity('');return;}wizard.pairingMode=$('input[name="pairing-mode"]:checked').value;showWizardStep(wizard.pairingMode==='new' && !wizard.pairingDone?1:2);return;}
+    if(wizard.step===0){const name=$('#wizard-name');if(!name.value.trim()){name.setCustomValidity('Enter a name for this TV.');name.reportValidity();name.setCustomValidity('');return;}wizard.connectionMode=$('input[name="connection-mode"]:checked').value;wizard.pairingMode=$('input[name="pairing-mode"]:checked')?.value||'new';updateWizardConnectionMode();showWizardStep(wizard.connectionMode==='wireless' && wizard.pairingMode==='new' && !wizard.pairingDone?1:2);return;}
     if(wizard.step===1){const pairing=$('#wizard-pair-endpoint'), code=$('#wizard-code');if(!pairing.value.trim()){pairing.setCustomValidity('Enter the pairing IP and port from the pairing popup.');pairing.reportValidity();pairing.setCustomValidity('');return;}if(!/^[0-9]{4,12}$/.test(code.value)){code.setCustomValidity('Enter the 4 to 12 digit pairing code.');code.reportValidity();code.setCustomValidity('');return;}await createWizardDevice(wizard.run);return;}
     if(wizard.step===2){const endpoint=$('#wizard-endpoint');if(!endpoint.value.trim()){endpoint.setCustomValidity('Enter the connection IP and port shown on the TV.');endpoint.reportValidity();endpoint.setCustomValidity('');return;}await createWizardDevice(wizard.run);return;}
     if(wizard.step===4) await finishWizard();
@@ -330,7 +408,8 @@
   $('#wizard-app-save').addEventListener('click',saveWizardApps);
   $('#wizard-app-skip').addEventListener('click',()=>{if(wizard.busy)return;showWizardStep(4);});
   $('#wizard-app-retry').addEventListener('click',()=>{if(!wizard.busy)loadWizardInventory(wizard.run);});
-  document.querySelectorAll('input[name="pairing-mode"]').forEach(input=>input.addEventListener('change',()=>{wizard.pairingMode=input.value;}));
+  document.querySelectorAll('input[name="connection-mode"]').forEach(input=>input.addEventListener('change',()=>{wizard.connectionMode=input.value;updateWizardConnectionMode();if(wizard.step===0)showWizardStep(0,false);}));
+  document.querySelectorAll('input[name="pairing-mode"]').forEach(input=>input.addEventListener('change',()=>{wizard.pairingMode=input.value;updateWizardConnectionMode();}));
   $('#wizard-name').addEventListener('input',()=>$('#wizard-name').setCustomValidity(''));
   $('#wizard-endpoint').addEventListener('input',()=>$('#wizard-endpoint').setCustomValidity(''));
   $('#wizard-pair-endpoint').addEventListener('input',()=>$('#wizard-pair-endpoint').setCustomValidity(''));

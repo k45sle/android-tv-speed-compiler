@@ -9,6 +9,8 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(packagePath);
 const baseURL = process.env.SMOKE_URL || 'http://127.0.0.1:8765';
 const localURL = process.env.SMOKE_LOCAL_URL;
+const missingAdbURL = process.env.SMOKE_MISSING_ADB_URL;
+const noauthURL = process.env.SMOKE_NOAUTH_URL;
 const password = 'smoke6';
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, acceptDownloads: true, colorScheme: 'dark' });
@@ -17,12 +19,14 @@ const watchRequests = [];
 let monitoringRequests = 0;
 let pairRequests = 0;
 const finishRequests = [];
+const deviceCreateRequests = [];
 page.setDefaultTimeout(10000);
 page.on('pageerror', error => pageErrors.push(error.message));
 page.on('request', request => {
   if (request.method() === 'POST' && request.url().endsWith('/api/pair')) pairRequests += 1;
   if (request.method() === 'PUT' && request.url().endsWith('/api/monitoring')) monitoringRequests += 1;
   if (request.method() === 'POST' && /\/api\/devices\/[^/]+\/finish$/.test(new URL(request.url()).pathname)) finishRequests.push(request.postDataJSON());
+  if (request.method() === 'POST' && request.url().endsWith('/api/devices')) deviceCreateRequests.push(request.postDataJSON());
   if (request.method() === 'POST' && /\/api\/devices\/[^/]+\/watch$/.test(new URL(request.url()).pathname)) watchRequests.push(request.postDataJSON());
 });
 const work = path.resolve('../../work');
@@ -34,6 +38,8 @@ const status = async () => page.evaluate(async () => (await (await fetch('/api/s
 try {
   await mkdir(work, { recursive: true });
   assert.ok(localURL, 'smoke runner provides a separate local-setup fake server');
+  assert.ok(missingAdbURL, 'smoke runner provides a separate missing-ADB fake server');
+  assert.ok(noauthURL, 'smoke runner provides a login-disabled fake server');
   const localPage = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'light' });
   let localSetupBody;
   localPage.on('request', request => {
@@ -53,6 +59,51 @@ try {
   assert.deepEqual(Object.keys(localSetupBody).sort(), ['csrf', 'password'], 'password-only setup sends no token field');
   assert.equal(await localPage.evaluate(async () => (await (await fetch('/api/session')).json()).configured), true);
   await localPage.close();
+
+  const missingAdbPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await missingAdbPage.goto(missingAdbURL);
+  await missingAdbPage.locator('#token').fill('fake-browser-smoke-bootstrap-token-2026-only');
+  await missingAdbPage.locator('#password').fill(password);
+  await missingAdbPage.locator('#auth-submit').click();
+  await missingAdbPage.locator('#runtime-status').filter({hasText:'ADB is unavailable in this service runtime'}).waitFor();
+  assert.match(await missingAdbPage.locator('#runtime-status').textContent(), /Source: (host|docker)\./, 'missing-ADB readiness warning identifies the configured runtime');
+  await missingAdbPage.close();
+
+  const noauthPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  let noauthCreateRequest;
+  noauthPage.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/devices')) noauthCreateRequest={body:request.postDataJSON(),headers:request.headers()};
+  });
+  await noauthPage.goto(noauthURL);
+  assert.equal(await noauthPage.locator('#auth-panel').isVisible(), false, 'login-disabled mode opens the dashboard without account setup');
+  assert.equal(await noauthPage.locator('#dashboard').isVisible(), true);
+  assert.equal(await noauthPage.locator('#logout').isVisible(), false, 'login-disabled mode hides sign out');
+  const noauthSession=await noauthPage.evaluate(async () => (await (await fetch('/api/session')).json()));
+  assert.equal(noauthSession.login_enabled, false);
+  await noauthPage.evaluate(() => { document.cookie='tvcompiler_csrf=; Max-Age=0; path=/'; });
+  assert.equal(await noauthPage.evaluate(() => document.cookie.includes('tvcompiler_csrf=')), false, 'noauth CSRF cookie can expire while the page remains open');
+  await noauthPage.locator('#start-setup').click();
+  await noauthPage.locator('#wizard-name').fill('No auth fixed TV');
+  await noauthPage.locator('input[name="connection-mode"][value="tcpip"]').check();
+  assert.equal(await noauthPage.locator('#wireless-pairing-options').isVisible(), false, 'fixed TCP/IP skips wireless pairing');
+  await noauthPage.locator('#wizard-next').click();
+  await noauthPage.locator('.wizard-step[data-step="2"]').waitFor({state:'visible'});
+  assert.match(await noauthPage.locator('#wizard-connection-copy').textContent(), /unencrypted/i);
+  assert.match(await noauthPage.locator('#wizard-connection-copy').textContent(), /RSA authorization prompt/i);
+  assert.equal(await noauthPage.locator('#wizard-discover').isVisible(), false, 'fixed TCP/IP uses the configured endpoint without TLS discovery');
+  await noauthPage.locator('#wizard-endpoint').fill('10.0.0.43:5555');
+  await noauthPage.locator('#wizard-next').click();
+  await noauthPage.locator('.wizard-step[data-step="3"]').waitFor({state:'visible'});
+  assert.deepEqual(noauthCreateRequest?.body, {name:'No auth fixed TV',endpoint:'10.0.0.43:5555',connection_mode:'tcpip'});
+  const noauthFreshSession=await noauthPage.evaluate(async () => (await (await fetch('/api/session')).json()));
+  assert.notEqual(noauthFreshSession.csrf,noauthSession.csrf,'expired noauth CSRF cookie is replaced');
+  assert.equal(noauthCreateRequest.headers['x-csrf-token'], noauthFreshSession.csrf, 'dashboard refreshes the no-login CSRF token before mutation');
+  assert.equal(new URL(noauthCreateRequest.headers.referer).origin, new URL(noauthURL).origin, 'dashboard mutations retain same-origin protection');
+  await noauthPage.locator('#wizard-app-skip').click();
+  await noauthPage.locator('#wizard-next').click();
+  await noauthPage.locator('.device').filter({hasText:'No auth fixed TV'}).waitFor();
+  assert.match(await noauthPage.locator('.connection-method').textContent(), /Unencrypted fixed TCP\/IP/);
+  await noauthPage.close();
 
   await page.goto(baseURL);
   const appearance = page.locator('#appearance');
@@ -131,7 +182,7 @@ try {
   const pairingRun = await page.locator('#wizard').getAttribute('data-run');
   assert.equal(await page.locator('#setup-entry').isVisible(), false);
   assert.equal(await page.locator('#devices-section').isVisible(), false);
-  assert.equal(await page.locator('#recent-work').isVisible(), false);
+  assert.equal(await page.locator('#run-log').isVisible(), false);
   assert.equal(await page.locator('#advanced-settings').isVisible(), false);
   assert.equal(await page.locator('#dashboard-footer').isVisible(), false);
   assert.equal(await page.locator('#appearance').isVisible(), true);
@@ -187,14 +238,12 @@ try {
   await capture('wizard-review-step.png');
   assert.match(await page.locator('#wizard-review').textContent(), /Nuvio.*Nuvio Test/);
   assert.equal(await page.locator('#wizard-enable-monitoring').isChecked(), true, 'paused monitoring defaults to an explicit checked global enable');
-  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), false, 'initial compile consent defaults off');
+  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), true, 'first compile queue choice defaults on');
   await page.locator('#wizard-enable-monitoring').uncheck();
-  await page.locator('#wizard-queue-compiles').check();
+  await page.locator('#wizard-queue-compiles').uncheck();
   await page.waitForTimeout(10200);
   assert.equal(await page.locator('#wizard-enable-monitoring').isChecked(), false, 'polling retains the monitoring choice');
-  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), true, 'polling retains compile consent choice');
-  await page.locator('#wizard-queue-compiles').uncheck();
-  await page.locator('#wizard-enable-monitoring').check();
+  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), false, 'polling retains an explicit compile opt-out');
   assert.equal(await page.locator('#wizard-back').isVisible(), true);
   await page.locator('#wizard-back').click();
   await wizardStep(3).waitFor({ state: 'visible' });
@@ -203,15 +252,34 @@ try {
   assert.equal(await wizardStep(2).isVisible(), false);
   await page.locator('#wizard-app-skip').click();
   await wizardStep(4).waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#wizard-enable-monitoring').isChecked(), false, 'Back preserves an explicit monitoring opt-out');
+  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), false, 'Back preserves an explicit compile opt-out');
   const finishButton=page.locator('#wizard-next');
+  let failFirstFinish=true;
+  await page.route(/\/api\/devices\/[^/]+\/finish$/, async route => {
+    if(failFirstFinish){failFirstFinish=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Injected one-time Finish failure.'})});return;}
+    await route.continue();
+  });
   await finishButton.click();
-  await page.waitForFunction(() => document.querySelector('#wizard-next').disabled);
-  await finishButton.dispatchEvent('click');
+  await page.getByText(/Injected one-time Finish failure/).waitFor();
+  assert.equal(await page.locator('#wizard-enable-monitoring').isChecked(), false, 'failed Finish preserves monitoring opt-out for retry');
+  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), false, 'failed Finish preserves compile opt-out for retry');
+  await finishButton.click();
+  await page.unroute(/\/api\/devices\/[^/]+\/finish$/);
   await page.locator('.device').filter({ hasText: 'Smoke living room' }).waitFor();
-  assert.equal((await status()).monitoring_enabled, true, 'Finish applies the selected global monitoring action');
+  assert.equal((await status()).monitoring_enabled, false, 'Finish preserves the explicit monitoring opt-out');
   assert.deepEqual((await status()).jobs, []);
-  assert.deepEqual(finishRequests.at(-1), {package_ids:[],queue_initial_compiles:false,enable_monitoring:true});
-  assert.equal(finishRequests.length,1,'double click submits Finish once');
+  assert.deepEqual(finishRequests.at(-1), {package_ids:[],queue_initial_compiles:false,enable_monitoring:false});
+  assert.equal(finishRequests.length,2,'failed Finish is retried with its saved choices');
+  const firstTv=page.locator('.device').filter({hasText:'Smoke living room'});
+  const connectionCard=firstTv.locator('.connection-status');
+  const connectionBadge=firstTv.locator('.connection-badge');
+  await connectionCard.waitFor();
+  assert.match(await connectionBadge.textContent(), /Connected|Offline|Authorization needed|Identity mismatch|ADB unavailable|Connection error|Status unknown/);
+  assert.match(await connectionCard.textContent(), /Connected|Status not fresh|Status unknown/, 'TV card presents the backend connection state');
+  assert.match(await connectionCard.textContent(), /Checked|Last checked|No connection check recorded/, 'TV card presents status freshness');
+  assert.match(await connectionCard.textContent(), /Polling interval: \d+ seconds\./, 'TV card presents the polling interval even when monitoring is paused');
+  assert.match(await page.locator('#runtime-status').textContent(), /ADB is available|ADB is unavailable/, 'dashboard shows runtime ADB readiness');
 
   // Pairing can succeed while endpoint lookup is unavailable; fallback adds without pairing again.
   const pairCountBeforeFallback=pairRequests;
@@ -292,6 +360,37 @@ try {
   await manageDetails.locator('summary').click();
   await card.getByRole('textbox', { name: 'TV name' }).waitFor();
   await card.getByText(/Pinned TV serial:/).waitFor();
+  const savedEndpoint=await card.getByRole('textbox',{name:'Connection IP:port for Smoke bedroom'}).inputValue();
+  const savedSerial=(await card.getByText(/Pinned TV serial:/).textContent()).trim();
+  const methodSelect=card.getByRole('combobox',{name:'Connection method'});
+  assert.equal(await methodSelect.inputValue(),'wireless','new TVs default to Wireless debugging');
+  await methodSelect.selectOption('tcpip');
+  await card.getByRole('button',{name:'Save connection method'}).click();
+  await page.getByText('Connection method choice saved. The TV endpoint and pinned identity were not changed.').waitFor();
+  card=page.locator('.device').filter({hasText:'Smoke bedroom'});
+  await card.locator('details.device-manage > summary').click();
+  assert.equal(await card.getByRole('combobox',{name:'Connection method'}).inputValue(),'tcpip');
+  assert.equal(await card.getByRole('textbox',{name:'Connection IP:port for Smoke bedroom'}).inputValue(),savedEndpoint);
+  assert.equal((await card.getByText(/Pinned TV serial:/).textContent()).trim(),savedSerial);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#start-setup').offsetParent!==null || document.querySelector('#auth-title').textContent==='Sign in');
+  if(await page.locator('#auth-title').textContent()==='Sign in'){
+    await page.locator('#password').fill(password);
+    await page.locator('#auth-submit').click();
+  }
+  await page.locator('#start-setup').waitFor();
+  card=page.locator('.device').filter({hasText:'Smoke bedroom'});
+  await card.waitFor();
+  await card.locator('details.device-manage > summary').click();
+  assert.equal(await card.getByRole('combobox',{name:'Connection method'}).inputValue(),'tcpip','saved connection method survives a browser reload');
+  assert.equal(await card.getByRole('textbox',{name:'Connection IP:port for Smoke bedroom'}).inputValue(),savedEndpoint,'mode edit does not change the saved endpoint');
+  assert.equal((await card.getByText(/Pinned TV serial:/).textContent()).trim(),savedSerial,'mode edit does not change the pinned TV identity');
+  await card.getByRole('combobox',{name:'Connection method'}).selectOption('wireless');
+  await card.getByRole('button',{name:'Save connection method'}).click();
+  await page.getByText('Connection method choice saved. The TV endpoint and pinned identity were not changed.').waitFor();
+  card=page.locator('.device').filter({hasText:'Smoke bedroom'});
+  await card.locator('details.device-manage > summary').click();
+  assert.equal(await card.getByRole('combobox',{name:'Connection method'}).inputValue(),'wireless');
   const appsDetails = card.locator('details.app-management');
   assert.equal(await appsDetails.getAttribute('open'), null);
   await appsDetails.locator('summary').click();
@@ -324,14 +423,27 @@ try {
   await page.getByText('Manual compile queued. The scheduler will report its current wait reason.').waitFor();
 
   await page.locator('#advanced-settings > summary').click();
+  const manualSetup=page.locator('#advanced-settings details').filter({hasText:'Manual TV setup'});
+  await manualSetup.locator(':scope > summary').click();
+  await manualSetup.locator('details').filter({hasText:'Add an already configured TV manually'}).locator('summary').click();
+  const manualAdd=manualSetup.locator('#add-form');
+  await manualAdd.locator('[name="name"]').fill('Smoke manual fixed');
+  await manualAdd.locator('[name="connection_mode"]').selectOption('tcpip');
+  await manualAdd.locator('[name="endpoint"]').fill('10.0.0.99:5555');
+  await manualAdd.getByRole('button',{name:'Connect and add'}).click();
+  await page.getByText('Added Smoke manual fixed after checking its TV identity.').waitFor();
+  assert.deepEqual(deviceCreateRequests.at(-1),{name:'Smoke manual fixed',connection_mode:'tcpip',endpoint:'10.0.0.99:5555'},'manual add sends the chosen connection mode');
+  await page.locator('.device').filter({hasText:'Smoke manual fixed'}).getByText(/Connection method: Unencrypted fixed TCP\/IP/).waitFor();
   await page.locator('#advanced-settings details').filter({ hasText: 'Global scheduling' }).locator('summary').click();
   await page.locator('#settings-form [name="poll_interval_seconds"]').fill('120');
   await page.locator('#settings-form [name="max_attempts"]').fill('4');
   await page.locator('#settings-form [name="window_start"]').fill('23:00');
   await page.locator('#settings-form [name="window_end"]').fill('06:00');
-  await page.locator('#settings-form [name="timezone"]').fill('America/Chicago');
+  assert.equal(await page.locator('#settings-form [name="timezone"] option[value="America/Chicago"]').textContent(), 'Chicago (America/Chicago)');
+  await page.locator('#settings-form [name="timezone"]').selectOption('America/Chicago');
   await page.locator('#settings-form button[type="submit"]').click();
   await page.getByText('Global scheduling settings saved.').waitFor();
+  assert.equal(await page.locator('#settings-form [name="timezone"]').inputValue(), 'America/Chicago', 'status refresh keeps the saved time-zone choice');
   await page.locator('#advanced-settings details').filter({ hasText: 'Monitoring control' }).locator('summary').click();
   await page.locator('#monitor-toggle').click();
   await page.getByText('Monitoring is paused. Setup and app selection do not change this setting.').waitFor();
@@ -352,8 +464,7 @@ try {
   await wizardStep(4).waitFor({ state: 'visible' });
   assert.equal(await page.locator('#wizard-enable-monitoring').isChecked(), true);
   assert.equal(await page.locator('#wizard-enable-monitoring').isDisabled(), true, 'Finish cannot pause monitoring that is already enabled');
-  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), false);
-  await page.locator('#wizard-queue-compiles').check();
+  assert.equal(await page.locator('#wizard-queue-compiles').isChecked(), true, 'first compile queue choice defaults on for a later setup');
   assert.equal((await status()).monitoring_enabled, true);
   await page.locator('#wizard-next').click();
   assert.equal((await status()).monitoring_enabled, true, 'Finish preserves the active monitoring setting');
@@ -447,7 +558,7 @@ try {
   await blockedStoragePage.close();
 
   assert.deepEqual(pageErrors, [], 'browser must not report JavaScript errors');
-  console.log('browser smoke passed: password-only local account setup, token-required setup with static command copy success/failure, token storage exclusion, login/dashboard help visibility, wizard pairing branches, endpoint selection, validation, code clearing, duplicate protection, partial-save retry, compile/monitoring defaults, TV/app management, settings/diagnostics, Appearance, mobile overflow; screenshots saved under ../../work');
+  console.log('browser smoke passed: password-only local account setup, token-required setup with static command copy success/failure, missing-ADB warning, token storage exclusion, login/dashboard help visibility, wizard pairing branches, endpoint selection, validation, code clearing, duplicate protection, partial-save retry, checked Finish defaults and saved opt-outs across polling/Back/retry, per-TV status cards, app search, timezone selection, TV/app management, settings/diagnostics, Appearance, mobile overflow; screenshots saved under ../../work');
 } catch (error) {
   for (const filename of ['account-setup-light.png','account-setup-night.png','wizard-first-screen.png','wizard-name-step.png','wizard-connection-step.png','wizard-pair-step.png','wizard-app-step.png','wizard-review-step.png','wizard-night-desktop.png','dashboard-light-desktop.png','dashboard-night-desktop.png','dashboard-light-mobile.png','dashboard-night-mobile.png','wizard-light-mobile.png']) await rm(path.join(work, filename), { force: true });
   throw error;

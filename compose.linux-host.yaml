@@ -12,6 +12,7 @@ services:
     pids_limit: ${TVCOMPILER_PIDS_LIMIT:-128}
     network_mode: host
     environment:
+      LOGIN_ENABLE: ${LOGIN_ENABLE:-false}
       TVCOMPILER_HOST: 127.0.0.1
       TVCOMPILER_PORT: 8000
       TVCOMPILER_LOCAL_SETUP: ${TVCOMPILER_LOCAL_SETUP:-1}

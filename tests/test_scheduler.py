@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
 
 import pytest
@@ -148,6 +148,60 @@ def test_revoked_adb_authorization_is_actionable_and_does_not_consume_attempt(tm
     assert scheduler.run_once() is None
     saved = store.get_job(job.id)
     assert saved.attempts == 0 and "approve the TV pairing prompt" in saved.reason
+
+
+def test_connection_status_requires_verified_reconnect_and_becomes_unknown_when_stale(tmp_path):
+    now = [NOW]
+    store, adb, scheduler, device = setup(tmp_path, clock=lambda: now[0])
+    initial = scheduler.device_connection(device)
+    assert initial["connection_status"] == "unknown"
+    assert initial["connection_stale"] is True
+    assert initial["connection_checked_at"] is None
+
+    scheduler._connect(device)
+    fresh = scheduler.device_connection(device)
+    assert fresh["connection_status"] == "connected"
+    assert fresh["last_known_connection_status"] == "connected"
+    assert fresh["polling_status"] == "paused"
+    assert fresh["poll_interval_seconds"] == 60
+
+    now[0] += timedelta(seconds=120)
+    stale = scheduler.device_connection(device)
+    assert stale["connection_status"] == "unknown"
+    assert stale["last_known_connection_status"] == "connected"
+    assert stale["connection_stale"] is True
+
+
+def test_poll_checks_enabled_tv_without_watched_apps_and_saves_failure_reason(tmp_path):
+    store, adb, scheduler, device = setup(tmp_path)
+    scheduler.set_monitoring(True)
+    adb.fail_reconnect[device.endpoint] = "unauthorized"
+
+    assert scheduler.poll_once() == 0
+    state = scheduler.device_connection(device)
+    assert state["connection_status"] == "unauthorized"
+    assert state["connection_reason"] == (
+        "ADB authorization is missing or revoked; approve the TV pairing prompt and reconnect"
+    )
+
+
+def test_no_permissions_connection_failure_is_actionable_and_sanitized():
+    error = AdbError("reconnect", "ADB reports no permissions for the intended TV; check service runtime access")
+
+    reason = Scheduler._connection_reason(error)
+    assert reason == "ADB reports no permissions for this TV; check the service runtime's ADB access"
+    assert Scheduler._connection_status_for(error) == "error"
+
+
+def test_missing_adb_readiness_uses_configured_executable(tmp_path, monkeypatch):
+    import tvcompiler.scheduler as scheduler_module
+
+    store, adb, scheduler, _device = setup(tmp_path)
+    adb.adb_path = "/configured/path/adb"
+    monkeypatch.setattr(scheduler_module.shutil, "which", lambda path: None)
+
+    dependency = scheduler.status()["dependencies"]["adb"]
+    assert dependency["available"] is False
 
 
 def test_unknown_idle_defers_and_does_not_starve_an_idle_tv(tmp_path):

@@ -1,3 +1,4 @@
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 from tvcompiler.store import Store
@@ -29,6 +30,39 @@ def test_store_persists_pinned_identity_and_baseline(tmp_path):
     app = reopened.get_app("living-room", "com.nuvio.tv")
     assert app.version_code == 4 and app.enabled
     assert "state.db-wal" in {p.name for p in path.parent.iterdir()} or path.exists()
+
+
+def test_legacy_devices_migrate_with_wireless_mode_and_old_device_constructor_still_works(tmp_path):
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, endpoint TEXT, serial TEXT, "
+            "fingerprint TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_seen_at TEXT, created_at TEXT NOT NULL)"
+        )
+        db.execute(
+            "INSERT INTO devices VALUES('old-tv','Old TV','tv.local:5555','serial','build',1,NULL,'now')"
+        )
+    migrated = Store(path).get_device("old-tv")
+    assert migrated is not None and migrated.connection_mode == "wireless"
+
+    from tvcompiler.models import Device
+
+    assert Device("id", "name", None, None, None, True, None).connection_mode == "wireless"
+
+
+def test_connection_mode_persists_and_rejects_unknown_values(tmp_path):
+    path = tmp_path / "mode.db"
+    store = Store(path)
+    store.upsert_device("tv", "TV", "tv.local:5555", "serial", "build", connection_mode="tcpip")
+    assert Store(path).get_device("tv").connection_mode == "tcpip"
+    assert store.update_device("tv", connection_mode="wireless")
+    assert Store(path).get_device("tv").connection_mode == "wireless"
+    try:
+        store.upsert_device("bad", "Bad", connection_mode="bluetooth")
+    except ValueError as exc:
+        assert "connection mode" in str(exc)
+    else:
+        raise AssertionError("invalid connection mode accepted")
 
 
 def test_queue_deduplicates_and_supersedes_obsolete_installation(tmp_path):

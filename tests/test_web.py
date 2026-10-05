@@ -141,7 +141,11 @@ def make_app(tmp_path: Path, adb: FakeAdb | None = None, *, start_scheduler=Fals
         adb=adb,
         scheduler=scheduler,
         start_scheduler=start_scheduler,
-        environ={"TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN} if env is None else env,
+        environ=(
+            {"LOGIN_ENABLE": "true", "TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN}
+            if env is None
+            else {"LOGIN_ENABLE": "true", **env}
+        ),
     )
     return app, adb, store, scheduler, instance
 
@@ -188,7 +192,7 @@ def test_health_offline_setup_token_file_permissions_and_no_secret_health(tmp_pa
         ).status_code
         == 200
     )
-    app2 = create_app(instance, adb=adb, start_scheduler=False, environ={})
+    app2 = create_app(instance, adb=adb, start_scheduler=False, environ={"LOGIN_ENABLE": "true"})
     assert not bootstrap.exists()
     with TestClient(app2) as restarted:
         assert restarted.get("/health").json() == {"status": "ok"}
@@ -214,7 +218,7 @@ def test_setup_csrf_password_hash_session_expiry_logout_and_auth_routes(tmp_path
         assert hashlib.scrypt(PASSWORD.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32) == password_hash
         assert PASSWORD.encode() not in bytes(password_hash) and cookie.encode() not in bytes(stored_token[0])
         assert TOKEN not in (instance / "auth.sqlite3").read_bytes().decode("latin1")
-        restarted_app = create_app(instance, adb=adb, start_scheduler=False, environ={})
+        restarted_app = create_app(instance, adb=adb, start_scheduler=False, environ={"LOGIN_ENABLE": "true"})
         with TestClient(restarted_app) as restarted:
             restarted.cookies.set(COOKIE_NAME, cookie)
             restarted.cookies.set(CSRF_COOKIE, c.cookies[CSRF_COOKIE])
@@ -346,6 +350,11 @@ def test_pair_inventory_watch_baseline_manual_override_pause_and_settings(tmp_pa
         assert pair.status_code == 200, pair.text
         device = pair.json()
         assert device["serial"] == "serial-10.0.0.5:41267"
+        saved_tv = next(tv for tv in c.get("/api/devices").json() if tv["id"] == device["id"])
+        assert saved_tv["connection_status"] == "connected"
+        assert saved_tv["last_known_connection_status"] == "connected"
+        assert saved_tv["connection_checked_at"] and saved_tv["connection_stale"] is False
+        assert saved_tv["polling_status"] == "paused" and saved_tv["poll_interval_seconds"] == 60
         assert adb.pair_code_seen == "001234"
         adb.packages[(device["endpoint"], "com.nuvio.tv")] = package(10)
         adb.installed[device["endpoint"]] = ["com.nuvio.tv"]
@@ -390,6 +399,8 @@ def test_pair_inventory_watch_baseline_manual_override_pause_and_settings(tmp_pa
         }
         status = c.get("/api/status").json()
         assert status["monitoring_enabled"] is False
+        assert status["dependencies"]["adb"]["source"] in {"host", "docker"}
+        assert isinstance(status["dependencies"]["adb"]["available"], bool)
         assert status["jobs"][0]["state"] == "pending"
         assert c.get(f"/api/jobs/{status['jobs'][0]['id']}/events").status_code == 200
 
@@ -508,6 +519,67 @@ def test_multiple_tvs_wrong_identity_rename_preserves_endpoint_and_reconnect(tmp
             f"/api/devices/{first['id']}/reconnect", json={"endpoint": "10.0.0.1:41268"}, headers={"X-CSRF-Token": csrf}
         )
         assert good.status_code == 200 and store.get_device(first["id"]).endpoint == "10.0.0.1:41268"
+        saved = store.get_device(first["id"])
+        mode_patch = c.patch(
+            f"/api/devices/{first['id']}",
+            json={"endpoint": "10.0.0.1:41268", "connection_mode": "tcpip"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        updated = store.get_device(first["id"])
+        assert mode_patch.status_code == 200 and updated.connection_mode == "tcpip"
+        assert (updated.endpoint, updated.serial, updated.fingerprint) == (
+            "10.0.0.1:41268",
+            saved.serial,
+            saved.fingerprint,
+        )
+
+
+def test_connection_mode_is_persisted_and_pair_api_rejects_tcpip(tmp_path):
+    adb = FakeAdb()
+    app, adb, store, _scheduler, _ = make_app(tmp_path, adb)
+    with TestClient(app) as client:
+        setup_account(client)
+        csrf = {"X-CSRF-Token": client.cookies[CSRF_COOKIE]}
+        added = client.post(
+            "/api/devices",
+            json={"name": "Fixed port TV", "endpoint": "10.0.0.5:5555", "connection_mode": "tcpip"},
+            headers=csrf,
+        )
+        assert added.status_code == 200 and added.json()["connection_mode"] == "tcpip"
+        device_id = added.json()["id"]
+        pinned = store.get_device(device_id)
+        assert pinned.connection_mode == "tcpip"
+        listed = next(tv for tv in client.get("/api/devices").json() if tv["id"] == device_id)
+        assert listed["connection_mode"] == "tcpip"
+        diagnostic = client.get("/api/diagnostics").json()
+        assert next(tv for tv in diagnostic["devices"] if tv["id"] == device_id)["connection_mode"] == "tcpip"
+
+        updated = client.patch(
+            f"/api/devices/{device_id}", json={"connection_mode": "wireless"}, headers=csrf
+        )
+        assert updated.status_code == 200
+        assert store.get_device(device_id).connection_mode == "wireless"
+        assert store.get_device(device_id).endpoint == pinned.endpoint
+        assert store.get_device(device_id).serial == pinned.serial
+        assert store.get_device(device_id).fingerprint == pinned.fingerprint
+        invalid = client.patch(
+            f"/api/devices/{device_id}", json={"connection_mode": "bluetooth"}, headers=csrf
+        )
+        assert invalid.status_code == 422
+
+        pair = client.post(
+            "/api/pair",
+            json={
+                "name": "Paired TV",
+                "endpoint": "10.0.0.5:41267",
+                "pairing_endpoint": "10.0.0.5:37123",
+                "pairing_code": "001234",
+                "connection_mode": "tcpip",
+            },
+            headers=csrf,
+        )
+        assert pair.status_code == 400 and "wireless ADB only" in pair.json()["error"]
+        assert adb.pair_calls == 0
 
 
 def test_pair_auto_resolves_and_saves_exact_paired_device(tmp_path):
@@ -546,6 +618,7 @@ def test_pair_auto_resolution_fallback_does_not_save_or_retain_code(tmp_path):
             "status": "paired",
             "connection_endpoint_required": True,
             "name": "Living",
+            "connection_mode": "wireless",
         }
         assert adb.pair_calls == 1 and store.list_devices() == []
         assert code not in response.text and code.encode() not in (instance / "state.sqlite3").read_bytes()
@@ -680,7 +753,7 @@ def test_secure_cookie_configuration_and_invalid_bootstrap_token(tmp_path):
     secure_app = create_app(
         tmp_path / "secure",
         start_scheduler=False,
-        environ={"TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN, "TVCOMPILER_COOKIE_SECURE": "1"},
+        environ={"LOGIN_ENABLE": "true", "TVCOMPILER_BOOTSTRAP_TOKEN": TOKEN, "TVCOMPILER_COOKIE_SECURE": "1"},
     )
     with TestClient(secure_app, base_url="https://testserver.local") as secure_client:
         secure_client.get("/")
@@ -690,7 +763,10 @@ def test_secure_cookie_configuration_and_invalid_bootstrap_token(tmp_path):
         )
         assert "secure" in secure_result.headers["set-cookie"].lower()
     with pytest.raises(ValueError, match="32-256"):
-        create_app(tmp_path / "bad", start_scheduler=False, environ={"TVCOMPILER_BOOTSTRAP_TOKEN": "too-short"})
+        create_app(
+            tmp_path / "bad", start_scheduler=False,
+            environ={"LOGIN_ENABLE": "true", "TVCOMPILER_BOOTSTRAP_TOKEN": "too-short"},
+        )
 
 
 @pytest.mark.parametrize("host", ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000", "[::1]", "[::1]:8000"])
@@ -796,7 +872,7 @@ def test_local_setup_exactly_one_account_and_mode_change_keeps_existing_account(
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(setup_request, range(2))) == [200, 400]
-    restarted = create_app(tmp_path / "instance", start_scheduler=False, environ={})
+    restarted = create_app(tmp_path / "instance", start_scheduler=False, environ={"LOGIN_ENABLE": "true"})
     with TestClient(restarted, base_url="http://localhost") as client:
         client.get("/")
         session = client.get("/api/session").json()
@@ -808,3 +884,112 @@ def test_local_setup_exactly_one_account_and_mode_change_keeps_existing_account(
         assert result.status_code == 400
         result = client.post("/api/login", json={"password": PASSWORD, "csrf": client.cookies[CSRF_COOKIE]})
         assert result.status_code == 200
+
+
+def test_login_disabled_skips_auth_setup_and_keeps_origin_csrf_guards(tmp_path):
+    app, *_ = make_app(tmp_path, env={"LOGIN_ENABLE": "false"})
+    instance = tmp_path / "instance"
+    assert not (instance / "auth.sqlite3").exists()
+    assert not (instance / "bootstrap.token").exists()
+    with TestClient(app, base_url="http://localhost") as client:
+        page = client.get("/")
+        assert 'data-login-enabled="false"' in page.text
+        assert 'id="auth-panel" class="card auth-card hidden"' in page.text
+        assert 'id="dashboard"' in page.text and 'id="logout" class="quiet hidden"' in page.text
+        session = client.get("/api/session").json()
+        assert session["authenticated"] is True and session["login_enabled"] is False
+        assert client.get("/api/session", headers={"Host": "remote.example"}).status_code == 403
+        assert client.get("/api/session", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 403
+        assert client.get("/", headers={"Host": "remote.example"}).status_code == 403
+        csrf = session["csrf"]
+        assert csrf and csrf == client.cookies[CSRF_COOKIE]
+        assert client.post("/api/setup", json={"password": PASSWORD, "csrf": csrf}).status_code == 409
+        assert client.post("/api/login", json={"password": PASSWORD, "csrf": csrf}).status_code == 409
+        assert client.post("/api/devices", json={"name": "Room", "endpoint": "10.0.0.5:41267"}).status_code == 403
+        assert client.post(
+            "/api/devices", json={"name": "Room", "endpoint": "10.0.0.5:41267"},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code == 403
+        assert client.post(
+            "/api/devices", json={"name": "Room", "endpoint": "10.0.0.5:41267"},
+            headers={"X-CSRF-Token": csrf, "Origin": "http://evil.example"},
+        ).status_code == 403
+        created = client.post(
+            "/api/devices", json={"name": "Room", "endpoint": "10.0.0.5:41267"},
+            headers={"X-CSRF-Token": csrf, "Origin": "http://localhost"},
+        )
+        assert created.status_code == 200
+        client.cookies.clear()
+        refreshed = client.get("/api/session").json()
+        assert refreshed["authenticated"] is True and refreshed["csrf"] != csrf
+        assert client.post(
+            "/api/devices", json={"name": "Denied", "endpoint": "10.0.0.5:41268"},
+            headers={"X-CSRF-Token": refreshed["csrf"], "Origin": "http://localhost"},
+        ).status_code == 200
+    assert not (instance / "auth.sqlite3").exists()
+    assert not (instance / "bootstrap.token").exists()
+
+
+@pytest.mark.parametrize(
+    "env, message",
+    [
+        ({"LOGIN_ENABLE": "maybe"}, "LOGIN_ENABLE must be true or false"),
+        ({"LOGIN_ENABLE": "false", "TVCOMPILER_PUBLIC_ORIGIN": "https://tv.example"}, "requires loopback-only"),
+        ({"LOGIN_ENABLE": "false", "TVCOMPILER_COOKIE_SECURE": "1"}, "requires loopback-only"),
+    ],
+)
+def test_login_disabled_rejects_invalid_or_remote_configuration(tmp_path, env, message):
+    with pytest.raises(ValueError, match=message):
+        make_app(tmp_path, env=env)
+
+
+def test_home_timezone_choices_use_available_zones_and_readable_labels(tmp_path):
+    app, *_ = make_app(tmp_path)
+    with TestClient(app, base_url="http://localhost") as client:
+        page = client.get("/")
+    assert '<option value="UTC">UTC</option>' in page.text
+    assert '<option value="America/Chicago">Chicago (America/Chicago)</option>' in page.text
+
+
+def test_login_mode_toggle_preserves_existing_account_and_auth_files(tmp_path):
+    enabled, *_ = make_app(tmp_path, env={"LOGIN_ENABLE": "true"})
+    auth_db = tmp_path / "instance" / "auth.sqlite3"
+    bootstrap_file = tmp_path / "instance" / "bootstrap.token"
+    with TestClient(enabled, base_url="http://localhost") as client:
+        client.get("/")
+        setup = client.post(
+            "/api/setup",
+            json={
+                "token": bootstrap_file.read_text().strip(),
+                "password": PASSWORD,
+                "csrf": client.cookies[CSRF_COOKIE],
+            },
+        )
+        assert setup.status_code == 200
+    auth_before = auth_db.read_bytes()
+    bootstrap_before = bootstrap_file.read_bytes() if bootstrap_file.exists() else None
+
+    disabled, *_ = make_app(tmp_path, env={"LOGIN_ENABLE": "false"})
+    with TestClient(disabled, base_url="http://localhost") as client:
+        page = client.get("/")
+        assert page.status_code == 200 and 'data-login-enabled="false"' in page.text
+        session = client.get("/api/session").json()
+        assert session["authenticated"] is True and session["login_enabled"] is False
+        assert session["configured"] is False
+    assert auth_db.read_bytes() == auth_before
+    assert (bootstrap_file.read_bytes() if bootstrap_file.exists() else None) == bootstrap_before
+
+    enabled_again, *_ = make_app(tmp_path, env={"LOGIN_ENABLE": "true"})
+    with TestClient(enabled_again, base_url="http://localhost") as client:
+        client.get("/")
+        session = client.get("/api/session").json()
+        assert session["configured"] is True and session["authenticated"] is False
+        assert auth_db.read_bytes() == auth_before
+        assert (bootstrap_file.read_bytes() if bootstrap_file.exists() else None) == bootstrap_before
+        login = client.post(
+            "/api/login", json={"password": PASSWORD, "csrf": client.cookies[CSRF_COOKIE]}
+        )
+        assert login.status_code == 200
+        restored = client.get("/api/session").json()
+        assert restored["configured"] is True and restored["authenticated"] is True
+    assert (bootstrap_file.read_bytes() if bootstrap_file.exists() else None) == bootstrap_before

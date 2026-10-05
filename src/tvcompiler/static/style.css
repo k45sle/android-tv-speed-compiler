@@ -170,6 +170,10 @@ summary { cursor: pointer; font-weight: 700; }
 .device-manage, .app-management { border-top: 1px solid var(--line); padding-top: .55rem; margin-top: .55rem; }
 .device-manage .form-grid { margin-bottom: .4rem; }
 .watched-summary { margin: .35rem 0; overflow-wrap: anywhere; }
+.connection-status { margin: .35rem 0; overflow-wrap: anywhere; }
+.connection-status[data-status="connected"] { color: var(--green); }
+.connection-status[data-status="offline"], .connection-status[data-status="unauthorized"], .connection-status[data-status="identity_mismatch"], .connection-status[data-status="adb_unavailable"], .connection-status[data-status="error"] { color: var(--amber); }
+.runtime-status-warning { color: var(--amber); font-weight: 700; }
 .service-list { display: grid; gap: .4rem; }
 .service { padding: .55rem .7rem; background: var(--inset); border-radius: 8px; font-family: ui-monospace, monospace; font-size: .875rem; }
 .device-list { display: grid; gap: .8rem; }
@@ -177,7 +181,7 @@ summary { cursor: pointer; font-weight: 700; }
 .device-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .device h3 { margin: 0; }
 .badge { font-size: .875rem; padding: .2rem .5rem; border-radius: 100px; background: var(--green-soft); color: var(--green); white-space: nowrap; }
-.badge.off { background: var(--amber-soft); color: var(--amber); }
+.badge.off, .badge.warning { background: var(--amber-soft); color: var(--amber); }
 .device-tools { display: flex; gap: .4rem; flex-wrap: wrap; margin: .65rem 0; }
 .device-tools button { font-size: .875rem; padding: .5rem .7rem; }
 .app-list { margin: .6rem 0; border-top: 1px solid var(--line); }
