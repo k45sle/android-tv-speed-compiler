@@ -247,6 +247,43 @@ def test_setup_csrf_password_hash_session_expiry_logout_and_auth_routes(tmp_path
         )
 
 
+def test_authenticated_home_reload_preserves_raw_csrf_cookie_for_api_and_mutations(tmp_path):
+    client, _adb, _store, _scheduler, _instance = authenticated(tmp_path)
+    with client:
+        original_csrf = client.cookies[CSRF_COOKIE]
+
+        page = client.get("/")
+        assert page.status_code == 200
+        assert client.cookies[CSRF_COOKIE] == original_csrf
+
+        session = client.get("/api/session").json()
+        assert session["authenticated"] is True
+        assert session["csrf"] == original_csrf
+
+        created = client.post(
+            "/api/devices",
+            json={"name": "Reloaded TV", "endpoint": "10.0.0.5:41267"},
+            headers={"X-CSRF-Token": original_csrf},
+        )
+        assert created.status_code == 200
+
+
+@pytest.mark.parametrize("csrf_cookie", ["missing", "invalid"])
+def test_authenticated_home_requires_fresh_login_without_valid_csrf_cookie(tmp_path, csrf_cookie):
+    client, _adb, _store, _scheduler, _instance = authenticated(tmp_path)
+    with client:
+        if csrf_cookie == "missing":
+            client.cookies.delete(CSRF_COOKIE)
+        else:
+            client.cookies.set(CSRF_COOKIE, "x" * 64)
+
+        page = client.get("/")
+        assert page.status_code == 200
+        assert 'data-authenticated="false"' in page.text
+        assert "csrf_hash" not in page.text
+        assert client.get("/api/session").json()["authenticated"] is False
+
+
 def test_login_generic_error_csrf_origin_and_bounded_throttling(tmp_path):
     app, *_ = make_app(tmp_path)
     with TestClient(app) as c:

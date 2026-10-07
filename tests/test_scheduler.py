@@ -116,6 +116,23 @@ def test_watch_sets_fresh_baseline_and_same_version_reinstall_is_one_job(tmp_pat
     assert len(jobs) == 1 and jobs[0].state == "pending"
 
 
+def test_maintenance_operation_fails_fast_while_scheduler_is_busy_and_releases_lock(tmp_path):
+    _store, _adb, scheduler, _device = setup(tmp_path)
+    scheduler._run_lock.acquire()
+    try:
+        with pytest.raises(RuntimeError, match="scheduler is busy"):
+            with scheduler.maintenance_operation():
+                pytest.fail("busy maintenance operation must not enter")
+    finally:
+        scheduler._run_lock.release()
+
+    with pytest.raises(ValueError, match="synthetic"):
+        with scheduler.maintenance_operation():
+            raise ValueError("synthetic")
+    assert scheduler._run_lock.acquire(blocking=False)
+    scheduler._run_lock.release()
+
+
 def test_watch_reenables_existing_inventory_app_with_current_baseline(tmp_path):
     store, _adb, scheduler, _device = setup(tmp_path)
     watched(store, scheduler)

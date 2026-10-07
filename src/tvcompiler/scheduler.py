@@ -9,6 +9,7 @@ import shutil
 import threading
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -276,6 +277,16 @@ class Scheduler:
     def run_once(self) -> Job | None:
         with self._run_lock:
             return self._run_once_locked()
+
+    @contextmanager
+    def maintenance_operation(self):
+        """Reserve ADB for a short explicit setup flow without waiting behind a compile."""
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("scheduler is busy; wait for the current ADB operation to finish")
+        try:
+            yield
+        finally:
+            self._run_lock.release()
 
     def _run_once_locked(self) -> Job | None:
         if self._worker_stopping():

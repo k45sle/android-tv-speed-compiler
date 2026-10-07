@@ -25,6 +25,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, Field
 
 from .adb import AdbClient, validate_endpoint
+from .companion import CompanionSetupController
 from .models import ConnectionMode
 from .scheduler import Scheduler
 from .store import Store
@@ -99,6 +100,17 @@ class FinishInput(Input):
     package_ids: list[str] = Field(default_factory=list, max_length=200)
     queue_initial_compiles: bool = False
     enable_monitoring: bool = False
+    require_companion: bool = False
+
+
+class CompanionPrepareInput(Input):
+    consent: bool
+    target_port: int = Field(default=5555, ge=1024, le=65535)
+
+
+class CompanionPairInput(Input):
+    pairing_code: str = Field(min_length=4, max_length=12, pattern=r"^\d{4,12}$")
+    pairing_port: int = Field(ge=1, le=65535)
 
 
 class SettingsInput(Input):
@@ -325,6 +337,7 @@ def create_app(
     *,
     adb: AdbClient | None = None,
     scheduler: Scheduler | None = None,
+    companion_controller: CompanionSetupController | None = None,
     start_scheduler: bool = True,
     secure_cookies: bool | None = None,
     environ: dict[str, str] | None = None,
@@ -349,6 +362,7 @@ def create_app(
     store = Store(base / "state.sqlite3")
     client = adb or AdbClient(base, adb_path=env.get("TVCOMPILER_ADB_PATH", "adb"))
     jobs = scheduler or Scheduler(store, client, base, adb_path=env.get("TVCOMPILER_ADB_PATH", "adb"))
+    companion = companion_controller or CompanionSetupController(store, client, jobs, base)
     security = Security(base / "auth.sqlite3") if login_enabled else None
     token_path = None
     local_setup_opt_in = env.get("TVCOMPILER_LOCAL_SETUP") == "1"
@@ -383,6 +397,7 @@ def create_app(
 
     app = FastAPI(title="Android TV Speed Compiler", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.store, app.state.adb, app.state.scheduler, app.state.security = store, client, jobs, security
+    app.state.companion_controller = companion
     app.state.login_enabled = login_enabled
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
@@ -516,9 +531,15 @@ def create_app(
             raise HTTPException(
                 status_code=403, detail="Login-disabled mode is available only on a direct loopback request"
             )
-        logged_in = current(request) is not None
         session = current(request)
-        csrf = session[1] if session else request_csrf_cookie(request)
+        csrf_cookie = request.cookies.get(CSRF_COOKIE)
+        logged_in = bool(session and security.csrf_valid(session[0], csrf_cookie))
+        if session and not logged_in:
+            # A session without its original double-submit token cannot render an
+            # authenticated page safely. Revoke it and require a fresh login.
+            security.revoke(session[0])
+            session = None
+        csrf = csrf_cookie if logged_in else request_csrf_cookie(request)
         response = templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -540,6 +561,8 @@ def create_app(
                 max_age=SESSION_AGE_SECONDS,
                 path="/",
             )
+        if not logged_in and request.cookies.get(COOKIE_NAME):
+            response.delete_cookie(COOKIE_NAME, path="/", secure=secure, httponly=True, samesite="strict")
         return response
 
     # A separately rendered setup/login page receives a double-submit token; rotation is bounded by cookie age.
@@ -697,6 +720,7 @@ def create_app(
                 "connection_mode": d.connection_mode,
                 "enabled": d.enabled,
                 "last_seen_at": d.last_seen_at,
+                "companion_setup": companion.status(d.id),
                 **jobs.device_connection(d),
                 "apps": [
                     {
@@ -846,6 +870,46 @@ def create_app(
         store.forget_device(device_id)
         return {"ok": True}
 
+    @app.get("/api/devices/{device_id}/companion")
+    def companion_status(device_id: str, _auth=Depends(require_auth)):  # noqa: B008
+        if not store.get_device(device_id):
+            raise HTTPException(status_code=404, detail="TV not found")
+        return companion.status(device_id)
+
+    def companion_busy_response() -> JSONResponse:
+        return JSONResponse(
+            {"error": "Another ADB operation is running. Wait for it to finish, then retry."},
+            status_code=409,
+        )
+
+    @app.post("/api/devices/{device_id}/companion/prepare")
+    def companion_prepare(device_id: str, data: CompanionPrepareInput, _auth=Depends(verify_csrf)):  # noqa: B008
+        if not store.get_device(device_id):
+            raise HTTPException(status_code=404, detail="TV not found")
+        try:
+            return companion.prepare(device_id, consent=data.consent, target_port=data.target_port)
+        except RuntimeError as exc:
+            if "scheduler is busy" in str(exc):
+                return companion_busy_response()
+            return api_error(exc)
+        except Exception as exc:
+            return api_error(exc)
+
+    @app.post("/api/devices/{device_id}/companion/pair")
+    def companion_pair(device_id: str, data: CompanionPairInput, _auth=Depends(verify_csrf)):  # noqa: B008
+        if not store.get_device(device_id):
+            raise HTTPException(status_code=404, detail="TV not found")
+        try:
+            return companion.pair(
+                device_id, pairing_code=data.pairing_code, pairing_port=data.pairing_port
+            )
+        except RuntimeError as exc:
+            if "scheduler is busy" in str(exc):
+                return companion_busy_response()
+            return api_error(exc)
+        except Exception as exc:
+            return api_error(exc)
+
     @app.get("/api/devices/{device_id}/inventory")
     def inventory(device_id: str, _auth=Depends(require_auth)):  # noqa: B008
         device = store.get_device(device_id)
@@ -937,6 +1001,28 @@ def create_app(
     @app.post("/api/devices/{device_id}/finish")
     def finish_setup(device_id: str, data: FinishInput, _auth=Depends(verify_csrf)):  # noqa: B008
         try:
+            setup = store.get_companion_setup(device_id)
+            if setup and setup["phase"] != "ready":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Finish companion setup or retry it before finishing TV setup.",
+                )
+            if data.require_companion and (not setup or setup["phase"] != "ready"):
+                raise HTTPException(status_code=409, detail="Requested companion setup is not ready.")
+            if setup and setup["phase"] == "ready" and hasattr(companion, "is_current_ready"):
+                if not companion.is_current_ready(device_id):
+                    raise HTTPException(
+                        status_code=409, detail="The saved companion endpoint no longer matches this TV."
+                    )
+            if data.require_companion and hasattr(companion, "verify_ready"):
+                try:
+                    companion.verify_ready(device_id)
+                except RuntimeError as exc:
+                    if "scheduler is busy" in str(exc):
+                        return companion_busy_response()
+                    raise HTTPException(status_code=409, detail="The fixed TCP/IP endpoint is not ready.") from None
+                except Exception:
+                    raise HTTPException(status_code=409, detail="The fixed TCP/IP endpoint is not ready.") from None
             if not data.queue_initial_compiles and data.package_ids:
                 raise ValueError("App selections were provided without opting in to initial compiles")
             result = store.finish_setup(
@@ -946,6 +1032,8 @@ def create_app(
                 enable_monitoring=data.enable_monitoring,
             )
             return {"ok": True, **result}
+        except HTTPException:
+            raise
         except Exception as exc:
             return api_error(exc)
 

@@ -18,6 +18,9 @@ from .validation import validate_package_id
 _DNS_LABEL_RE = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$"
 )
+_COMPANION_PACKAGE = "com.tpn.adbautoenable"
+_COMPANION_PERMISSION = "android.permission.WRITE_SECURE_SETTINGS"
+_COMPANION_LAUNCHER = "com.tpn.adbautoenable/.MainActivity"
 
 
 @dataclass(frozen=True, slots=True)
@@ -800,3 +803,143 @@ class AdbClient:
         validate_package_id(package_id)
         output = self._run(["shell", "dumpsys", "package", "dexopt"], serial=serial).stdout
         return parse_compilation_filter(output, package_id)
+
+    def companion_sdk_level(self, serial: str) -> int:
+        """Read the Android SDK level for the fixed companion compatibility check."""
+        self._require_verified(serial)
+        value = self._run(["shell", "getprop", "ro.build.version.sdk"], serial=serial).stdout.strip()
+        if not re.fullmatch(r"\d{1,3}", value):
+            raise AdbError("companion", "could not read a valid Android SDK level")
+        return int(value)
+
+    def install_companion(self, serial: str, artifact: object) -> None:
+        """Install only the pinned, verified companion artifact; preserve app data."""
+        self._require_verified(serial)
+        from .companion import verify_companion_artifact
+
+        path = verify_companion_artifact(artifact, self.instance_dir)
+        try:
+            result = self._run(["install", "-r", str(path)], serial=serial, timeout=180.0)
+            output = result.stdout + "\n" + result.stderr
+            lines = {line.strip() for line in output.splitlines()}
+            if "Success" not in lines or re.search(r"\bFailure\b", output, re.I):
+                raise AdbError("companion install", "installation failed; device apps and data were preserved")
+        except AdbError as exc:
+            raise AdbError("companion install", "installation failed; device apps and data were preserved") from exc
+
+    def grant_companion_permission(self, serial: str) -> None:
+        self._require_verified(serial)
+        try:
+            self._run(
+                ["shell", "pm", "grant", _COMPANION_PACKAGE, _COMPANION_PERMISSION],
+                serial=serial,
+            )
+            self._require_verified(serial)
+            package_info = self._run(["shell", "dumpsys", "package", _COMPANION_PACKAGE], serial=serial).stdout
+        except AdbError as exc:
+            raise AdbError("companion permission", "Android did not grant the required permission") from exc
+        in_granted_permissions = False
+        granted = False
+        for line in package_info.splitlines():
+            if re.fullmatch(rf"\s*{re.escape(_COMPANION_PERMISSION)}:\s*granted=true\s*", line):
+                granted = True
+                break
+            if re.fullmatch(r"\s*grantedPermissions:\s*", line):
+                in_granted_permissions = True
+                continue
+            if in_granted_permissions:
+                if line and not line[0].isspace():
+                    break
+                if line.strip() == _COMPANION_PERMISSION:
+                    granted = True
+                    break
+        if not granted:
+            raise AdbError("companion permission", "Android did not grant the required permission")
+
+    def enable_companion(self, serial: str) -> None:
+        """Enable the fixed package in case the user had disabled it previously."""
+        self._require_verified(serial)
+        try:
+            self._run(["shell", "pm", "enable", _COMPANION_PACKAGE], serial=serial)
+        except AdbError as exc:
+            raise AdbError("companion enable", "could not enable the companion app") from exc
+
+    def launch_companion(self, serial: str) -> None:
+        self._require_verified(serial)
+        try:
+            result = self._run(["shell", "am", "start", "-n", _COMPANION_LAUNCHER], serial=serial)
+            if re.search(r"\b(?:Error|Exception)\b", result.stdout + "\n" + result.stderr, re.I):
+                raise AdbError("companion launch", "could not open the companion app")
+        except AdbError as exc:
+            raise AdbError("companion launch", "could not open the companion app") from exc
+
+    def companion_forward(self, serial: str):
+        """Forward a temporary localhost port to the app's fixed HTTP port."""
+        from contextlib import contextmanager
+
+        @contextmanager
+        def forward():
+            self._require_verified(serial)
+            port: int | None = None
+            primary_error: BaseException | None = None
+            try:
+                result = self._run(["forward", "tcp:0", "tcp:9093"], serial=serial)
+                text = result.stdout.strip()
+                if not re.fullmatch(r"[1-9]\d{0,4}", text) or not 1 <= int(text) <= 65535:
+                    raise AdbError("companion forward", "ADB returned an invalid local port")
+                port = int(text)
+                yield port
+            except BaseException as exc:
+                primary_error = exc
+                raise
+            finally:
+                if port is not None:
+                    try:
+                        self._run(["forward", "--remove", f"tcp:{port}"], serial=serial)
+                    except Exception:
+                        if primary_error is None:
+                            raise AdbError(
+                                "companion forward cleanup",
+                                "could not remove the temporary localhost forward",
+                            ) from None
+                        primary_error.add_note("could not remove the temporary localhost forward")
+
+        return forward()
+
+    def set_companion_tcpip(self, serial: str, port: int) -> None:
+        self._require_verified(serial)
+        if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535 or port == 9093:
+            raise ValueError("ADB TCP port must be 1024-65535 and cannot be 9093")
+        try:
+            self._run(["tcpip", str(port)], serial=serial)
+        except AdbError as exc:
+            raise AdbError("companion TCP/IP", "could not enable the selected ADB TCP port") from exc
+
+    def verify_companion_endpoint(
+        self,
+        endpoint: str,
+        *,
+        expected_serial: str | None,
+        expected_fingerprint: str | None,
+    ) -> ReconnectResult:
+        """Connect and verify the exact requested TCP endpoint, without mDNS substitution."""
+        endpoint = validate_endpoint(endpoint)
+        self.connect(endpoint, timeout=5.0)
+        try:
+            devices = self.devices(timeout=5.0)
+        except AdbError as exc:
+            raise AdbError("companion reconnect", "could not inspect the requested ADB endpoint") from exc
+        exact = [state for selector, state in devices if selector == endpoint]
+        if exact != ["device"]:
+            state = exact[0] if len(exact) == 1 else None
+            message = "the requested ADB endpoint is not connected" if state is None else f"ADB endpoint is {state}"
+            raise AdbError("companion reconnect", message)
+        try:
+            identity = self.verify_connected_identity(
+                endpoint,
+                expected_serial=expected_serial,
+                expected_fingerprint=expected_fingerprint,
+            )
+        except (AdbError, ValueError) as exc:
+            raise AdbError("companion reconnect", "the requested endpoint did not match the pinned TV") from exc
+        return ReconnectResult(endpoint, endpoint, identity)

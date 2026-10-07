@@ -163,6 +163,212 @@ def test_compilation_inspection_does_not_infer_success_without_filter():
     assert similarly_named_package.compiler_filter is None
 
 
+def _pinned_fake_runner(selector, *, devices=None):
+    fingerprint = "vendor/tv/build:1"
+    responses = {
+        ("-s", selector, "shell", "getprop", "ro.serialno"): (0, "serial-tv\n", ""),
+        ("-s", selector, "shell", "getprop", "ro.boot.serialno"): (0, "", ""),
+        ("-s", selector, "shell", "getprop", "ro.build.fingerprint"): (0, fingerprint + "\n", ""),
+        ("-s", selector, "shell", "getprop", "ro.build.version.sdk"): (0, "34\n", ""),
+        ("-s", selector, "shell", "dumpsys", "package", "com.tpn.adbautoenable"): (
+            0,
+            "Package [com.tpn.adbautoenable]\n  install permissions:\n"
+            "    android.permission.WRITE_SECURE_SETTINGS: granted=true\n"
+            "    android.permission.INTERNET: granted=true\n",
+            "",
+        ),
+        ("-s", selector, "forward", "tcp:0", "tcp:9093"): (0, "45678\n", ""),
+    }
+    if devices is not None:
+        responses[("devices", "-l")] = (0, devices, "")
+    return FakeRunner(responses)
+
+
+def _pin_client(client, selector="tv.local:37123"):
+    client._verified_serials[selector] = ("serial-tv", "vendor/tv/build:1")
+
+
+def test_companion_fixed_adb_commands_and_forward_cleanup(tmp_path):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    assert client.companion_sdk_level(selector) == 34
+    client.enable_companion(selector)
+    client.grant_companion_permission(selector)
+    client.launch_companion(selector)
+    client.set_companion_tcpip(selector, 5555)
+    with client.companion_forward(selector) as port:
+        assert port == 45678
+    commands = [call[0][3:] for call in runner.calls if call[0][1:3] == ["-s", selector]]
+    assert ["shell", "pm", "enable", "com.tpn.adbautoenable"] in commands
+    assert ["shell", "pm", "grant", "com.tpn.adbautoenable", "android.permission.WRITE_SECURE_SETTINGS"] in commands
+    assert ["shell", "am", "start", "-n", "com.tpn.adbautoenable/.MainActivity"] in commands
+    assert ["tcpip", "5555"] in commands
+    assert ["forward", "tcp:0", "tcp:9093"] in commands
+    assert ["forward", "--remove", "tcp:45678"] in commands
+    assert not any(command[:2] == ["shell", "sh"] for command in commands)
+
+
+def test_companion_forward_is_removed_when_caller_fails(tmp_path):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(RuntimeError, match="synthetic"):
+        with client.companion_forward(selector):
+            raise RuntimeError("synthetic")
+    assert any(call[0][1:] == ["-s", selector, "forward", "--remove", "tcp:45678"] for call in runner.calls)
+
+
+def test_companion_forward_cleanup_failure_is_sanitized_and_preserves_primary_error(tmp_path):
+    selector = "tv.local:37123"
+    cleanup = ("-s", selector, "forward", "--remove", "tcp:45678")
+    runner = _pinned_fake_runner(selector)
+    runner.responses[cleanup] = (1, "sensitive cleanup detail", "")
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(AdbError, match="could not remove the temporary localhost forward") as caught:
+        with client.companion_forward(selector):
+            pass
+    assert "sensitive cleanup detail" not in str(caught.value)
+
+    runner = _pinned_fake_runner(selector)
+    runner.responses[cleanup] = (1, "sensitive cleanup detail", "")
+    client = AdbClient(tmp_path / "primary", runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(ValueError, match="primary operation") as primary:
+        with client.companion_forward(selector):
+            raise ValueError("primary operation failed")
+    assert "could not remove the temporary localhost forward" in primary.value.__notes__[0]
+    assert "sensitive cleanup detail" not in str(primary.value)
+
+
+def test_companion_adb_mutation_requires_identity_pin_first(tmp_path):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    client = AdbClient(tmp_path, runner=runner)
+    with pytest.raises(AdbError, match="verify this connected device"):
+        client.enable_companion(selector)
+    with pytest.raises(AdbError, match="verify this connected device"):
+        client.set_companion_tcpip(selector, 5555)
+    assert not any(call[0][1] in {"shell", "tcpip", "install", "forward"} for call in runner.calls)
+
+
+@pytest.mark.parametrize(
+    "dumpsys_output",
+    [
+        "Package [com.tpn.adbautoenable]\n  install permissions:\n"
+        "    android.permission.WRITE_SECURE_SETTINGS: granted=false\n",
+        "Package [com.tpn.adbautoenable]\n  install permissions:\n"
+        "    android.permission.INTERNET: granted=true\n"
+        "  requested permissions:\n"
+        "    android.permission.WRITE_SECURE_SETTINGS\n",
+    ],
+)
+def test_companion_permission_grant_requires_exact_android_readback(tmp_path, dumpsys_output):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    runner.responses[("-s", selector, "shell", "dumpsys", "package", "com.tpn.adbautoenable")] = (
+        0,
+        dumpsys_output,
+        "",
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(AdbError, match="Android did not grant the required permission"):
+        client.grant_companion_permission(selector)
+    assert any(
+        call[0][1:]
+        == [
+            "-s",
+            selector,
+            "shell",
+            "pm",
+            "grant",
+            "com.tpn.adbautoenable",
+            "android.permission.WRITE_SECURE_SETTINGS",
+        ]
+        for call in runner.calls
+    )
+
+
+def test_companion_install_requires_explicit_android_success_output(tmp_path, monkeypatch):
+    selector = "tv.local:37123"
+    install_args = ("-s", selector, "install", "-r", str(tmp_path / "companion.apk"))
+    artifact = object()
+    monkeypatch.setattr(
+        "tvcompiler.companion.verify_companion_artifact",
+        lambda _artifact, _root: tmp_path / "companion.apk",
+    )
+
+    success_runner = _pinned_fake_runner(selector)
+    success_runner.responses[install_args] = (0, "Performing Streamed Install\nSuccess\n", "")
+    success_client = AdbClient(tmp_path / "success", runner=success_runner)
+    _pin_client(success_client, selector)
+    success_client.install_companion(selector, artifact)
+
+    for output in ["", "Failure [INSTALL_FAILED_INVALID_APK]"]:
+        runner = _pinned_fake_runner(selector)
+        runner.responses[install_args] = (0, output, "")
+        client = AdbClient(tmp_path / f"failure-{len(output)}", runner=runner)
+        _pin_client(client, selector)
+        with pytest.raises(AdbError, match="installation failed") as caught:
+            client.install_companion(selector, artifact)
+        assert "INSTALL_FAILED" not in str(caught.value)
+
+
+@pytest.mark.parametrize("output", ["Error: Activity class does not exist", "Exception while launching activity"])
+def test_companion_launch_rejects_error_output_even_with_zero_exit(tmp_path, output):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    runner.responses[("-s", selector, "shell", "am", "start", "-n", "com.tpn.adbautoenable/.MainActivity")] = (
+        0,
+        output,
+        "",
+    )
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(AdbError, match="could not open the companion app") as caught:
+        client.launch_companion(selector)
+    assert output not in str(caught.value)
+
+
+@pytest.mark.parametrize("port", [0, 9093, 1023, 65536, True, "5555"])
+def test_companion_tcpip_rejects_untrusted_port_before_adb(tmp_path, port):
+    selector = "tv.local:37123"
+    runner = _pinned_fake_runner(selector)
+    client = AdbClient(tmp_path, runner=runner)
+    _pin_client(client, selector)
+    with pytest.raises(ValueError):
+        client.set_companion_tcpip(selector, port)
+    assert not any(call[0][1] == "tcpip" for call in runner.calls)
+
+
+def test_companion_endpoint_must_be_exact_and_match_pinned_identity(tmp_path):
+    endpoint = "tv.local:5555"
+    runner = _pinned_fake_runner(endpoint, devices=f"{endpoint} device product:tv\n")
+    client = AdbClient(tmp_path, runner=runner)
+    result = client.verify_companion_endpoint(
+        endpoint, expected_serial="serial-tv", expected_fingerprint="vendor/tv/build:1"
+    )
+    assert result.endpoint == endpoint and result.selector == endpoint
+
+    other = "other.local:5555"
+    bad_runner = _pinned_fake_runner(endpoint, devices=f"{other} device product:tv\n")
+    bad_client = AdbClient(tmp_path / "bad", runner=bad_runner)
+    with pytest.raises(AdbError, match="requested ADB endpoint"):
+        bad_client.verify_companion_endpoint(
+            endpoint, expected_serial="serial-tv", expected_fingerprint="vendor/tv/build:1"
+        )
+
+    mismatch_runner = _pinned_fake_runner(endpoint, devices=f"{endpoint} device product:tv\n")
+    mismatch_runner.responses[("-s", endpoint, "shell", "getprop", "ro.serialno")] = (0, "other-serial\n", "")
+    mismatch = AdbClient(tmp_path / "mismatch", runner=mismatch_runner)
+    with pytest.raises(AdbError, match="did not match the pinned TV"):
+        mismatch.verify_companion_endpoint(endpoint, expected_serial="serial-tv", expected_fingerprint=None)
+
+
 def test_pair_keeps_leading_zero_code_and_never_exposes_it_on_failure(tmp_path):
     runner = FakeRunner({("pair", "tv.local:37123", "001234"): (1, "pair 001234", "bad")})
     client = AdbClient(tmp_path / "instance", runner=runner)

@@ -51,6 +51,11 @@
           <fieldset id="wizard-connection-method"><legend>Connection method</legend>
             <label class="choice connection-choice"><input type="radio" name="connection-mode" value="wireless" checked><span><strong>Encrypted Wireless debugging</strong><br><span class="muted">TLS protects ADB traffic. Android pairing is required; the TV's connection port can change.</span></span></label>
             <label class="choice connection-choice"><input type="radio" name="connection-mode" value="tcpip"><span><strong>Unencrypted fixed TCP/IP</strong><br><span class="muted">A fixed address is easier to reconnect to. Traffic is unencrypted and needs compatible TV companion software or firmware; use only on a trusted private network.</span></span></label>
+            <div id="companion-option" class="hidden">
+              <label class="choice"><input id="wizard-auto-companion" type="checkbox"> Install and configure adb-auto-enable on this TV</label>
+              <p class="muted">The setup opens the app, changes debugging settings (including authorization expiry), and uses a separate Android pairing prompt. The companion’s setup page briefly runs without authentication on TV port 9093 and is also reachable from your LAN. Setup disables that page when it succeeds. Use this only on a trusted home network.</p>
+              <details id="companion-advanced"><summary>Advanced: fixed port</summary><label for="wizard-companion-port">Target port</label><input id="wizard-companion-port" type="number" min="1024" max="65535" value="5555" step="1"><p class="muted">Choose 1024–65535, except 9093. Default: 5555.</p></details>
+            </div>
             <p class="muted">This records the method you chose. The service does not verify that a connection is encrypted or change the TV's debugging settings. <a href="https://github.com/k45sle/android-tv-speed-compiler/blob/main/docs/wireless-debugging-recovery.md" target="_blank" rel="noreferrer">Connection setup guide</a></p>
           </fieldset>
           <fieldset id="wireless-pairing-options"><legend>Wireless debugging setup</legend><p class="muted">On the TV, open Settings → System → About and enable Developer options if needed. Then turn on Developer options → Wireless debugging.</p><label class="choice"><input type="radio" name="pairing-mode" value="new" checked> This TV needs pairing</label><label class="choice"><input type="radio" name="pairing-mode" value="paired"> This TV is already paired with this service</label></fieldset>
@@ -71,14 +76,27 @@
           <div id="wizard-services" class="service-list" aria-live="polite"></div>
         </section>
         <section class="wizard-step hidden" data-step="3" aria-labelledby="step-title-3">
-          <h3 id="step-title-3">Choose apps to watch</h3>
+          <h3 id="step-title-3">Set up the TV companion</h3>
+          <p class="muted">First, authorize a temporary Wireless debugging connection. The wizard then installs and opens adb-auto-enable. On the TV, complete its separate pairing-code prompt. This companion has its own ADB key.</p>
+          <div id="companion-state" class="muted" role="status" aria-live="polite"></div>
+          <button id="companion-prepare" type="button">Prepare companion setup</button>
+          <div id="companion-pair-fields" class="hidden">
+            <p>On the TV, open the pairing popup in Wireless debugging. Enter the code and pairing port shown there.</p>
+            <label for="companion-pair-port">Pairing port</label><input id="companion-pair-port" type="number" min="1" max="65535" step="1" autocomplete="off">
+            <label for="companion-pair-code">Pairing code</label><input id="companion-pair-code" inputmode="numeric" pattern="[0-9]{4,12}" maxlength="12" autocomplete="one-time-code">
+            <button id="companion-pair-submit" class="secondary" type="button">Submit pairing code</button>
+          </div>
+          <p id="companion-abandon-help" class="muted">If you stop setup before it finishes, open adb-auto-enable on the TV and turn off “Enable Web Interface on Boot.” That stops its unauthenticated setup server from being reachable on your LAN.</p>
+        </section>
+        <section class="wizard-step hidden" data-step="4" aria-labelledby="step-title-4">
+          <h3 id="step-title-4">Choose apps to watch</h3>
           <p class="muted">Select apps to save their current versions as baselines. No compile will be queued.</p>
           <div id="wizard-apps" class="wizard-apps" aria-live="polite"></div>
           <div id="wizard-app-actions" class="wizard-app-actions hidden"><button id="wizard-app-save" type="button">Save selected apps</button><button id="wizard-app-skip" class="secondary" type="button">Skip for now</button></div>
           <p id="wizard-app-state" class="muted" role="status" aria-live="polite"></p><p id="wizard-app-error" class="message" role="alert" aria-live="assertive"></p><button id="wizard-app-retry" class="secondary hidden" type="button">Retry loading apps</button>
         </section>
-        <section class="wizard-step hidden" data-step="4" aria-labelledby="step-title-4">
-          <h3 id="step-title-4">Review setup</h3>
+        <section class="wizard-step hidden" data-step="5" aria-labelledby="step-title-5">
+          <h3 id="step-title-5">Review setup</h3>
           <div id="wizard-review"></div>
           <fieldset id="wizard-finish-options">
             <legend>Choose what Finish does</legend>
