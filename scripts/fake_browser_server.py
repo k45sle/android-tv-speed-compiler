@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
 from fastapi.responses import JSONResponse  # noqa: E402
 from test_web import FakeAdb, package  # noqa: E402
 
-from tvcompiler.adb import BusyStatus, DiscoveredService  # noqa: E402
+from tvcompiler import web as web_module  # noqa: E402
+from tvcompiler.adb import BusyStatus, DeviceIdentity, DiscoveredService  # noqa: E402
 from tvcompiler.web import create_app  # noqa: E402
 
 
@@ -47,8 +48,87 @@ class BrowserAdb(FakeAdb):
         return BusyStatus(True, True, ("screen active", "playback active"))
 
 
+class BrowserCompanion:
+    """Synthetic companion workflow; it persists the same Finish-gated state as production."""
+
+    def __init__(self, store, client):
+        self.store = store
+        self.client = client
+        self.prepare_calls = {}
+        self.pair_calls = {}
+
+    @staticmethod
+    def _reply(record):
+        return {
+            "phase": record["phase"], "paired": record["paired"],
+            "web_disabled": record["web_disabled"], "target_port": record["target_port"],
+            "reason": record["reason"], "ready": record["phase"] == "ready",
+        }
+
+    def status(self, device_id):
+        record = self.store.get_companion_setup(device_id)
+        if record is None:
+            return {"phase": "not_started", "paired": False, "web_disabled": False,
+                    "target_port": 5555, "reason": None, "ready": False}
+        return self._reply(record)
+
+    def is_current_ready(self, device_id):
+        return self.status(device_id)["ready"]
+
+    def verify_ready(self, device_id):
+        status = self.status(device_id)
+        if not status["ready"]:
+            raise ValueError("Synthetic companion is not ready")
+        return status
+
+    def prepare(self, device_id, *, consent, target_port=5555):
+        if not consent:
+            raise ValueError("Explicit consent is required")
+        device = self.store.get_device(device_id)
+        calls = self.prepare_calls.get(device_id, 0)
+        self.prepare_calls[device_id] = calls + 1
+        phase = "failed" if device.name == "Companion retry TV" and calls == 0 else "needs_pairing"
+        if device.name == "Companion already paired TV":
+            phase = "ready"
+        self.store.save_companion_setup(
+            device_id, phase=phase, reason="Synthetic setup failure" if phase == "failed" else None,
+            target_port=target_port, bootstrap_endpoint=device.endpoint,
+            paired=phase == "ready", web_disabled=phase == "ready",
+            expected_serial=device.serial, expected_fingerprint=device.fingerprint,
+        )
+        if phase == "ready":
+            self._save_fixed_endpoint(device_id, device, target_port)
+        return self.status(device_id)
+
+    def pair(self, device_id, *, pairing_code, pairing_port):
+        device = self.store.get_device(device_id)
+        record = self.store.get_companion_setup(device_id)
+        calls = self.pair_calls.get(device_id, 0)
+        self.pair_calls[device_id] = calls + 1
+        if device.name == "Companion retry TV" and calls == 0:
+            raise ValueError("Synthetic pairing failure")
+        if record is None or record["phase"] != "needs_pairing":
+            raise ValueError("Prepare the companion before pairing")
+        self.store.update_companion_setup(device_id, phase="paired", paired=True, reason=None)
+        self.store.update_companion_setup(device_id, web_disabled=True)
+        self._save_fixed_endpoint(device_id, device, record["target_port"])
+        return self.status(device_id)
+
+    def _save_fixed_endpoint(self, device_id, device, target_port):
+        host = device.endpoint.rsplit(":", 1)[0]
+        endpoint = f"{host}:{target_port}"
+        self.store.complete_companion_setup(
+            device_id, expected_endpoint=device.endpoint, expected_serial=device.serial,
+            expected_fingerprint=device.fingerprint, endpoint=endpoint,
+        )
+        # The synthetic TV keeps its pinned identity across the port change.
+        self.client.devices[endpoint] = DeviceIdentity(device.serial, device.fingerprint)
+        self.client.connect(endpoint)
+
+
 mode = os.environ.get("SMOKE_MODE", "token")
 browser_adb = BrowserAdb()
+web_module.CompanionSetupController = lambda store, client, _jobs, _base: BrowserCompanion(store, client)
 environ = {"LOGIN_ENABLE": "false"} if mode == "noauth" else {"LOGIN_ENABLE": "true"}
 if mode == "local":
     environ["TVCOMPILER_LOCAL_SETUP"] = "1"

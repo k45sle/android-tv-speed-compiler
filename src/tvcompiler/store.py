@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY, value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+CREATE TABLE IF NOT EXISTS companion_setup (
+  device_id TEXT PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  phase TEXT NOT NULL DEFAULT 'not_started' CHECK(phase IN ('not_started','needs_pairing','paired','ready','failed')),
+  reason TEXT, target_port INTEGER NOT NULL,
+  bootstrap_endpoint TEXT NOT NULL,
+  expected_serial TEXT, expected_fingerprint TEXT,
+  paired INTEGER NOT NULL DEFAULT 0 CHECK(paired IN (0,1)),
+  web_disabled INTEGER NOT NULL DEFAULT 0 CHECK(web_disabled IN (0,1)),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 """
 
 
@@ -58,6 +68,10 @@ class Store:
         self._lock = threading.RLock()
         with closing(self._connect()) as db:
             db.executescript(_SCHEMA)
+            companion_columns = {row[1] for row in db.execute("PRAGMA table_info(companion_setup)")}
+            for column in ("expected_serial", "expected_fingerprint"):
+                if column not in companion_columns:
+                    db.execute(f"ALTER TABLE companion_setup ADD COLUMN {column} TEXT")
             device_columns = {row[1] for row in db.execute("PRAGMA table_info(devices)")}
             if "connection_mode" not in device_columns:
                 db.execute(
@@ -212,6 +226,96 @@ class Store:
     def forget_device(self, device_id: str) -> None:
         with self._transaction() as db:
             db.execute("DELETE FROM devices WHERE id=?", (device_id,))
+
+    @staticmethod
+    def _companion_setup(row: sqlite3.Row | None) -> dict | None:
+        if row is None:
+            return None
+        return {
+            "phase": row["phase"], "reason": row["reason"], "target_port": row["target_port"],
+            "bootstrap_endpoint": row["bootstrap_endpoint"], "paired": bool(row["paired"]),
+            "expected_serial": row["expected_serial"], "expected_fingerprint": row["expected_fingerprint"],
+            "web_disabled": bool(row["web_disabled"]), "updated_at": row["updated_at"],
+        }
+
+    def get_companion_setup(self, device_id: str) -> dict | None:
+        with closing(self._connect()) as db:
+            row = db.execute("SELECT * FROM companion_setup WHERE device_id=?", (device_id,)).fetchone()
+        return self._companion_setup(row)
+
+    def save_companion_setup(
+        self, device_id: str, *, phase: str, reason: str | None = None, target_port: int,
+        bootstrap_endpoint: str, paired: bool = False, web_disabled: bool = False,
+        expected_serial: str | None = None, expected_fingerprint: str | None = None,
+    ) -> bool:
+        if phase not in {"not_started", "needs_pairing", "paired", "ready", "failed"}:
+            raise ValueError("invalid companion setup phase")
+        reason = (reason or "")[:180] or None
+        with self._transaction() as db:
+            if not db.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone():
+                return False
+            db.execute(
+                """INSERT INTO companion_setup(
+                   device_id,phase,reason,target_port,bootstrap_endpoint,paired,web_disabled,
+                   expected_serial,expected_fingerprint) VALUES(?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(device_id) DO UPDATE SET
+                   phase=excluded.phase,reason=excluded.reason,target_port=excluded.target_port,
+                   bootstrap_endpoint=excluded.bootstrap_endpoint,paired=excluded.paired,
+                   web_disabled=excluded.web_disabled,expected_serial=excluded.expected_serial,
+                   expected_fingerprint=excluded.expected_fingerprint,
+                   updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
+                (device_id, phase, reason, target_port, bootstrap_endpoint, int(paired), int(web_disabled),
+                 expected_serial, expected_fingerprint),
+            )
+            return True
+
+    def update_companion_setup(self, device_id: str, **changes) -> bool:
+        allowed = {"phase", "reason", "target_port", "bootstrap_endpoint", "paired", "web_disabled"}
+        if not changes or changes.keys() - allowed:
+            raise ValueError("invalid companion setup update")
+        if "phase" in changes and changes["phase"] not in {"not_started", "needs_pairing", "paired", "ready", "failed"}:
+            raise ValueError("invalid companion setup phase")
+        if "reason" in changes:
+            changes["reason"] = (changes["reason"] or "")[:180] or None
+        for key in ("paired", "web_disabled"):
+            if key in changes:
+                changes[key] = int(bool(changes[key]))
+        assignments = ",".join(f"{key}=?" for key in changes)
+        with self._transaction() as db:
+            cursor = db.execute(
+                f"UPDATE companion_setup SET {assignments},"
+                "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE device_id=?",
+                (*changes.values(), device_id),
+            )
+            return cursor.rowcount == 1
+
+    def complete_companion_setup(
+        self, device_id: str, *, expected_endpoint: str | None, expected_serial: str | None,
+        expected_fingerprint: str | None, endpoint: str,
+    ) -> bool:
+        """Atomically switch only the still-pinned TV and mark its setup ready."""
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT endpoint,serial,fingerprint,enabled FROM devices WHERE id=?", (device_id,)
+            ).fetchone()
+            setup = db.execute(
+                "SELECT device_id,target_port,paired,web_disabled FROM companion_setup WHERE device_id=?",
+                (device_id,),
+            ).fetchone()
+            if (
+                not row or not setup or not row["enabled"] or row["endpoint"] != expected_endpoint
+                or row["serial"] != expected_serial or row["fingerprint"] != expected_fingerprint
+                or not setup["paired"] or not setup["web_disabled"]
+                or setup["target_port"] != int(endpoint.rsplit(":", 1)[1])
+            ):
+                return False
+            db.execute("UPDATE devices SET endpoint=?,connection_mode='tcpip' WHERE id=?", (endpoint, device_id))
+            db.execute(
+                "UPDATE companion_setup SET phase='ready',reason=NULL,"
+                "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE device_id=?",
+                (device_id,),
+            )
+            return True
 
     def upsert_app(
         self,

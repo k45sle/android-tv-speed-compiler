@@ -1,13 +1,15 @@
 # Connection and login checks
 
-## Current behavior
+## Behavior snapshot at commit `5ff1ecd`
 
 - `LOGIN_ENABLE` defaults to `false`. The dashboard opens without an account, and startup creates no auth database or bootstrap token. Bundled Compose binds to host loopback. The app rejects non-loopback `Host` values and forwarded proxy headers in this mode, but those checks cannot prove that the full network route is private. Mutations require a same-origin `Origin` header and a matching CSRF cookie/header; the CSRF cookie is issued again when missing or invalid. Turning login off leaves existing auth data intact, and turning it back on restores the existing account.
-- Each TV has a saved connection choice: encrypted Wireless debugging (`wireless`) or unencrypted fixed TCP/IP (`tcpip`). The choice guides connection behavior; it does not switch TV settings or verify the live transport's encryption. The service does not install the optional TV companion. Fixed TCP/IP requires the owner to configure the TV and approve this service's RSA key; the companion's separate key does not authorize the service. See [Wireless debugging and ADB](wireless-debugging-recovery.md) for tradeoffs and setup steps.
+- Each TV has a saved connection choice: encrypted Wireless debugging (`wireless`) or unencrypted fixed TCP/IP (`tcpip`). The choice guides connection behavior; it does not switch TV settings or verify the live transport's encryption. At this snapshot, the service did not install the optional TV companion. Current companion setup behavior and checks are in [Companion setup checks](companion-setup-checks.md). Fixed TCP/IP requires approval of this service's RSA key; the companion's separate key does not authorize the service. See [Wireless debugging and ADB](wireless-debugging-recovery.md) for tradeoffs and setup steps.
 - When monitoring is paused, the automatic-monitoring option is checked by default; if monitoring is already on, Finish preserves it. The first speed compile is checked by default for selected apps. Owners can clear either option. Queued compiles wait until the TV is confirmed idle and any maintenance window is open. Busy, unknown, or out-of-window status can defer work.
 - The dashboard reports connection and polling status, poll interval, time-zone choices, and missing ADB. **Run log** shows job outcomes and current wait reasons.
 
 ## Verification evidence
+
+The results below are preserved from commit `5ff1ecd`; they do not verify later changes.
 
 - `make check` passed with exit code 0: Ruff was clean, 130 tests passed in 4.24 seconds, and wheel/source archives contained the expected assets.
 - `make docker-check` passed for both Compose variants. `node --check src/tvcompiler/static/app.js` and `node --check scripts/browser-smoke.mjs` passed. `PLAYWRIGHT_MODULE=/Users/rk/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright make smoke` passed. `git diff --check` passed.
