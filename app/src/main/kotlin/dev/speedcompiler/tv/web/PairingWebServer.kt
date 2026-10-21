@@ -49,11 +49,11 @@ class PairingWebServer(
         val code = PairingSession.cleanCode(s.parms["code"])
             ?: return reply(Response.Status.BAD_REQUEST, msg("Enter the 6-digit code."))
         val port = s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 } ?: pairingPort()
-            ?: return reply(Response.Status.BAD_REQUEST, msg("Pairing port not found. Enter the port shown on the TV."))
+            ?: return reply(Response.Status.BAD_REQUEST, msg("Pairing port not found. Enter the port shown on the TV and press Pair."))
         val ok = runBlocking { runCatching { pairing.pair(host(), port, code) }.getOrDefault(false) }
-        if (!ok) return reply(Response.Status.OK, msg("Pairing failed. Check the code and try again."))
+        if (!ok) return reply(Response.Status.OK, msg("Pairing failed. Check the code on the TV and try again."))
         Timer(true).schedule(500) { finish() }
-        return reply(Response.Status.OK, msg("Paired. You can close this page."))
+        return reply(Response.Status.OK, msg("Paired. Close this page."))
     }
 
     private fun reply(status: Response.IStatus, body: String) =
@@ -62,22 +62,34 @@ class PairingWebServer(
             closeConnection(true) // an unread POST body would corrupt the next keep-alive request
         }
 
-    private fun msg(text: String) = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><p>$text</p>"
+    private fun msg(text: String) =
+        "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>" +
+            "<title>Speed Compile</title><style>$STYLE</style></head><body><main><p>$text</p></main></body></html>"
 
     companion object {
         private const val MIME_HTML = "text/html; charset=utf-8"
+        private const val STYLE = "" +
+            ":root{color-scheme:light dark;--fg:#1a1c1a;--bg:#fff;--line:#6b736d;--accent:#123524;--on:#fff}" +
+            "@media(prefers-color-scheme:dark){:root{--fg:#e8ece9;--bg:#121413;--line:#8d968f;--accent:#7fc59a;--on:#08150d}}" +
+            "body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}" +
+            "main{max-width:28rem;padding:1rem}h1{font-size:1.5rem;margin:0 0 1rem}" +
+            "label{display:block;margin:0 0 1rem}input{display:block;width:100%;box-sizing:border-box;min-height:44px;margin-top:.25rem;" +
+            "padding:.5rem;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:4px}" +
+            "button{min-height:44px;padding:0 1.5rem;font:inherit;font-weight:600;color:var(--on);background:var(--accent);border:0;border-radius:4px}" +
+            "input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}"
         val PAGE = """
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pair TV</title><style>body{font-family:sans-serif;margin:2em}input{font-size:2em;width:100%;box-sizing:border-box;margin:.3em 0}</style></head>
-<body><h1>Pair with the TV</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pair Speed Compile</title><style>$STYLE</style></head>
+<body><main><h1>Pair with Speed Compile</h1>
 <form method="post" id="f">
-<label>Pairing code<input name="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" autofocus></label>
-<label>Port (only if pairing fails)<input name="port" inputmode="numeric" maxlength="5"></label>
+<label>Pairing code (6 digits, shown on the TV)<input name="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" autofocus></label>
+<label>Port (enter only if pairing fails)<input name="port" inputmode="numeric" maxlength="5"></label>
+<button type="submit">Pair</button>
 </form>
 <script>
 var c=document.getElementById('code');
 c.addEventListener('input',function(){c.value=c.value.replace(/\D/g,'').slice(0,6);if(c.value.length==6)document.getElementById('f').submit();});
-</script></body></html>
+</script></main></body></html>
 """.trimIndent()
     }
 }
