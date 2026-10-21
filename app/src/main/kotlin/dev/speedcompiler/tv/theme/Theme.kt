@@ -26,6 +26,7 @@ import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 import androidx.tv.material3.lightColorScheme
 import dev.speedcompiler.tv.R
+import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.ThemeChoice
 
 /** 8 dp grid. */
@@ -76,17 +77,14 @@ sealed interface SeedChoice {
     }
 }
 
-/** TODO chunk 11/14: persist through Settings (needs a new field) instead of this in-memory holder. */
-object ThemeSelection {
-    var seed: SeedChoice by mutableStateOf(SeedChoice.Preset(0))
-}
+fun SettingsValues.seedChoice(): SeedChoice = customHue?.let { SeedChoice.Custom(it) } ?: SeedChoice.Preset(accentPreset)
 
 private fun Int.c() = Color(this)
 
 @Composable
 fun SpeedTheme(
     themeChoice: ThemeChoice = ThemeChoice.Dark,
-    seed: SeedChoice = ThemeSelection.seed,
+    seed: SeedChoice = SeedChoice.Preset(0),
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeChoice) {

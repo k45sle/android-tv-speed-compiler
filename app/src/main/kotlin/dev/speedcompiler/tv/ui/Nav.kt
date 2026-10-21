@@ -39,6 +39,8 @@ object Routes {
     const val Settings = "settings"
     const val Reconnect = "reconnect"
     const val QuickRepair = "repair"
+    const val Diagnostics = "diagnostics"
+    const val Help = "help"
 }
 
 @Composable
@@ -53,7 +55,7 @@ fun AppNavHost() {
         composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), go, back) }
         composable(Routes.Working) { WorkingScreen(it.arguments?.getString("pkg").orEmpty(), back) }
         composable(Routes.Activity) { ActivityScreen(back) }
-        composable(Routes.Settings) { SettingsScreen(back) }
+        composable(Routes.Settings) { SettingsScreen(go, back) }
         composable(Routes.Reconnect) { ReconnectScreen(back) }
         composable(Routes.QuickRepair) { QuickRepairScreen(back) }
     }
