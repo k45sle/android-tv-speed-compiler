@@ -20,7 +20,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // Roborazzi plugin is not in the catalog; this property alone makes captureRoboImage write files.
+        unitTests.all { it.systemProperty("roborazzi.test.record", "true") }
+    }
     // NanoHTTPD and Conscrypt ship duplicate license files
     packaging { resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1") }
 }
