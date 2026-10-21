@@ -21,6 +21,7 @@ import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -104,6 +105,19 @@ class WorkingScreenTest {
         rule.onNodeWithContentDescription("Play Dino runner. Jump the cacti").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Flappy. Flap through the gaps").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running.png")
+    }
+
+    @Test
+    fun headerAndGameFitOnScreenWhilePlaying() {
+        show()
+        rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").invokeClick()
+        rule.mainClock.advanceTimeBy(1_000)
+        val title = rule.onNodeWithText("Optimizing Alpha").fetchSemanticsNode().boundsInRoot
+        val hint = rule.onNodeWithText("Arrows to move, Select to act, Back to stop playing").fetchSemanticsNode().boundsInRoot
+        val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
+        assertTrue("title top ${title.top}", title.top >= 0f)
+        assertTrue("hint bottom ${hint.bottom} of ${root.height}", hint.bottom <= root.height)
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_playing.png")
     }
 
     @Test
