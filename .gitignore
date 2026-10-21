@@ -24,3 +24,5 @@ dist/
 
 # Private notes (ledger, progress logs): a separate git repo, never part of this public repo
 notes/
+# Session handoff files from /handoff (private working notes)
+.claude/handoffs/
