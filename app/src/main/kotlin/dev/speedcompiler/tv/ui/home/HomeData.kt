@@ -2,7 +2,11 @@ package dev.speedcompiler.tv.ui.home
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -21,11 +25,19 @@ class AppLook(val label: String, val icon: ImageBitmap? = null, val banner: Imag
 @Composable
 fun rememberGraph(): AppGraph = LocalContext.current.let { c -> remember { (c.applicationContext as SpeedApp).graph } }
 
-/** shortcut: loads on the main thread and caches for the screen's life; fine for a few dozen apps. */
+/** Loads on Dispatchers.IO and caches for the screen's life. */
 @Composable
 fun rememberLook(): (String) -> AppLook {
     val context = LocalContext.current
-    return remember { val cache = HashMap<String, AppLook>(); { p -> cache.getOrPut(p) { lookup(context, p) } } }
+    val cache = remember { mutableStateMapOf<String, AppLook>() }
+    val pending = remember { HashSet<String>() }
+    val scope = rememberCoroutineScope()
+    // Package name until the IO load lands, then the real label and art.
+    return remember {
+        { p ->
+            cache[p] ?: AppLook(p).also { if (pending.add(p)) scope.launch(Dispatchers.IO) { cache[p] = lookup(context, p) } }
+        }
+    }
 }
 
 private fun lookup(context: Context, pkg: String): AppLook = runCatching {
@@ -39,6 +51,7 @@ private fun lookup(context: Context, pkg: String): AppLook = runCatching {
 }.getOrElse { AppLook(pkg) }
 
 private val clock = DateTimeFormatter.ofPattern("HH:mm")
+private val date = DateTimeFormatter.ofPattern("EEE MMM d")
 private val stamp = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
 fun clockText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
@@ -50,7 +63,11 @@ fun etaText(eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.system
     is Eta.StartsAt -> {
         val at = eta.at.atZone(zone)
         val today = now.atZone(zone).toLocalDate()
-        if (at.toLocalDate() == today) "Starts at ${clock.format(at)}" else "Starts tomorrow ${clock.format(at)}"
+        when (at.toLocalDate()) {
+            today -> "Starts at ${clock.format(at)}"
+            today.plusDays(1) -> "Starts tomorrow ${clock.format(at)}"
+            else -> "Starts ${date.format(at)} ${clock.format(at)}"
+        }
     }
     Eta.WaitingForIdle -> "Waiting for the TV to be idle"
     Eta.WaitingForPlayback -> "Waiting for playback to stop"

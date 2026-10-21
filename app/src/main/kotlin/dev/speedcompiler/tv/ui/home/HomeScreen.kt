@@ -19,6 +19,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +40,7 @@ import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueEntry
+import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.Instant
 import java.time.ZoneId
@@ -82,17 +85,26 @@ private fun dotLabel(tone: Tone) = when (tone) {
 fun HomeScreen(go: (String) -> Unit) {
     val graph = rememberGraph()
     val look = rememberLook()
-    val connection by graph.connectionMonitor.state.collectAsState(ConnectionState.Disconnected)
-    val settings by graph.settings.values.collectAsState(SettingsValues())
-    val watched by graph.database.watchedApps().all().collectAsState(emptyList())
-    val queue by graph.scheduler.queue.collectAsState(emptyList())
-    val events by graph.database.events().recent(4).collectAsState(emptyList())
+    // Flows are built once: a new Flow per recomposition would restart collection (and the gate probe behind queue).
+    val flows = remember(graph) {
+        listOf(graph.connectionMonitor.state, graph.settings.values, graph.database.watchedApps().all(), graph.scheduler.queue, graph.database.events().recent(4))
+    }
+    @Suppress("UNCHECKED_CAST")
+    val connection by (flows[0] as Flow<ConnectionState>).collectAsState(ConnectionState.Disconnected)
+    @Suppress("UNCHECKED_CAST")
+    val settings by (flows[1] as Flow<SettingsValues>).collectAsState(SettingsValues())
+    @Suppress("UNCHECKED_CAST")
+    val watched by (flows[2] as Flow<List<WatchedApp>>).collectAsState(emptyList())
+    @Suppress("UNCHECKED_CAST")
+    val queue by (flows[3] as Flow<List<QueueEntry>>).collectAsState(emptyList())
+    @Suppress("UNCHECKED_CAST")
+    val events by (flows[4] as Flow<List<Event>>).collectAsState(emptyList())
     HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look), go)
 }
 
 @Composable
 fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()) {
-    val waiting = s.queue.size
+    val waiting = s.queue.count { it.state != QueueState.RUNNING }
     val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
@@ -106,10 +118,10 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 ConnectionState.Unpaired -> "The TV forgot this app. Approve it again." to "Approve"
             }
             Text(text, style = MaterialTheme.typography.headlineMedium)
-            if (action != null) Button({ go(Routes.Reconnect) }) { Text(action) }
+            if (action != null) Button({ go(if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) }) { Text(action) }
         }
         if (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting) {
-            val next = s.queue.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
+            val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
             val line = when {
                 waiting == 0 -> "Nothing waiting"
                 next.isEmpty() -> "$waiting waiting"

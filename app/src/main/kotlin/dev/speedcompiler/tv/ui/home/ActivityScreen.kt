@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,9 +50,13 @@ import kotlinx.coroutines.launch
 fun ActivityScreen(onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val graph = rememberGraph()
-    val queue by graph.scheduler.queue.collectAsState(emptyList())
-    val history by graph.scheduler.history.collectAsState(emptyList())
-    val events by graph.database.events().recent(200).collectAsState(emptyList())
+    // Built once: a new Flow per recomposition would restart collection.
+    val queueFlow = remember(graph) { graph.scheduler.queue }
+    val historyFlow = remember(graph) { graph.scheduler.history }
+    val eventsFlow = remember(graph) { graph.database.events().recent(200) }
+    val queue by queueFlow.collectAsState(emptyList())
+    val history by historyFlow.collectAsState(emptyList())
+    val events by eventsFlow.collectAsState(emptyList())
     ActivityContent(
         queue, history, events, rememberLook(),
         onCancel = { id -> graph.appScope.launch { graph.scheduler.cancel(id) } },
@@ -66,27 +76,35 @@ fun ActivityContent(
     zone: ZoneId = ZoneId.systemDefault(),
 ) {
     var open by remember { mutableStateOf<Long?>(null) }
+    val queueHeader = remember { FocusRequester() }
+    val historyHeader = remember { FocusRequester() }
+    var refocus by remember { mutableStateOf<FocusRequester?>(null) }
+    // The acted-on row leaves its list; park focus on that section's header so D-pad focus is not lost.
+    LaunchedEffect(queue, history) {
+        refocus?.let { r -> runCatching { r.requestFocus() }.onFailure { runCatching { queueHeader.requestFocus() } }; refocus = null }
+    }
     LazyColumn(
         Modifier.padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(Space.x1),
     ) {
-        item { Text("Queue", style = MaterialTheme.typography.headlineMedium) }
+        item { Text("Queue", Modifier.focusRequester(queueHeader).focusable(), style = MaterialTheme.typography.headlineMedium) }
         if (queue.isEmpty()) item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)
             val eta = etaText(e.eta, now, zone)
             ListRow(
                 l.label,
+                Modifier.semantics { contentDescription = "${l.label}, ${stateText(e.state)}" },
                 subtitle = listOf(stateText(e.state), eta).filter { it.isNotEmpty() }.joinToString(" · "),
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         Icon(l)
-                        Button({ onCancel(e.item.id) }) { Text("Cancel") }
+                        Button({ refocus = queueHeader; onCancel(e.item.id) }, Modifier.semantics { contentDescription = "Cancel ${l.label}" }) { Text("Cancel") }
                     }
                 },
             )
         }
-        item { Text("History", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = Space.x2)) }
+        item { Text("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusable(), style = MaterialTheme.typography.headlineMedium) }
         if (history.isEmpty()) item { Text("Nothing has run yet", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(history, key = { "h${it.id}" }) { h ->
             val l = look(h.packageName)
@@ -106,7 +124,7 @@ fun ActivityContent(
                         Text(l.label, style = MaterialTheme.typography.titleMedium)
                         Text(listOfNotNull(stateText(h.state), reason).joinToString(": "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (h.state == QueueState.FAILED) Button({ onRetry(h.id) }) { Text("Retry") }
+                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = "Retry ${l.label}" }) { Text("Retry") }
                 }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt

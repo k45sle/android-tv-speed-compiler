@@ -8,9 +8,11 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
@@ -85,13 +87,13 @@ class HomeActivityTest {
     }
 
     private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.onAllNodesWithClick() =
-        onAllNodes(hasClickAction()).fetchSemanticsNodes()
+        onAllNodes(hasClickAction() or SemanticsMatcher.keyIsDefined(SemanticsActions.RequestFocus)).fetchSemanticsNodes()
 
     @Test
     fun homeConnectedShowsStatusEtaAndLabels() {
         home(ConnectionState.Connected)
         rule.onNodeWithText("Auto-optimize is on · Connected").assertIsDisplayed()
-        rule.onNodeWithText("2 waiting · next: Starts at 02:00").assertIsDisplayed()
+        rule.onNodeWithText("1 waiting · next: Starts at 02:00").assertIsDisplayed()
         rule.onNodeWithText("Recent activity").assertIsDisplayed()
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_connected.png")
@@ -101,7 +103,7 @@ class HomeActivityTest {
     fun homeDisconnectedShowsWaitingCountAndReconnectNavigates() {
         var went: String? = null
         home(ConnectionState.Disconnected) { went = it }
-        rule.onNodeWithText("Disconnected · 2 waiting").assertIsDisplayed()
+        rule.onNodeWithText("Disconnected · 1 waiting").assertIsDisplayed()
         rule.onNodeWithText("Reconnect").invokeClick()
         assertEquals("reconnect", went)
         everyClickableIsLabelled()
@@ -113,6 +115,7 @@ class HomeActivityTest {
         val zone = utc
         assertEquals("Starts at 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z")), now, zone))
         assertEquals("Starts tomorrow 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-02T02:00:00Z")), now, zone))
+        assertEquals("Starts Sat Jan 3 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-03T02:00:00Z")), now, zone))
         assertEquals("Waiting for the TV to be idle", etaText(Eta.WaitingForIdle))
         assertEquals("Waiting for playback to stop", etaText(Eta.WaitingForPlayback))
         assertEquals("#2 in queue, about 4 min", etaText(Eta.InQueue(1, 240_000)))
@@ -129,10 +132,10 @@ class HomeActivityTest {
         show { ActivityContent(queue, history, events, look, { cancelled += it }, { retried += it }, now, utc) }
         rule.onNodeWithText("Running", substring = true).assertIsDisplayed()
         rule.onNodeWithText("Waiting · Starts at 02:00").assertIsDisplayed()
-        rule.onAllNodesWithTextCancel(1).invokeClick()
+        rule.onNodeWithContentDescription("Cancel Beta").invokeClick()
         assertEquals(listOf(2L), cancelled)
         rule.onNodeWithText("Failed: Connection lost").assertIsDisplayed()
-        rule.onNodeWithText("Retry").performScrollTo().invokeClick()
+        rule.onNodeWithContentDescription("Retry Alpha").performScrollTo().invokeClick()
         assertEquals(listOf(7L), retried)
         rule.onNodeWithText("Failed: Connection lost").invokeClick()
         rule.onNodeWithText("Didn't finish", substring = true).assertIsDisplayed()
