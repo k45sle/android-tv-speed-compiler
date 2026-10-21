@@ -85,4 +85,15 @@ class ConnectionKeeperTest {
             assertEquals(emptyList<String>(), shell.commands)
         }
     }
+
+    @Test
+    fun droppedLinkDuringShellMovesStatusToFailed() = runTest {
+        val k = keeper(object : AdbShell {
+            override suspend fun run(command: String): ShellResult = throw AdbFailure.Timeout()
+        })
+        k.reconnect()
+        val s = k.status.value as KeeperStatus.Failed
+        assertEquals(Fix.Retry, s.fix)
+        assertEquals(ConnectionState.Disconnected, k.state.first())
+    }
 }

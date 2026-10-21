@@ -98,6 +98,9 @@ class ConnectionKeeper(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
+        val err = mapAdbError(e)
+        // A dropped link surfaces here as AdbFailure; show it instead of a stale Connected.
+        if (err is AdbFailure) _status.value = KeeperStatus.Failed(err, fixFor(err))
         e.message ?: e.javaClass.simpleName
     }
 }
