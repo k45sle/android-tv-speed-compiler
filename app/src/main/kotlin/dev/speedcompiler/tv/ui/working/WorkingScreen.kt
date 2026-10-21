@@ -185,7 +185,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
                     is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium)
                     JobView.CouldntStart -> Text("Couldn't start. Try again from the app.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
                     JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium)
-                    JobView.Running -> Text("Working on it. This keeps going if you leave.", style = MaterialTheme.typography.titleMedium)
+                    JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium)
                 }
                 if (s.job != JobView.CouldntStart) Text(
                     elapsedText(s.elapsedMillis), style = MonoStyle,

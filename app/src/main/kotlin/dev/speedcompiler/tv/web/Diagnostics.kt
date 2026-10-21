@@ -118,7 +118,7 @@ class DiagnosticsServer(
         if (s.method != Method.GET || !session.tokenMatches(s.uri.removePrefix("/")) || session.expired()) {
             return reply(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
-        if (!served.compareAndSet(false, true)) return reply(Response.Status.GONE, "text/plain", "Already downloaded")
+        if (!served.compareAndSet(false, true)) return reply(Response.Status.GONE, "text/plain", "Already downloaded. Export again from the TV to get a new link.")
         val bytes = json.toByteArray()
         // Stop only once NanoHTTPD has written the body and closes the stream.
         val body = object : FilterInputStream(ByteArrayInputStream(bytes)) {
@@ -127,7 +127,7 @@ class DiagnosticsServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", body, bytes.size.toLong()).apply {
             addHeader("Cache-Control", "no-store")
             closeConnection(true)
-            addHeader("Content-Disposition", "attachment; filename=\"speed-compiler-diagnostics.json\"")
+            addHeader("Content-Disposition", "attachment; filename=\"speed-compile-diagnostics.json\"")
         }
     }
 

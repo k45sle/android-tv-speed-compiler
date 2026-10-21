@@ -58,7 +58,7 @@ class WorkingScreenTest {
         rule.onNodeWithText("#1 in queue, about 1 min").assertIsDisplayed()
         queue.value = listOf(QueueEntry(item(1, QueueState.RUNNING, at = base - 600_000, runNow = false), 0, Eta.None))
         rule.mainClock.advanceTimeBy(40_000)
-        rule.onNodeWithText("Working on it. This keeps going if you leave.").assertIsDisplayed()
+        rule.onNodeWithText("Optimizing. This continues if you leave.").assertIsDisplayed()
     }
 
     @Test

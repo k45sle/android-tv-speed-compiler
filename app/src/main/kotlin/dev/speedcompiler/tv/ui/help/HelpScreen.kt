@@ -28,8 +28,8 @@ val helpEntries = listOf(
     HelpEntry("The TV is waiting for you", "Press Allow on the prompt on the TV, then reconnect.", Routes.Reconnect, "Reconnect"),
     HelpEntry("The TV did not answer", "Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.", Routes.Reconnect, "Reconnect"),
     HelpEntry("Optimizing did not finish", "The TV stopped or refused the job. Try again when the TV is idle."),
-    HelpEntry("Optimized, but not checked", "This TV does not report the result. The app should still start faster."),
-    HelpEntry("The pairing code did not work", "Codes expire fast. Get a new code on the TV and type all 6 digits."),
+    HelpEntry("Optimized, but not checked", "This TV does not report the result. The app may still start faster."),
+    HelpEntry("The pairing code did not work", "Pairing codes expire. Get a new code on the TV and type all 6 digits."),
 )
 
 @Composable
