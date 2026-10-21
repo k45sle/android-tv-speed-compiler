@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.engine
 
+import java.time.Instant
+
 data class InstalledPackage(val packageName: String, val fingerprint: String)
 
 data class OptimizeResult(val ok: Boolean, val detail: String = "")
@@ -14,9 +16,18 @@ interface Optimizer {
     suspend fun optimize(packageName: String): OptimizeResult
 }
 
+/** Why the gate is open or closed. Only [OpensAt] carries a clock time, taken from the user's set hours. */
+sealed interface GateStatus {
+    data object Open : GateStatus
+    data object WaitingForPlayback : GateStatus
+    data object WaitingForIdle : GateStatus
+    data class OpensAt(val at: Instant) : GateStatus
+}
+
 /** Decides whether optimizing is allowed right now (window, pause switch, device state). */
 interface Gate {
-    suspend fun isOpen(): Boolean
+    suspend fun status(): GateStatus
+    suspend fun isOpen(): Boolean = status() == GateStatus.Open
 }
 
 interface Clock {
@@ -40,8 +51,8 @@ class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimiz
     }
 }
 
-class FakeGate(var open: Boolean = true) : Gate {
-    override suspend fun isOpen() = open
+class FakeGate(var status: GateStatus = GateStatus.Open) : Gate {
+    override suspend fun status() = status
 }
 
 class FakeClock(var now: Long = 0L) : Clock {

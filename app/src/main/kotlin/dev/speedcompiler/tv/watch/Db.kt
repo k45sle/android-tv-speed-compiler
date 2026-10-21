@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.watch
 
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -8,6 +9,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "watched_app")
@@ -33,6 +35,43 @@ data class SyncState(
     @PrimaryKey val key: String,
     val value: String,
 )
+
+enum class QueueSource { AUTO, MANUAL }
+
+enum class QueueState { QUEUED, WAITING_GATE, RUNNING, DONE, FAILED, SKIPPED }
+
+/** One optimize job. The queue runs one job at a time; [runNow] jobs skip the gate and go to the front. */
+@Entity(tableName = "queue_item")
+data class QueueItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val source: QueueSource,
+    val state: QueueState = QueueState.QUEUED,
+    val enqueuedAt: Long,
+    val startedAt: Long? = null,
+    val finishedAt: Long? = null,
+    val failureReason: String? = null,
+    val runNow: Boolean = false,
+)
+
+@Dao
+interface QueueDao {
+    /** Unfinished jobs in run order: the running job, then run-now jobs, then first come first served. */
+    @Query(
+        "SELECT * FROM queue_item WHERE state IN ('QUEUED', 'WAITING_GATE', 'RUNNING') " +
+            "ORDER BY state = 'RUNNING' DESC, runNow DESC, enqueuedAt, id",
+    )
+    fun active(): Flow<List<QueueItem>>
+
+    @Query("SELECT * FROM queue_item WHERE id = :id")
+    suspend fun get(id: Long): QueueItem?
+
+    @Insert
+    suspend fun insert(item: QueueItem): Long
+
+    @Update
+    suspend fun update(item: QueueItem)
+}
 
 @Dao
 interface WatchedAppDao {
@@ -64,8 +103,14 @@ interface SyncStateDao {
     suspend fun put(state: SyncState)
 }
 
-@Database(entities = [WatchedApp::class, Event::class, SyncState::class], version = 1, exportSchema = true)
+@Database(
+    entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class],
+    version = 2,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class AppDatabase : RoomDatabase() {
+    abstract fun queue(): QueueDao
     abstract fun watchedApps(): WatchedAppDao
     abstract fun events(): EventDao
     abstract fun syncState(): SyncStateDao
