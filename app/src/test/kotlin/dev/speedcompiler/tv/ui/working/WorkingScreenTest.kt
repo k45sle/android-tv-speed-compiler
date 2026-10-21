@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.ui.home.AppLook
 import dev.speedcompiler.tv.watch.Eta
@@ -58,6 +59,22 @@ class WorkingScreenTest {
         queue.value = listOf(QueueEntry(item(1, QueueState.RUNNING, at = base - 600_000, runNow = false), 0, Eta.None))
         rule.mainClock.advanceTimeBy(40_000)
         rule.onNodeWithText("Working on it. This keeps going if you leave.").assertIsDisplayed()
+    }
+
+    @Test
+    fun disconnectedSaysWaitingForConnectionInsteadOfFlipping() {
+        val conn = MutableStateFlow(ConnectionState.Disconnected)
+        rule.mainClock.autoAdvance = false
+        rule.setContent { SpeedTheme { WorkingHost(pkg, AppLook("Alpha"), queue, history, { base + rule.mainClock.currentTime }, conn) { left++ } } }
+        rule.mainClock.advanceTimeByFrame()
+        val text = "Waiting for the TV's debugging connection. It retries on its own."
+        rule.onNodeWithText(text).assertIsDisplayed()
+        queue.value = listOf(QueueEntry(item(1, QueueState.QUEUED), 0, Eta.InQueue(0, 0)))
+        rule.mainClock.advanceTimeBy(2_000)
+        rule.onNodeWithText(text).assertIsDisplayed()
+        conn.value = ConnectionState.Connected
+        rule.mainClock.advanceTimeBy(2_000)
+        rule.onNodeWithText("#1 in queue, about 1 min").assertIsDisplayed()
     }
 
     private val queue = MutableStateFlow(listOf(QueueEntry(item(1, QueueState.RUNNING), 0, Eta.None)))

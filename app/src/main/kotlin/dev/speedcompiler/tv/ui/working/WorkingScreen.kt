@@ -57,7 +57,9 @@ import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueState
 import kotlinx.coroutines.delay
+import dev.speedcompiler.tv.adb.ConnectionState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlin.math.roundToInt
 
 /** What the job for this package is doing. Never a percentage: the engine cannot report one. */
@@ -106,32 +108,43 @@ fun averageDuration(history: List<QueueItem>): Long =
 /** Nearest whole minute, at least 1. */
 fun usuallyMinutes(avgMillis: Long) = ((avgMillis + 30_000) / 60_000).coerceAtLeast(1)
 
+fun waitingForConnectionText(c: ConnectionState) =
+    if (c == ConnectionState.Unpaired) "Waiting for setup. Finish setup, then this starts."
+    else "Waiting for the TV's debugging connection. It retries on its own."
+
 fun elapsedText(millis: Long): String {
     val s = millis / 1000
     return "%02d:%02d".format(s / 60, s % 60)
 }
 
-class WorkingState(val label: String, val art: ImageBitmap?, val job: JobView, val elapsedMillis: Long, val avgMillis: Long)
+class WorkingState(
+    val label: String, val art: ImageBitmap?, val job: JobView, val elapsedMillis: Long, val avgMillis: Long,
+    /** Null until the first reading, so a disconnected open never flashes the raw job state. */
+    val connection: ConnectionState? = ConnectionState.Connected,
+)
 
 @Composable
 fun WorkingScreen(pkg: String, back: () -> Unit) {
     val graph = rememberGraph()
     val flows = remember(graph) { graph.scheduler.queue to graph.scheduler.history }
+    val connection = remember(graph) { graph.connectionMonitor.state }
     // Loaded in an effect, not from composition: the label must land after the first read of it, or it never shows.
     val context = LocalContext.current
     val look by produceState(AppLook(pkg), pkg) { value = withContext(Dispatchers.IO) { lookup(context, pkg) } }
-    WorkingHost(pkg, look, flows.first, flows.second, back = back)
+    WorkingHost(pkg, look, flows.first, flows.second, connection = connection, back = back)
 }
 
 /** Observes the job (it runs in WorkManager, so leaving never cancels it). Elapsed comes from timestamps, not counted ticks. */
 @Composable
 fun WorkingHost(
     pkg: String, look: AppLook, queue: Flow<List<QueueEntry>>, history: Flow<List<QueueItem>>,
-    clock: () -> Long = System::currentTimeMillis, back: () -> Unit,
+    clock: () -> Long = System::currentTimeMillis,
+    connection: Flow<ConnectionState> = flowOf(ConnectionState.Connected), back: () -> Unit,
 ) {
     val openedAt = rememberSaveable { clock() }
     val q by queue.collectAsState(emptyList())
     val h by history.collectAsState(emptyList())
+    val conn by connection.collectAsState<ConnectionState, ConnectionState?>(null)
     var now by remember { mutableLongStateOf(openedAt) }
     val job = jobView(pkg, q, h, openedAt, now)
     val run = thisRun(pkg, q, h, openedAt)
@@ -141,7 +154,7 @@ fun WorkingHost(
     }
     val end = if (job.finished) run?.finishedAt ?: now else now
     val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
-    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h)), back)
+    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn), back)
 }
 
 @Composable
@@ -163,7 +176,10 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
                     if (s.job.finished) s.label else "Optimizing ${s.label}",
                     style = MaterialTheme.typography.headlineMedium,
                 )
-                when (val j = s.job) {
+                // Without a connection the worker loops running -> retry; say what it is really waiting on.
+                if (!s.job.finished && s.connection != ConnectionState.Connected) {
+                    Text(s.connection?.let(::waitingForConnectionText) ?: "Starting…", style = MaterialTheme.typography.titleMedium)
+                } else when (val j = s.job) {
                     is JobView.Done -> Text("Optimized. You can leave now.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.ok)
                     is JobView.Failed -> Text("Didn't finish: ${j.reason}", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
                     is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium)

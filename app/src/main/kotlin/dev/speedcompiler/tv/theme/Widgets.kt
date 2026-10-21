@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -206,14 +209,23 @@ fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Mod
 }
 
 /** Last focused item id (saved with the back stack entry) and whether a restore is still pending for this screen entry. */
-class FocusMemory(val id: MutableState<String>) {
+private const val RESTORE_WINDOW_MILLIS = 2_000L
+
+class FocusMemory(val id: MutableState<String>, val touched: MutableState<Boolean>) {
     var pending by mutableStateOf(true)
 }
 
+/** [first] may change while the screen loads (an item appears or goes); until the user focuses something, it follows. */
 @Composable
 fun rememberFocusMemory(first: String = ""): FocusMemory {
     val id = rememberSaveable { mutableStateOf(first) }
-    return remember { FocusMemory(id) }
+    val touched = rememberSaveable { mutableStateOf(false) }
+    if (!touched.value && id.value != first) SideEffect { id.value = first }
+    val mem = remember { FocusMemory(id, touched) }
+    // A target that never shows up (an app removed meanwhile) must not grab focus much later.
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused) { if (windowFocused) { delay(RESTORE_WINDOW_MILLIS); mem.pending = false } }
+    return mem
 }
 
 /**
@@ -223,8 +235,12 @@ fun rememberFocusMemory(first: String = ""): FocusMemory {
 @Composable
 fun Modifier.remembersFocus(mem: FocusMemory, id: String): Modifier {
     val r = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        if (mem.pending && mem.id.value == id) runCatching { r.requestFocus() }.onSuccess { mem.pending = false }
+    // On a cold start the request runs before the window has focus and is silently lost, so wait for window focus
+    // and leave clearing pending to onFocusChanged, which only fires when focus really lands.
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val target = mem.id.value == id
+    LaunchedEffect(windowFocused, target) {
+        if (windowFocused && mem.pending && target) runCatching { r.requestFocus() }
     }
-    return focusRequester(r).onFocusChanged { if (it.hasFocus) { mem.id.value = id; mem.pending = false } }
+    return focusRequester(r).onFocusChanged { if (it.hasFocus) { mem.id.value = id; mem.pending = false; mem.touched.value = true } }
 }

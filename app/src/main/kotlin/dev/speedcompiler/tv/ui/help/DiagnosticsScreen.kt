@@ -50,7 +50,7 @@ private suspend fun collect(g: AppGraph, version: String) = DiagnosticsInput(
     settings = g.settings.values.first(),
     connection = g.connectionMonitor.state.first().name,
     watched = g.database.watchedApps().list(),
-    queue = g.scheduler.queue.first().map { it.item },
+    queue = g.database.queue().active().first(), // not scheduler.queue: its gate probe can take 5 s while disconnected
     history = g.scheduler.history.first(),
     events = g.database.events().recent(200).first(),
 )
@@ -80,8 +80,10 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         )
         Button(
             onClick = {
+                note = "Preparing…"
                 scope.launch {
                     val json = buildCappedJson(collect(graph, version), deviceNames(context), SHARE_MAX_CHARS)
+                    note = null
                     try {
                         context.startActivity(
                             Intent.createChooser(
@@ -103,7 +105,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     server = null // so the old server's onFinished does not clear the new url
                     old?.stop()
                     url = null
-                    note = null
+                    note = "Preparing…"
                     val json = buildDiagnosticsJson(collect(graph, version), deviceNames(context))
                     val ref = arrayOfNulls<DiagnosticsServer>(1)
                     val made = withContext(Dispatchers.IO) {
@@ -113,6 +115,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         s.start()
                         s to "http://$ip:${s.port}/${s.token}"
                     }
+                    note = null
                     if (made == null) {
                         note = "Connect the TV to Wi-Fi or Ethernet to use the QR download"
                     } else {
