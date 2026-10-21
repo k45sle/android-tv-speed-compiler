@@ -43,8 +43,9 @@ class WorkingScreenTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val pkg = "a.alpha"
-    private fun item(id: Long, state: QueueState, reason: String? = null) =
-        QueueItem(id, pkg, QueueSource.MANUAL, state, enqueuedAt = 1_000, failureReason = reason)
+    private val base = 1_000_000L
+    private fun item(id: Long, state: QueueState, reason: String? = null, at: Long = base) =
+        QueueItem(id, pkg, QueueSource.MANUAL, state, enqueuedAt = at, failureReason = reason, runNow = true)
 
     private val queue = MutableStateFlow(listOf(QueueEntry(item(1, QueueState.RUNNING), 0, Eta.None)))
     private val history = MutableStateFlow(emptyList<QueueItem>())
@@ -54,7 +55,7 @@ class WorkingScreenTest {
 
     private fun show() {
         rule.mainClock.autoAdvance = false
-        rule.setContent { SpeedTheme { WorkingHost(pkg, AppLook("Alpha"), queue, history) { left++ } } }
+        rule.setContent { SpeedTheme { WorkingHost(pkg, AppLook("Alpha"), queue, history, { base + rule.mainClock.currentTime }) { left++ } } }
         rule.mainClock.advanceTimeByFrame()
     }
 
@@ -92,7 +93,7 @@ class WorkingScreenTest {
         rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").invokeClick()
         rule.mainClock.advanceTimeBy(20_000)
         rule.onNodeWithText("00:20").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Snake game. Arrow keys move, Select to act or restart, Back to leave.").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Snake game. Arrow keys move, Select to act or restart, Back to stop playing.").assertIsDisplayed()
 
         finish(item(1, QueueState.DONE))
         rule.mainClock.advanceTimeBy(2_000)
@@ -102,6 +103,25 @@ class WorkingScreenTest {
         assertEquals(0, left) // not auto-closed
         rule.onNodeWithContentDescription("Done, leave this screen").invokeClick()
         assertEquals(1, left)
+    }
+
+    @Test
+    fun failureFinishedBeforeSubscribingIsShown() {
+        queue.value = emptyList()
+        history.value = listOf(item(1, QueueState.FAILED, "the TV disconnected"))
+        show()
+        rule.onNodeWithText("Didn't finish: the TV disconnected").assertIsDisplayed()
+    }
+
+    @Test
+    fun olderFinishedRunIsIgnoredAndNoRunTimesOut() {
+        queue.value = emptyList()
+        history.value = listOf(item(1, QueueState.DONE, at = base - 60_000))
+        show()
+        rule.onNodeWithText("Starting…").assertIsDisplayed()
+        rule.mainClock.advanceTimeBy(31_000)
+        rule.onNodeWithText("Couldn't start. Try again from the app.").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Done, leave this screen").assertIsDisplayed()
     }
 
     @Test

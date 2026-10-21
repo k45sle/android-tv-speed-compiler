@@ -77,12 +77,14 @@ fun GamePlayer(kind: GameKind, paused: Boolean, onExit: () -> Unit, modifier: Mo
     Box(
         modifier.size(480.dp, 270.dp).clip(RoundedCornerShape(12.dp))
             .border(2.dp, if (focused) colors.accent else colors.hairline, RoundedCornerShape(12.dp))
-            .semantics { contentDescription = "${kind.title} game. Arrow keys move, Select to act or restart, Back to leave." }
+            .semantics { contentDescription = "${kind.title} game. Arrow keys move, Select to act or restart, Back to stop playing." }
             .focusRequester(focus).focusable(interactionSource = src)
             .onKeyEvent { e ->
-                if (e.key == Key.Back) { if (e.type == KeyEventType.KeyDown) onExit(); return@onKeyEvent true }
+                // Only KeyDown is handled and consumed; KeyUp passes through.
+                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                if (e.key == Key.Back) { onExit(); return@onKeyEvent true }
                 val input = mapKey(e.key) ?: return@onKeyEvent false
-                if (e.type == KeyEventType.KeyDown && !paused) {
+                if (!paused) {
                     if (game.over && input == Input.SELECT) game = newGame(kind) else pending = input
                 }
                 true

@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
@@ -63,21 +64,29 @@ sealed interface JobView {
     data object Running : JobView
     data object Done : JobView
     data class Failed(val reason: String) : JobView
+    /** No run showed up in time. */
+    data object CouldntStart : JobView
 
-    val finished get() = this is Done || this is Failed
+    val finished get() = this is Done || this is Failed || this is CouldntStart
 }
 
-/** [openedAt] hides results from earlier runs: a finished item counts only if it ended about when this screen opened or later. */
-fun jobView(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long): JobView {
-    queue.firstOrNull { it.item.packageName == pkg }?.let {
-        return if (it.state == QueueState.RUNNING) JobView.Running else JobView.Waiting(it.eta)
-    }
-    val last = history.firstOrNull { it.packageName == pkg && (it.finishedAt ?: Long.MAX_VALUE) >= openedAt - 5_000 }
-        ?: return JobView.Starting
-    return when (last.state) {
+const val RUN_WINDOW_MILLIS = 30_000L
+
+/** This screen's run: the newest run-now job for [pkg] queued at most 30 s before the screen opened, in the queue or in history. */
+fun thisRun(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long): QueueItem? =
+    (queue.map { it.item } + history)
+        .filter { it.packageName == pkg && it.runNow && it.enqueuedAt >= openedAt - RUN_WINDOW_MILLIS }
+        .maxWithOrNull(compareBy({ it.enqueuedAt }, { it.id }))
+
+fun jobView(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long, now: Long): JobView {
+    val run = thisRun(pkg, queue, history, openedAt)
+        ?: return if (now - openedAt >= RUN_WINDOW_MILLIS) JobView.CouldntStart else JobView.Starting
+    return when (run.state) {
+        QueueState.RUNNING -> JobView.Running
+        QueueState.QUEUED, QueueState.WAITING_GATE -> JobView.Waiting(queue.firstOrNull { it.item.id == run.id }?.eta ?: Eta.None)
         QueueState.DONE -> JobView.Done
         QueueState.SKIPPED -> JobView.Failed("It was cancelled.")
-        else -> JobView.Failed(last.failureReason ?: "No reason was recorded.")
+        QueueState.FAILED -> JobView.Failed(run.failureReason ?: "No reason was recorded.")
     }
 }
 
@@ -86,6 +95,9 @@ fun averageDuration(history: List<QueueItem>): Long =
     history.filter { it.state == QueueState.DONE && it.startedAt != null && it.finishedAt != null }
         .take(5).map { it.finishedAt!! - it.startedAt!! }.filter { it > 0 }
         .let { if (it.isEmpty()) DEFAULT_AVG_DURATION_MILLIS else it.average().toLong() }
+
+/** Nearest whole minute, at least 1. */
+fun usuallyMinutes(avgMillis: Long) = ((avgMillis + 30_000) / 60_000).coerceAtLeast(1)
 
 fun elapsedText(millis: Long): String {
     val s = millis / 1000
@@ -98,20 +110,27 @@ class WorkingState(val label: String, val art: ImageBitmap?, val job: JobView, v
 fun WorkingScreen(pkg: String, back: () -> Unit) {
     val graph = rememberGraph()
     val flows = remember(graph) { graph.scheduler.queue to graph.scheduler.history }
-    WorkingHost(pkg, rememberLook()(pkg), flows.first, flows.second, back)
+    WorkingHost(pkg, rememberLook()(pkg), flows.first, flows.second, back = back)
 }
 
-/** Observes the job (it runs in WorkManager, so leaving never cancels it) and counts elapsed time while it is unfinished. */
+/** Observes the job (it runs in WorkManager, so leaving never cancels it). Elapsed comes from timestamps, not counted ticks. */
 @Composable
-fun WorkingHost(pkg: String, look: AppLook, queue: Flow<List<QueueEntry>>, history: Flow<List<QueueItem>>, back: () -> Unit) {
-    val openedAt = remember { System.currentTimeMillis() }
+fun WorkingHost(
+    pkg: String, look: AppLook, queue: Flow<List<QueueEntry>>, history: Flow<List<QueueItem>>,
+    clock: () -> Long = System::currentTimeMillis, back: () -> Unit,
+) {
+    val openedAt = rememberSaveable { clock() }
     val q by queue.collectAsState(emptyList())
     val h by history.collectAsState(emptyList())
-    val job = jobView(pkg, q, h, openedAt)
-    var elapsed by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(openedAt) }
+    val job = jobView(pkg, q, h, openedAt, now)
+    val run = thisRun(pkg, q, h, openedAt)
     LaunchedEffect(job.finished) {
-        while (!job.finished) { delay(1000); elapsed += 1000 }
+        now = clock()
+        while (!job.finished) { delay(1000); now = clock() }
     }
+    val end = if (job.finished) run?.finishedAt ?: now else now
+    val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
     WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h)), back)
 }
 
@@ -120,8 +139,9 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
     var playing by remember { mutableStateOf<GameKind?>(null) }
     val done = remember { FocusRequester() }
     val first = remember { FocusRequester() }
-    LaunchedEffect(s.job.finished) { if (s.job.finished) done.requestFocus() }
-    LaunchedEffect(playing) { if (playing == null && !s.job.finished) runCatching { first.requestFocus() } }
+    LaunchedEffect(s.job.finished, playing) {
+        if (s.job.finished) done.requestFocus() else if (playing == null) runCatching { first.requestFocus() }
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(Space.x2),
@@ -137,16 +157,17 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
                     is JobView.Done -> Text("Optimized. You can leave now.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.ok)
                     is JobView.Failed -> Text("Didn't finish: ${j.reason}", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
                     is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium)
+                    JobView.CouldntStart -> Text("Couldn't start. Try again from the app.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
                     JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium)
                     JobView.Running -> Text("Working on it. This keeps going if you leave.", style = MaterialTheme.typography.titleMedium)
                 }
-                Text(
+                if (s.job != JobView.CouldntStart) Text(
                     elapsedText(s.elapsedMillis), style = MonoStyle,
                     modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
                 )
                 if (!s.job.finished) {
                     Text(
-                        "Usually about ${(s.avgMillis / 60_000).coerceAtLeast(1)} min",
+                        "Usually about ${usuallyMinutes(s.avgMillis)} min",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -170,7 +191,10 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
             }
         } else {
             GamePlayer(kind, paused = s.job.finished, onExit = { playing = null })
-            if (s.job.finished) Text("Game paused. Press Done when you are ready.", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (s.job.finished) "Game paused. Press Done when you are ready." else "Arrows to move, Select to act, Back to stop playing",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
