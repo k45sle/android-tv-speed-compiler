@@ -14,4 +14,3 @@
   - Never commit any of these: IP or MAC addresses, network names, device serials, build fingerprints, pairing codes, keys, tokens or owner identity.
   - This covers `docs/device-matrix.md`, test fixtures and PR text. Use placeholders such as `<tv-ip>`.
 - **Keep GitHub in sync.** `origin` is github.com/k45sle/android-tv-speed-compiler. Push verified commits to it.
-- For v1 (the Python and Docker service), deployment, container troubleshooting, upgrades, or restore work, follow [`docs/agent-self-hosting.md`](docs/agent-self-hosting.md) before acting.
