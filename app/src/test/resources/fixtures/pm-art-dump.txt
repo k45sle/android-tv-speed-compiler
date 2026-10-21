@@ -1,0 +1,7 @@
+(unverified: replace with real TV output from spike 0a)
+[com.nuvio.tv.test]
+  path: /data/app/opaque-test/base.apk
+    arm64: [status=verify] [reason=install] [primary-abi]
+[com.nuvio.tv]
+  path: /data/app/opaque/base.apk
+    arm64: [status=speed] [reason=cmdline] [primary-abi]
