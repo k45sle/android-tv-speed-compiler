@@ -7,7 +7,10 @@ import dev.speedcompiler.tv.engine.DataStoreSettings
 import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.ThemeChoice
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -28,6 +31,22 @@ class SettingsTest {
         assertEquals(Mode.Manual, v.mode)
         assertEquals(true, v.paused)
         assertEquals(ThemeChoice.Dark, v.theme)
+    }
+
+    @Test
+    fun concurrentUpdatesKeepEveryField() = runBlocking {
+        val store = PreferenceDataStoreFactory.create { tmp.newFile("c.preferences_pb").also { it.delete() } }
+        val settings = DataStoreSettings(store)
+        coroutineScope {
+            launch(Dispatchers.Default) { settings.update { it.copy(mode = Mode.Manual) } }
+            launch(Dispatchers.Default) { settings.update { it.copy(paused = true) } }
+            // Read-modify-write races: any update applied to a stale read loses an increment.
+            repeat(50) { launch(Dispatchers.Default) { settings.update { it.copy(windowEndMinute = it.windowEndMinute + 1) } } }
+        }
+        assertEquals(
+            SettingsValues(mode = Mode.Manual, paused = true, windowEndMinute = 360 + 50),
+            settings.values.first(),
+        )
     }
 
     @Test

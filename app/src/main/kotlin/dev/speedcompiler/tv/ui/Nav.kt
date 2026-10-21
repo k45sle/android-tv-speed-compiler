@@ -28,7 +28,8 @@ object Routes {
     const val Setup = "setup"
     const val Home = "home"
     const val Apps = "apps"
-    const val AppDetail = "apps/detail"
+    const val AppDetail = "apps/detail/{pkg}"
+    fun appDetail(pkg: String) = "apps/detail/$pkg"
     const val Activity = "activity"
     const val Settings = "settings"
 }
@@ -42,7 +43,7 @@ fun AppNavHost() {
         composable(Routes.Setup) { SetupScreen(back) }
         composable(Routes.Home) { HomeScreen(go) }
         composable(Routes.Apps) { AppsScreen(go, back) }
-        composable(Routes.AppDetail) { AppDetailScreen(back) }
+        composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), back) }
         composable(Routes.Activity) { ActivityScreen(back) }
         composable(Routes.Settings) { SettingsScreen(back) }
     }

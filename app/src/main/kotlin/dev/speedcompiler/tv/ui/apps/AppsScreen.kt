@@ -7,8 +7,8 @@ import dev.speedcompiler.tv.ui.StubScreen
 @Composable
 fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit) = StubScreen(
     "Apps",
-    listOf("App detail" to { go(Routes.AppDetail) }, "Back" to onBack),
+    listOf("App detail" to { go(Routes.appDetail("com.example.app")) }, "Back" to onBack),
 )
 
 @Composable
-fun AppDetailScreen(onBack: () -> Unit) = StubScreen("App detail", listOf("Back" to onBack))
+fun AppDetailScreen(packageName: String, onBack: () -> Unit) = StubScreen(packageName, listOf("Back" to onBack))

@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 enum class Mode { Auto, Manual }
@@ -37,9 +36,9 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val theme = stringPreferencesKey("theme")
 
-    override val values: Flow<SettingsValues> = store.data.map { p ->
+    private fun read(p: Preferences): SettingsValues {
         val d = SettingsValues()
-        SettingsValues(
+        return SettingsValues(
             mode = p[mode]?.let { runCatching { Mode.valueOf(it) }.getOrNull() } ?: d.mode,
             windowStartMinute = p[start] ?: d.windowStartMinute,
             windowEndMinute = p[end] ?: d.windowEndMinute,
@@ -49,9 +48,12 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
         )
     }
 
+    override val values: Flow<SettingsValues> = store.data.map(::read)
+
     override suspend fun update(transform: (SettingsValues) -> SettingsValues) {
-        val new = transform(values.first())
+        // Read inside edit: DataStore serializes edits, so concurrent updates each see the previous result.
         store.edit { p ->
+            val new = transform(read(p))
             p[mode] = new.mode.name
             p[start] = new.windowStartMinute
             p[end] = new.windowEndMinute

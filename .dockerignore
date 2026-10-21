@@ -27,3 +27,9 @@ bootstrap.token
 !.env.example
 work
 outputs
+# Android v2 project; the v1 image only needs pyproject.toml, uv.lock, README.md, LICENSE and src/
+app/
+.gradle/
+gradle/
+gradlew*
+*.kts
