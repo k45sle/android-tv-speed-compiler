@@ -56,6 +56,8 @@ class HomeState(
     val events: List<Event>,
     val look: (String) -> AppLook,
     val setupDone: Boolean = true,
+    /** False until settings have loaded; the status row waits so it never shows a wrong first state. */
+    val loaded: Boolean = true,
 )
 
 @Composable
@@ -95,26 +97,27 @@ fun HomeScreen(go: (String) -> Unit) {
     @Suppress("UNCHECKED_CAST")
     val connection by (flows[0] as Flow<ConnectionState>).collectAsState(ConnectionState.Disconnected)
     @Suppress("UNCHECKED_CAST")
-    val settings by (flows[1] as Flow<SettingsValues>).collectAsState(SettingsValues())
+    val loadedSettings by (flows[1] as Flow<SettingsValues?>).collectAsState(null)
     @Suppress("UNCHECKED_CAST")
     val watched by (flows[2] as Flow<List<WatchedApp>>).collectAsState(emptyList())
     @Suppress("UNCHECKED_CAST")
     val queue by (flows[3] as Flow<List<QueueEntry>>).collectAsState(emptyList())
     @Suppress("UNCHECKED_CAST")
     val events by (flows[4] as Flow<List<Event>>).collectAsState(emptyList())
-    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone), go)
+    val settings = loadedSettings ?: SettingsValues()
+    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null), go)
 }
 
 @Composable
 fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()) {
     val waiting = s.queue.count { it.state != QueueState.RUNNING }
-    val mem = rememberFocusMemory()
+    val mem = rememberFocusMemory(if (!s.setupDone || s.connection == ConnectionState.Disconnected || s.connection == ConnectionState.Unpaired) "status" else "apps")
     val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(Space.x2),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+        if (s.loaded) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
             val (text, action) = if (!s.setupDone) "Not set up yet" to "Set up" else when (s.connection) {
                 ConnectionState.Connected -> "$onOff · Connected" to null
                 ConnectionState.Connecting -> "$onOff · Connecting" to null
@@ -127,7 +130,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 Modifier.remembersFocus(mem, "status"),
             ) { Text(action) }
         }
-        if (s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)) {
+        if (s.loaded && s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)) {
             val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
             val line = when {
                 waiting == 0 -> "Nothing waiting"

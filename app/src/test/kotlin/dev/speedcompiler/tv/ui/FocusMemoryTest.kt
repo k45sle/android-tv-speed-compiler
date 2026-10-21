@@ -58,4 +58,32 @@ class FocusMemoryTest {
         rule.waitForIdle()
         rule.onNodeWithText("B").assertIsFocused()
     }
+
+    @Test
+    fun anItemReEnteringCompositionDoesNotStealFocus() {
+        val showB = androidx.compose.runtime.mutableStateOf(true)
+        rule.setContent {
+            SpeedTheme {
+                val mem = rememberFocusMemory("a")
+                Row {
+                    Button({}, Modifier.remembersFocus(mem, "a")) { Text("A") }
+                    if (showB.value) Button({}, Modifier.remembersFocus(mem, "b")) { Text("B") }
+                    Button({}) { Text("X") } // not tracked, like the search box
+                }
+            }
+        }
+        rule.runOnUiThread {
+            val root = android.view.View::class.java.getMethod("getViewRootImpl").invoke(rule.activity.window.decorView)!!
+            root.javaClass.getDeclaredMethod("ensureTouchMode", Boolean::class.java).apply { isAccessible = true }.invoke(root, false)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("B").requestFocus()
+        rule.onNodeWithText("X").requestFocus() // memory still says "b"
+        rule.waitForIdle()
+        rule.runOnUiThread { showB.value = false }
+        rule.waitForIdle()
+        rule.runOnUiThread { showB.value = true }
+        rule.waitForIdle()
+        rule.onNodeWithText("X").assertIsFocused()
+    }
 }

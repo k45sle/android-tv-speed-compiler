@@ -23,12 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -204,14 +205,26 @@ fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Mod
     }
 }
 
-/** Id of the last focused item on a screen. Saved with the back stack entry, so it survives leaving and returning. */
-@Composable
-fun rememberFocusMemory(first: String = ""): MutableState<String> = rememberSaveable { mutableStateOf(first) }
+/** Last focused item id (saved with the back stack entry) and whether a restore is still pending for this screen entry. */
+class FocusMemory(val id: MutableState<String>) {
+    var pending by mutableStateOf(true)
+}
 
-/** Tracks focus into [mem] and takes focus when [mem] holds [id]: first visit gets the first item, Back gets the last one. */
 @Composable
-fun Modifier.remembersFocus(mem: MutableState<String>, id: String): Modifier {
+fun rememberFocusMemory(first: String = ""): FocusMemory {
+    val id = rememberSaveable { mutableStateOf(first) }
+    return remember { FocusMemory(id) }
+}
+
+/**
+ * Tracks focus into [mem] and, once per screen entry, takes focus when [mem] holds [id]: the first visit gets the
+ * first item, Back gets the last one. Any item gaining focus ends the restore, so re-entering composition never steals focus.
+ */
+@Composable
+fun Modifier.remembersFocus(mem: FocusMemory, id: String): Modifier {
     val r = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (mem.value == id) runCatching { r.requestFocus() } }
-    return focusRequester(r).onFocusChanged { if (it.hasFocus) mem.value = id }
+    LaunchedEffect(Unit) {
+        if (mem.pending && mem.id.value == id) runCatching { r.requestFocus() }.onSuccess { mem.pending = false }
+    }
+    return focusRequester(r).onFocusChanged { if (it.hasFocus) { mem.id.value = id; mem.pending = false } }
 }

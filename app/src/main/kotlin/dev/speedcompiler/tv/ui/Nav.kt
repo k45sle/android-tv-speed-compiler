@@ -57,8 +57,9 @@ fun AppNavHost() {
     // First run starts at Setup; wait for the stored flag so Home never flashes first.
     val graph = rememberGraph()
     val setupDone by remember(graph) { graph.settings.values.map { it.setupDone } }.collectAsState(null)
-    val start = setupDone ?: return
-    NavHost(nav, startDestination = if (start) Routes.Home else Routes.Setup) {
+    val loaded = setupDone ?: return
+    val start = remember { if (loaded) Routes.Home else Routes.Setup } // fixed for the session; the flag flipping must not re-route
+    NavHost(nav, startDestination = start) {
         // Setup can be the first screen, so leaving it goes Home instead of popping to nothing.
         composable(Routes.Setup) {
             SetupScreen(onBack = { if (!nav.popBackStack(Routes.Home, false)) nav.navigate(Routes.Home) { popUpTo(Routes.Setup) { inclusive = true } } })

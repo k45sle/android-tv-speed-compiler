@@ -26,6 +26,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
@@ -69,6 +71,7 @@ private const val PairGraceMs = 2000L
 @Composable
 fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: SetupDeps = rememberSetupDeps()) {
     val env = deps.env
+    val scope = rememberCoroutineScope()
     val first = if (mode == SetupMode.Repair) 4 else 1
     var step by remember { mutableIntStateOf(first) }
     var help by remember { mutableStateOf(false) }
@@ -141,7 +144,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 others <= 0 -> name
                 else -> "$name and $others other${if (others == 1) "" else "s"}"
             }
-            val finish = { now: Boolean -> deps.onFinish(chosen.map { it.packageName }, now); onBack() }
+            val finish = { now: Boolean -> scope.launch { deps.onFinish(chosen.map { it.packageName }, now); onBack() }; Unit }
             Page(null, "You're set.") {
                 Body("$subject will be optimized when nothing is playing. It takes a minute or two each.")
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {

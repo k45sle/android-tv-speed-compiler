@@ -106,6 +106,16 @@ class AppsScreensTest {
         rule.onNodeWithText("Sort: Recently updated").assertIsFocused()
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun upFromTheSearchFieldKeepsFocusAlive() {
+        listScreen()
+        click("Search apps") // OK on the box starts editing
+        rule.onNodeWithText("Search apps").performKeyInput { keyDown(Key.DirectionUp); keyUp(Key.DirectionUp) }
+        rule.waitForIdle()
+        rule.onAllNodes(isFocusable() and androidx.compose.ui.test.isFocused()).assertCountEquals(1)
+    }
+
     @Test
     fun detailShowsTheBannerOnceTheAppLoads() {
         val d = AppsDeps(

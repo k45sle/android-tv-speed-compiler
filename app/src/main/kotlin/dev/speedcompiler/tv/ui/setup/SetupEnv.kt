@@ -36,7 +36,7 @@ class SetupDeps(
     val connection: Flow<ConnectionState>,
     val pairingUrl: Flow<String?>,
     /** Called when the user finishes: saves the picks and starts the run. */
-    val onFinish: (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
+    val onFinish: suspend (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
 )
 
 class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
@@ -112,8 +112,8 @@ fun rememberSetupDeps(): SetupDeps {
             PairingService.url,
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
+                graph.settings.update { it.copy(setupDone = true) } // awaited, so Home never sees the old value
                 graph.appScope.launch {
-                    graph.settings.update { it.copy(setupDone = true) }
                     selected.forEach { graph.scheduler.watch(it) }
                     if (optimizeNow) selected.forEach { graph.scheduler.optimizeNow(it) }
                 }

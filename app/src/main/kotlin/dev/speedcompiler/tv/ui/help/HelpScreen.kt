@@ -40,7 +40,7 @@ fun HelpScreen(go: (String) -> Unit, onBack: () -> Unit) {
 
 @Composable
 fun HelpContent(go: (String) -> Unit) {
-    val mem = rememberFocusMemory()
+    val mem = rememberFocusMemory(helpEntries.first { it.route != null }.title)
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(Space.x4),

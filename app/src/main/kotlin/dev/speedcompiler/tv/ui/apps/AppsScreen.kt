@@ -57,6 +57,11 @@ import dev.speedcompiler.tv.theme.focusFx
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
 import androidx.compose.ui.focus.FocusDirection
+import android.view.ViewTreeObserver
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
@@ -150,6 +155,22 @@ fun AppsContent(
     var swallowUp by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     val field = remember { FocusRequester() }
+    val box = remember { FocusRequester() }
+    // Back/Done hides the keyboard but leaves the field focused; hand focus back to the box so OK reopens it.
+    val view = LocalView.current
+    var imeVisible by remember { mutableStateOf(false) }
+    DisposableEffect(view) {
+        val l = ViewTreeObserver.OnGlobalLayoutListener {
+            imeVisible = ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(l)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(l) }
+    }
+    var imeSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(imeVisible) {
+        if (imeVisible) imeSeen = true
+        else if (imeSeen) { imeSeen = false; if (editing) { editing = false; runCatching { box.requestFocus() } } }
+    }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val mem = rememberFocusMemory("sort")
@@ -162,14 +183,18 @@ fun AppsContent(
         Text("Apps", style = MaterialTheme.typography.displaySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
             // TV pattern: the box takes focus like a button; OK starts editing (and the keyboard), Up/Down leave it.
-            Box(Modifier.weight(1f).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(1.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
+            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(1.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
                 BasicTextField(
                     query, { query = it },
                     Modifier.fillMaxWidth().focusRequester(field).onFocusChanged { if (!it.isFocused) editing = false }
                         .focusProperties { canFocus = editing }
                         .onPreviewKeyEvent {
                             val dir = when (it.key) { Key.DirectionDown -> FocusDirection.Down; Key.DirectionUp -> FocusDirection.Up; else -> null }
-                            if (dir != null && it.type == KeyEventType.KeyDown) { editing = false; focusManager.moveFocus(dir); true } else false
+                            if (dir != null && it.type == KeyEventType.KeyDown) {
+                                // Leave the field only where focus can go; otherwise fall back to the box so focus is never lost.
+                                if (!focusManager.moveFocus(dir)) { editing = false; runCatching { box.requestFocus() } }
+                                true
+                            } else false
                         },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
