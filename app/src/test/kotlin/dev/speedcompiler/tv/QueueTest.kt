@@ -25,7 +25,7 @@ import org.robolectric.annotation.ConscryptMode
 @ConscryptMode(ConscryptMode.Mode.OFF)
 class QueueTest {
     private val opensAt = GateStatus.OpensAt(Instant.parse("2026-01-01T02:00:00Z"))
-    private val allGates = listOf(GateStatus.Open, GateStatus.WaitingForIdle, GateStatus.WaitingForPlayback, opensAt)
+    private val allGates = listOf(GateStatus.Open, GateStatus.WaitingForIdle, GateStatus.WaitingForPlayback, GateStatus.Paused, opensAt)
 
     private fun item(state: QueueState = QueueState.QUEUED, runNow: Boolean = false) =
         QueueItem(packageName = "p", source = QueueSource.AUTO, state = state, enqueuedAt = 0, runNow = runNow)

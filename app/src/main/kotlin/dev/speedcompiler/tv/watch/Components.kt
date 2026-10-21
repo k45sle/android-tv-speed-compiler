@@ -6,10 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 
-/** Starts the reconnect job after boot. */
+/** Starts the reconnect and change-detection jobs after boot. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) enqueueReconnect(context)
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+            enqueueReconnect(context)
+            enqueueDetectNow(context)
+        }
     }
 }
 

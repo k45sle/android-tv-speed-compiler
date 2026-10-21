@@ -3,33 +3,38 @@ package dev.speedcompiler.tv
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
+import android.media.AudioManager
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.LibAdb
 import dev.speedcompiler.tv.adb.Pairing
+import dev.speedcompiler.tv.engine.AndroidPackageSystem
 import dev.speedcompiler.tv.engine.Clock
 import dev.speedcompiler.tv.engine.DataStoreSettings
-import dev.speedcompiler.tv.engine.DeviceSignals
-import dev.speedcompiler.tv.engine.FakeClock
-import dev.speedcompiler.tv.engine.FakeDeviceSignals
-import dev.speedcompiler.tv.engine.FakeGate
-import dev.speedcompiler.tv.engine.FakeOptimizer
-import dev.speedcompiler.tv.engine.FakePackageSource
+import dev.speedcompiler.tv.engine.DeviceSignalsImpl
 import dev.speedcompiler.tv.engine.Gate
+import dev.speedcompiler.tv.engine.GateConfigProvider
+import dev.speedcompiler.tv.engine.GateImpl
 import dev.speedcompiler.tv.engine.Optimizer
+import dev.speedcompiler.tv.engine.OptimizerImpl
 import dev.speedcompiler.tv.engine.PackageSource
+import dev.speedcompiler.tv.engine.PackageSourceImpl
+import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.Settings
+import dev.speedcompiler.tv.engine.SystemClock
+import dev.speedcompiler.tv.engine.toGateConfig
 import dev.speedcompiler.tv.watch.AppDatabase
-import dev.speedcompiler.tv.watch.FakeScheduler
 import dev.speedcompiler.tv.watch.Scheduler
+import dev.speedcompiler.tv.watch.WorkScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 
 private val Context.settingsStore by preferencesDataStore("settings")
 
-/** Manual binding point. Fakes for now; the wiring chunk replaces them with real implementations. */
+/** Manual binding point. The `var`s let tests swap in fakes. */
 class AppGraph(context: Context) {
     private val app = context.applicationContext
 
@@ -42,11 +47,15 @@ class AppGraph(context: Context) {
     val settings: Settings = DataStoreSettings(app.settingsStore)
     val connectionKeeper = ConnectionKeeper({ libAdb.connect() }, libAdb, settings, app.packageName, appScope)
     val connectionMonitor: ConnectionMonitor = connectionKeeper
-    val packageSource: PackageSource = FakePackageSource()
-    val optimizer: Optimizer = FakeOptimizer()
-    val gate: Gate = FakeGate()
-    val clock: Clock = FakeClock()
-    val deviceSignals: DeviceSignals = FakeDeviceSignals()
-    val scheduler: Scheduler = FakeScheduler()
-    val database: AppDatabase by lazy { Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build() }
+    var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()
+    var clock: Clock = SystemClock
+    var packageSystem: PackageSystem = AndroidPackageSystem(app)
+    var packageSource: PackageSource = PackageSourceImpl(packageSystem)
+    var optimizer: Optimizer = OptimizerImpl(libAdb, database.events(), clock)
+    var gate: Gate = GateImpl(
+        clock,
+        DeviceSignalsImpl(libAdb) { app.getSystemService(AudioManager::class.java).isMusicActive },
+        GateConfigProvider { settings.values.first().toGateConfig() },
+    )
+    var scheduler: Scheduler = WorkScheduler(app, this)
 }

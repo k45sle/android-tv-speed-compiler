@@ -25,7 +25,7 @@ class OptimizerImpl(
     }
 
     /** The compiler filter the TV reports for [packageName], or null if it does not report one. */
-    suspend fun verify(packageName: String): String? {
+    override suspend fun verify(packageName: String): String? {
         if (!isValidPackageId(packageName)) return null
         val art = parseCompilerFilter(shell.run(artDumpCommand(packageName)).output, packageName)
         return art ?: parseCompilerFilter(shell.run(DEXOPT_DUMP_COMMAND).output, packageName)
@@ -39,7 +39,7 @@ class OptimizerImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed")
+            return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed", connectionLost = true)
         }
         // exitCode -1 means the TV gave no code; the word Success then decides alone.
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
@@ -59,9 +59,9 @@ class OptimizerImpl(
         }
     }
 
-    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String): OptimizeResult {
+    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false): OptimizeResult {
         events.insert(Event(timeMillis = clock.nowMillis(), packageName = pkg, kind = kind, message = detail))
-        return OptimizeResult(ok, detail)
+        return OptimizeResult(ok, detail, connectionLost)
     }
 
     private companion object {

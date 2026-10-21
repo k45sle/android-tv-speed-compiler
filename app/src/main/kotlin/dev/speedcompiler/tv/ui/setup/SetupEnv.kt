@@ -12,6 +12,7 @@ import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 data class SetupApp(val packageName: String, val label: String)
 
@@ -34,7 +35,7 @@ class SetupDeps(
     val env: SetupEnv,
     val connection: Flow<ConnectionState>,
     val pairingUrl: Flow<String?>,
-    /** Called when the user finishes; the wiring chunk saves the picks and starts the run. */
+    /** Called when the user finishes: saves the picks and starts the run. */
     val onFinish: (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
 )
 
@@ -105,6 +106,17 @@ fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
     return remember {
         val graph = (context.applicationContext as SpeedApp).graph
-        SetupDeps(AndroidSetupEnv(context.applicationContext, graph.connectionMonitor), graph.connectionMonitor.state, PairingService.url)
+        SetupDeps(
+            AndroidSetupEnv(context.applicationContext, graph.connectionMonitor),
+            graph.connectionMonitor.state,
+            PairingService.url,
+            onFinish = { selected, optimizeNow ->
+                // watch already queues each app; "optimize now" turns that into a run-now job
+                graph.appScope.launch {
+                    selected.forEach { graph.scheduler.watch(it) }
+                    if (optimizeNow) selected.forEach { graph.scheduler.optimizeNow(it) }
+                }
+            },
+        )
     }
 }

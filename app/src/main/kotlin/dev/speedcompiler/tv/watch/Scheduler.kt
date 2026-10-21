@@ -13,6 +13,7 @@ sealed interface Eta {
     data class StartsAt(val at: Instant) : Eta
     data object WaitingForIdle : Eta
     data object WaitingForPlayback : Eta
+    data object Paused : Eta
     data class InQueue(val position: Int, val approxMillis: Long) : Eta
 }
 
@@ -36,6 +37,7 @@ fun etaFor(
         GateStatus.Open -> Eta.InQueue(position, wait)
         GateStatus.WaitingForIdle -> Eta.WaitingForIdle
         GateStatus.WaitingForPlayback -> Eta.WaitingForPlayback
+        GateStatus.Paused -> Eta.Paused
         is GateStatus.OpensAt -> Eta.StartsAt(gate.at.plusMillis(wait))
     }
 }
@@ -44,14 +46,16 @@ fun etaFor(
 interface Scheduler {
     /** Active jobs (queued, waiting for the gate, running) in run order. */
     val queue: Flow<List<QueueEntry>>
-    fun watch(packageName: String)
-    fun unwatch(packageName: String)
-    /** "Add to queue": waits its turn and for the gate. */
-    fun enqueue(packageName: String)
+    /** Most recent finished jobs, newest first, so failures can be retried. */
+    val history: Flow<List<QueueItem>>
+    suspend fun watch(packageName: String)
+    suspend fun unwatch(packageName: String)
+    /** "Add to queue" (or a detected update): waits its turn and for the gate. */
+    suspend fun enqueue(packageName: String, source: QueueSource = QueueSource.MANUAL)
     /** "Optimize now": skips the gate and goes to the front. */
-    fun optimizeNow(packageName: String)
-    fun cancel(id: Long)
-    fun retry(id: Long)
+    suspend fun optimizeNow(packageName: String)
+    suspend fun cancel(id: Long)
+    suspend fun retry(id: Long)
 }
 
 /** In-memory stand-in: keeps the queue order and ETAs but never runs a job. */
@@ -66,12 +70,16 @@ class FakeScheduler(var gateStatus: GateStatus = GateStatus.Open) : Scheduler {
             .mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gateStatus, i)) }
     }
 
-    override fun watch(packageName: String) { calls += "watch:$packageName" }
-    override fun unwatch(packageName: String) { calls += "unwatch:$packageName" }
-    override fun enqueue(packageName: String) { calls += "enqueue:$packageName"; add(packageName, runNow = false) }
-    override fun optimizeNow(packageName: String) { calls += "optimizeNow:$packageName"; add(packageName, runNow = true) }
-    override fun cancel(id: Long) { calls += "cancel:$id"; setState(id, QueueState.SKIPPED) }
-    override fun retry(id: Long) { calls += "retry:$id"; setState(id, QueueState.QUEUED) }
+    override val history: Flow<List<QueueItem>> = items.map { all ->
+        all.filter { it.state in setOf(QueueState.DONE, QueueState.FAILED, QueueState.SKIPPED) }.reversed()
+    }
+
+    override suspend fun watch(packageName: String) { calls += "watch:$packageName" }
+    override suspend fun unwatch(packageName: String) { calls += "unwatch:$packageName" }
+    override suspend fun enqueue(packageName: String, source: QueueSource) { calls += "enqueue:$packageName"; add(packageName, runNow = false) }
+    override suspend fun optimizeNow(packageName: String) { calls += "optimizeNow:$packageName"; add(packageName, runNow = true) }
+    override suspend fun cancel(id: Long) { calls += "cancel:$id"; setState(id, QueueState.SKIPPED) }
+    override suspend fun retry(id: Long) { calls += "retry:$id"; setState(id, QueueState.QUEUED) }
 
     private fun add(packageName: String, runNow: Boolean) {
         val item = QueueItem(nextId++, packageName, QueueSource.MANUAL, enqueuedAt = System.currentTimeMillis(), runNow = runNow)
