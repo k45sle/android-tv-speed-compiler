@@ -1,0 +1,52 @@
+[versions]
+agp = "8.13.2"
+kotlin = "2.3.21"
+ksp = "2.3.12"
+composeBom = "2025.05.01"
+tvMaterial = "1.1.0"
+activityCompose = "1.10.1"
+navigationCompose = "2.8.9"
+room = "2.8.5"
+work = "2.12.0"
+datastore = "1.2.1"
+nanohttpd = "2.3.1"
+zxing = "3.5.4"
+materialKolor = "4.0.5"
+libadb = "3.1.1"
+conscrypt = "2.6.3"
+coroutines = "1.11.0"
+junit = "4.13.2"
+robolectric = "4.17"
+roborazzi = "1.76.0"
+
+[libraries]
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+nanohttpd = { module = "org.nanohttpd:nanohttpd", version.ref = "nanohttpd" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
+libadb = { module = "com.github.MuntashirAkon:libadb-android", version.ref = "libadb" }
+conscrypt = { module = "org.conscrypt:conscrypt-android", version.ref = "conscrypt" }
+coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

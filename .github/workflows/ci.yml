@@ -22,6 +22,17 @@ jobs:
       - run: make check
       - run: make docker-check
 
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew lint test assembleDebug
+
   image:
     runs-on: ubuntu-latest
     strategy:

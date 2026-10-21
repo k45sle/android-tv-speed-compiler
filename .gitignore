@@ -26,3 +26,10 @@ dist/
 notes/
 # Session handoff files from /handoff (private working notes)
 .claude/handoffs/
+
+# Android / Gradle (v2)
+.gradle/
+local.properties
+*.iml
+.idea/
+.kotlin/
