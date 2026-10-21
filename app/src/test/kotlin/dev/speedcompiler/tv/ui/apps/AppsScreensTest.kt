@@ -1,0 +1,255 @@
+package dev.speedcompiler.tv.ui.apps
+
+import android.content.ComponentName
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.isFocusable
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
+import com.github.takahirom.roborazzi.captureRoboImage
+import dev.speedcompiler.tv.theme.SpeedTheme
+import dev.speedcompiler.tv.watch.FakeScheduler
+import dev.speedcompiler.tv.watch.WatchedApp
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.ConscryptMode
+import org.robolectric.annotation.GraphicsMode
+
+@RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w960dp-h540dp")
+class AppsScreensTest {
+    init {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
+    }
+
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
+
+    private val scheduler = FakeScheduler()
+    private val watched = MutableStateFlow(emptyList<WatchedApp>())
+    private val gone = mutableListOf<String>()
+    private val auto = mutableListOf<Pair<String, Boolean>>()
+    private var music = false
+    private val apps = listOf(
+        AppInfo("a.alpha", "Alpha", "1.0", updatedAt = 1_000_000_000_000),
+        AppInfo("b.beta", "Beta", "2.0", updatedAt = 1_700_000_000_000),
+        AppInfo("c.gamma", "Gamma", "3.1", updatedAt = 1_500_000_000_000),
+    )
+    private val deps = AppsDeps(
+        loadApps = { apps }, scheduler = scheduler, watched = watched, musicActive = { music },
+        setAutoOptimize = { p, on -> auto += p to on }, now = { 1_800_000_000_000 },
+    )
+
+    private fun show(content: @Composable () -> Unit) {
+        rule.setContent { SpeedTheme { content() } }
+        // A Robolectric window starts in touch mode, where rows cannot take focus; a TV has none.
+        rule.runOnUiThread {
+            val root = android.view.View::class.java.getMethod("getViewRootImpl").invoke(rule.activity.window.decorView)!!
+            root.javaClass.getDeclaredMethod("ensureTouchMode", Boolean::class.java).apply { isAccessible = true }.invoke(root, false)
+        }
+        rule.waitForIdle()
+    }
+
+    private fun listScreen() = show { AppsScreen({ gone += it }, {}, deps) }
+    private fun detailScreen(pkg: String = "a.alpha") = show { AppDetailScreen(pkg, { gone += it }, {}, deps) }
+    private fun top(text: String) = rule.onNodeWithText(text).getBoundsInRoot().top
+    private fun longPress(text: String) {
+        rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnLongClick)
+        rule.waitForIdle()
+    }
+    // TV buttons react to OK, not touch, so invoke the click action directly.
+    private fun click(text: String) {
+        rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+    }
+
+    private fun assertEveryFocusableIsLabelled() {
+        rule.onAllNodes(isFocusable()).fetchSemanticsNodes().forEach {
+            val c = it.config
+            assertTrue("unlabelled focusable: $c", SemanticsProperties.Text in c || SemanticsProperties.ContentDescription in c)
+        }
+    }
+
+    @Test
+    fun searchFiltersTheList() {
+        listScreen()
+        rule.onNodeWithText("Beta").assertIsDisplayed()
+        rule.onNodeWithText("Search apps").performTextInput("gam")
+        rule.waitForIdle()
+        rule.onNodeWithText("Gamma").assertIsDisplayed()
+        rule.onNodeWithText("Beta").assertDoesNotExist()
+        rule.onNodeWithText("Alpha").assertDoesNotExist()
+    }
+
+    @Test
+    fun sortSwitchesBetweenRecentAndAlphabetical() {
+        listScreen()
+        assertTrue(top("Beta") < top("Gamma") && top("Gamma") < top("Alpha")) // newest first
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_list.png")
+        click("Sort: Recently updated")
+        assertTrue(top("Alpha") < top("Beta") && top("Beta") < top("Gamma"))
+        rule.onNodeWithText("Sort: A–Z").assertIsDisplayed()
+    }
+
+    @Test
+    fun longPressMenuCallsTheRightMethods() {
+        listScreen()
+        longPress("Alpha")
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_menu.png")
+        click("Add to queue")
+        longPress("Beta"); click("Watch")
+        longPress("Gamma"); click("Optimize now")
+        longPress("Beta"); click("Details")
+        assertEquals(listOf("enqueue:a.alpha", "watch:b.beta", "optimizeNow:c.gamma"), scheduler.calls)
+        assertEquals(listOf("working/c.gamma", "apps/detail/b.beta"), gone)
+        rule.onAllNodesWithText("Queued", substring = true).assertCountEquals(2) // Alpha and Gamma
+    }
+
+    @Test
+    fun watchedAppOffersStopWatching() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1))
+        listScreen()
+        rule.onNodeWithText("Optimized").assertIsDisplayed()
+        longPress("Alpha"); click("Stop watching")
+        assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
+    }
+
+    @Test
+    fun selectOpensDetail() {
+        listScreen()
+        click("Gamma")
+        assertEquals(listOf("apps/detail/c.gamma"), gone)
+    }
+
+    @Test
+    fun detailShowsStateAndWatchToggle() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1_800_000_000_000 - 2 * 3_600_000))
+        detailScreen()
+        rule.onNodeWithText("a.alpha").assertIsDisplayed()
+        rule.onNodeWithText("Optimized for speed · checked 2 h ago").assertIsDisplayed()
+        rule.onNodeWithText("Version 1.0", substring = true).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail.png")
+        click("Stop watching")
+        assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
+    }
+
+    @Test
+    fun unwatchedDetailOffersWatch() {
+        detailScreen()
+        rule.onNodeWithText("Auto-optimize this app").assertDoesNotExist()
+        click("Watch")
+        assertEquals(listOf("watch:a.alpha"), scheduler.calls)
+    }
+
+    @Test
+    fun autoOptimizeSwitchWritesTheFlag() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", autoOptimize = true))
+        detailScreen()
+        click("Auto-optimize this app")
+        assertEquals(listOf("a.alpha" to false), auto)
+    }
+
+    @Test
+    fun optimizeNowGoesStraightToWorking() {
+        detailScreen()
+        click("Optimize now")
+        assertEquals(listOf("optimizeNow:a.alpha"), scheduler.calls)
+        assertEquals(listOf("working/a.alpha"), gone)
+    }
+
+    @Test
+    fun optimizeNowWithMusicWarnsFirst() {
+        music = true
+        detailScreen()
+        click("Optimize now")
+        rule.onNodeWithText("Something is playing", substring = true).assertIsDisplayed()
+        assertTrue(scheduler.calls.isEmpty())
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail_warning.png")
+        click("Continue")
+        assertEquals(listOf("optimizeNow:a.alpha"), scheduler.calls)
+        assertEquals(listOf("working/a.alpha"), gone)
+    }
+
+    @Test
+    fun cancelOnTheWarningDoesNothing() {
+        music = true
+        detailScreen()
+        click("Optimize now"); click("Cancel")
+        assertTrue(scheduler.calls.isEmpty() && gone.isEmpty())
+    }
+
+    @Test
+    fun everyFocusableElementIsLabelled() {
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        listScreen()
+        assertEveryFocusableIsLabelled()
+    }
+
+    @Test
+    fun everyFocusableElementOnDetailIsLabelled() {
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        detailScreen()
+        assertEveryFocusableIsLabelled()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun holdingOkOpensTheMenuAndReleaseDoesNotNavigate() {
+        listScreen()
+        rule.onNodeWithText("Alpha").requestFocus()
+        rule.onNodeWithText("Alpha").performKeyInput {
+            keyDown(Key.DirectionCenter)
+            advanceEventTime(800) // held: the framework sends repeat KeyDowns
+            keyUp(Key.DirectionCenter)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Add to queue").assertIsDisplayed()
+        assertTrue(gone.isEmpty())
+    }
+
+    @Test
+    fun autoOptimizeRowIsASwitchWithState() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", autoOptimize = true))
+        detailScreen()
+        rule.onNodeWithText("Auto-optimize this app").assertIsOn().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch),
+        )
+    }
+
+    @Test
+    fun finishedJobMarksAnUnwatchedAppOptimized() {
+        val done = dev.speedcompiler.tv.watch.QueueItem(
+            1, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.MANUAL,
+            dev.speedcompiler.tv.watch.QueueState.DONE, enqueuedAt = 1, finishedAt = 50,
+        )
+        assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done)))
+        assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
+    }
+}
