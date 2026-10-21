@@ -61,6 +61,14 @@ class GateImplTest {
     }
 
     @Test
+    fun ignorePauseStillHonoursTheWindow() = runBlocking {
+        val g = gate(FakeClock(millisAt("2026-01-01T12:00:00Z")), Signals(), GateMode.Window, paused = true)
+        assertEquals(true, g.status(ignorePause = true) is GateStatus.OpensAt)
+        val night = gate(FakeClock(millisAt("2026-01-01T23:00:00Z")), Signals(), GateMode.Window, paused = true)
+        assertEquals(GateStatus.Open, night.status(ignorePause = true))
+    }
+
+    @Test
     fun pauseHoldsTheGateInEveryMode() = runBlocking {
         val clock = FakeClock(millisAt("2026-01-01T23:00:00Z"))
         for (mode in GateMode.entries) {

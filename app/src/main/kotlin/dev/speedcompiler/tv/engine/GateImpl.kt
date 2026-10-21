@@ -22,7 +22,7 @@ class GateImpl(
     private val configs: GateConfigProvider,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) : Gate {
-    override suspend fun status(): GateStatus {
+    override suspend fun status(ignorePause: Boolean): GateStatus {
         val config = configs.config()
         val now = Instant.ofEpochMilli(clock.nowMillis()).atZone(zone)
         val decision = decide(
@@ -32,7 +32,7 @@ class GateImpl(
             mode = config.mode,
             window = config.window,
             manual = false,
-            paused = config.paused,
+            paused = config.paused && !ignorePause,
         )
         return when (decision) {
             GateDecision.Run -> GateStatus.Open

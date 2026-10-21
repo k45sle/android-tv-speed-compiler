@@ -30,6 +30,10 @@ import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
 import dev.speedcompiler.tv.watch.systemUpdated
 import dev.speedcompiler.tv.watch.workName
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -150,7 +154,7 @@ class SchedulingTest {
 
     @Test fun pauseStopsAutomaticJobsButNotOptimizeNow() = runBlocking {
         gate.status = GateStatus.Paused
-        g.scheduler.enqueue("a")
+        g.scheduler.enqueue("a", QueueSource.AUTO)
         skipDelay("a")
         await("paused") { g.database.queue().get(1)!!.failureReason == "Paused" }
         g.scheduler.optimizeNow("b")
@@ -182,5 +186,50 @@ class SchedulingTest {
         val empty = SettingsValues(windowStartMinute = 600, windowEndMinute = 600).toGateConfig()
         assertEquals(GateWindow(120, 360), empty.window)
         assertFalse(empty.paused)
+    }
+
+    @Test fun addToQueueIgnoresThePauseSwitch() = runBlocking {
+        gate.status = GateStatus.Paused
+        g.scheduler.enqueue("a", QueueSource.MANUAL)
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+    }
+
+    @Test fun optimizeNowGoesBeforeAWaitingAutoJob() = runBlocking {
+        system.apps["c"] = "1"
+        val release = CompletableDeferred<Unit>()
+        optimizer.before = { if (it == "a") release.await() }
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("a compiling") { state(1) == QueueState.RUNNING }
+        g.scheduler.enqueue("b", QueueSource.AUTO)
+        skipDelay("b")
+        g.scheduler.optimizeNow("c")
+        delay(300) // let b and c reach the lock
+        release.complete(Unit)
+        await("all done") { state(1) == QueueState.DONE && state(2) == QueueState.DONE && state(3) == QueueState.DONE }
+        assertEquals(listOf("a", "c", "b"), optimizer.optimized)
+    }
+
+    @Test fun concurrentEnqueuesKeepOneRow() = runBlocking {
+        (1..20).map { async(Dispatchers.Default) { g.scheduler.enqueue("a", QueueSource.AUTO) } }.awaitAll()
+        assertEquals(1, g.database.queue().activeNow().size)
+    }
+
+    @Test fun anUpdateDuringTheCompileStillDiffersAfterwards() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        optimizer.before = { system.apps["a"] = "2" }
+        g.scheduler.optimizeNow("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals("1", g.database.watchedApps().get("a")!!.fingerprint) // the pre-compile value
+        runDetect(g)
+        assertEquals(listOf("a"), g.database.queue().activeNow().map { it.packageName })
+    }
+
+    @Test fun verifyIgnoresAnUnreadableFilterAndLogsIt() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        runVerify(g) // no filter known for "a"
+        assertTrue(g.database.queue().activeNow().isEmpty())
+        assertEquals("verify_unknown", g.database.events().recent(5).first().first().kind)
     }
 }

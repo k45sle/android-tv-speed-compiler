@@ -11,6 +11,8 @@ import dev.speedcompiler.tv.AppGraph
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 const val KEY_ITEM_ID = "itemId"
 private const val DEBOUNCE_MINUTES = 5L
@@ -32,25 +34,32 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
 
     override val history: Flow<List<QueueItem>> get() = queueDao.history()
 
-    override suspend fun watch(packageName: String) {
+    /** One lock for every mutation: concurrent callers would both miss [QueueDao.activeFor] and insert twice. */
+    private val lock = Mutex()
+
+    override suspend fun watch(packageName: String) = lock.withLock {
         val fingerprint = graph.packageSource.installed().firstOrNull { it.packageName == packageName }?.fingerprint ?: ""
         graph.database.watchedApps().upsert(WatchedApp(packageName, fingerprint))
-        enqueue(packageName, QueueSource.AUTO)
+        doEnqueue(packageName, QueueSource.AUTO)
     }
 
-    override suspend fun unwatch(packageName: String) {
+    override suspend fun unwatch(packageName: String): Unit = lock.withLock {
         graph.database.watchedApps().delete(packageName)
-        queueDao.activeFor(packageName)?.let { cancel(it.id) }
+        queueDao.activeFor(packageName)?.let { doCancel(it.id) } ?: Unit
     }
 
-    override suspend fun enqueue(packageName: String, source: QueueSource) {
+    override suspend fun enqueue(packageName: String, source: QueueSource) = lock.withLock { doEnqueue(packageName, source) }
+
+    private suspend fun doEnqueue(packageName: String, source: QueueSource) {
         val existing = queueDao.activeFor(packageName)
         // shortcut: an update that lands during a running compile is not re-queued (REPLACE would kill the worker); the weekly verify catches it.
         if (existing != null && (existing.state == QueueState.RUNNING || existing.runNow)) return
         schedule(existing ?: insert(packageName, source, runNow = false))
     }
 
-    override suspend fun optimizeNow(packageName: String) {
+    override suspend fun optimizeNow(packageName: String) = lock.withLock { doOptimizeNow(packageName) }
+
+    private suspend fun doOptimizeNow(packageName: String) {
         val existing = queueDao.activeFor(packageName)
         if (existing?.state == QueueState.RUNNING) return
         val item = if (existing == null) insert(packageName, QueueSource.MANUAL, runNow = true)
@@ -58,13 +67,17 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         schedule(item)
     }
 
-    override suspend fun cancel(id: Long) {
+    override suspend fun cancel(id: Long) = lock.withLock { doCancel(id) }
+
+    private suspend fun doCancel(id: Long) {
         val item = queueDao.get(id)?.takeIf { it.state.isActive } ?: return
         work.cancelUniqueWork(workName(item.packageName))
         queueDao.update(item.copy(state = QueueState.SKIPPED, finishedAt = graph.clock.nowMillis()))
     }
 
-    override suspend fun retry(id: Long) {
+    override suspend fun retry(id: Long) = lock.withLock { doRetry(id) }
+
+    private suspend fun doRetry(id: Long) {
         val item = queueDao.get(id) ?: return
         if (item.state != QueueState.FAILED && item.state != QueueState.SKIPPED) return
         if (queueDao.activeFor(item.packageName) != null) return

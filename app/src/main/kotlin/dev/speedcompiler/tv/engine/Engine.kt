@@ -31,7 +31,8 @@ sealed interface GateStatus {
 
 /** Decides whether optimizing is allowed right now (window, pause switch, device state). */
 interface Gate {
-    suspend fun status(): GateStatus
+    /** [ignorePause]: for jobs the user queued by hand, which wait for the window and device state but not the pause switch. */
+    suspend fun status(ignorePause: Boolean = false): GateStatus
     suspend fun isOpen(): Boolean = status() == GateStatus.Open
 }
 
@@ -46,15 +47,18 @@ class FakePackageSource(var packages: List<InstalledPackage> = emptyList()) : Pa
 class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimizer {
     val optimized = mutableListOf<String>()
     val filters = mutableMapOf<String, String?>()
+    /** Runs at the start of each optimize, so a test can block it or change the world mid-compile. */
+    var before: suspend (String) -> Unit = {}
     override suspend fun verify(packageName: String) = filters[packageName]
     override suspend fun optimize(packageName: String): OptimizeResult {
+        before(packageName)
         optimized += packageName
         return result
     }
 }
 
 class FakeGate(var status: GateStatus = GateStatus.Open) : Gate {
-    override suspend fun status() = status
+    override suspend fun status(ignorePause: Boolean) = if (ignorePause && status == GateStatus.Paused) GateStatus.Open else status
 }
 
 object SystemClock : Clock {

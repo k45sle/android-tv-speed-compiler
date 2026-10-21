@@ -17,6 +17,10 @@ import dev.speedcompiler.tv.engine.ChangeDetector
 import dev.speedcompiler.tv.engine.GateStatus
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private const val DETECT_WORK = "detect"
 private const val VERIFY_WORK = "verify"
@@ -64,8 +68,14 @@ suspend fun runDetect(g: AppGraph) {
 suspend fun runVerify(g: AppGraph) {
     val installed = g.packageSource.installed().map { it.packageName }.toSet()
     for (app in g.database.watchedApps().list()) {
-        if (app.autoOptimize && app.packageName in installed && g.optimizer.verify(app.packageName) != "speed") {
-            g.scheduler.enqueue(app.packageName, QueueSource.AUTO)
+        if (!app.autoOptimize || app.packageName !in installed) continue
+        when (g.optimizer.verify(app.packageName)) {
+            "speed" -> {}
+            // Unreadable output must not re-queue every app each week.
+            null -> g.database.events().insert(
+                Event(timeMillis = g.clock.nowMillis(), packageName = app.packageName, kind = "verify_unknown", message = "The TV did not report this app's compiler filter."),
+            )
+            else -> g.scheduler.enqueue(app.packageName, QueueSource.AUTO)
         }
     }
 }
@@ -97,12 +107,32 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 }
 
-/** Runs one queue item: waits for the gate unless the user said "now", then compiles. */
+private val runLock = Mutex()
+private val runNowWaiting = AtomicInteger(0)
+
+/** Runs one queue item: waits for the gate unless the user said "now", then compiles. One compile at a time. */
 class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val g = applicationContext.graph
+        val id = inputData.getLong(KEY_ITEM_ID, 0)
+        val runNow = g.database.queue().get(id)?.takeIf { it.state.isActive }?.runNow ?: return Result.success()
+        if (runNow) runNowWaiting.incrementAndGet()
+        try {
+            while (true) {
+                // A waiting "Optimize now" goes first: other jobs take the lock, see it, and step aside.
+                val result = runLock.withLock { if (runNow || runNowWaiting.get() == 0) run(g, id) else null }
+                if (result != null) return result
+                delay(1_000)
+            }
+        } finally {
+            if (runNow) runNowWaiting.decrementAndGet()
+        }
+    }
+
+    /** Called with [runLock] held. */
+    private suspend fun run(g: AppGraph, id: Long): Result {
         val dao = g.database.queue()
-        val item = dao.get(inputData.getLong(KEY_ITEM_ID, 0))?.takeIf { it.state.isActive } ?: return Result.success()
+        val item = dao.get(id)?.takeIf { it.state.isActive } ?: return Result.success()
         val pkg = item.packageName
         val fingerprint = g.packageSource.installed().firstOrNull { it.packageName == pkg }?.fingerprint
         if (fingerprint == null) {
@@ -110,7 +140,8 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return Result.success()
         }
         if (!item.runNow) {
-            val gate = g.gate.status()
+            // Checked after taking the lock: the window may have closed while this job waited its turn.
+            val gate = g.gate.status(ignorePause = item.source == QueueSource.MANUAL)
             if (gate != GateStatus.Open) {
                 dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = gate::class.simpleName))
                 return Result.retry() // never re-enqueue under the same name: that would cancel this worker
@@ -131,7 +162,9 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 failureReason = result.detail.takeUnless { result.ok },
             ),
         )
-        // Record the fingerprint so the next detect does not queue this app again.
+        // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
+        // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.
+        // Re-enqueueing from here is not possible: REPLACE under this worker's own name would cancel it.
         val watched = g.database.watchedApps()
         watched.get(pkg)?.let { watched.upsert(it.copy(fingerprint = fingerprint, lastResult = result.detail, lastOptimizedAt = now)) }
         return Result.success()
