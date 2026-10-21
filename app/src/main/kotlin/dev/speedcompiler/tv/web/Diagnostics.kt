@@ -5,6 +5,8 @@ import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.WatchedApp
 import fi.iki.elonen.NanoHTTPD
+import java.io.ByteArrayInputStream
+import java.io.FilterInputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Timer
@@ -27,24 +29,37 @@ data class DiagnosticsInput(
 
 private val SECRET_PATTERNS = listOf(
     Regex("-----BEGIN[\\s\\S]*?(-----END[^-]*-----|$)"), // key material
+    Regex("\\S+@\\S+"), // adb public key tail (user@host)
     Regex("\\b\\d{1,3}(\\.\\d{1,3}){3}(:\\d{1,5})?\\b"), // IPv4 with optional port
+    Regex("(?<![\\w:])([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}"), // IPv6 (also eats MACs and clock-like times)
     Regex("\\b[\\w-]+\\.local\\b"), // mDNS host
-    Regex("\\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\\b"), // MAC
+    Regex("\\bemulator-\\d+"),
+    Regex("(?i)\\bport\\s*:?\\s*\\d{1,5}\\b"),
+    Regex(":\\d{2,5}\\b"),
     Regex("[A-Za-z0-9+/_=-]{24,}"), // tokens and base64 blobs
-    Regex("\\b\\d{6}\\b"), // pairing code
+    Regex("\\b\\d{3}[ -]?\\d{3}\\b"), // pairing code, also "123 456" and "123-456"
+    Regex("\\b(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\\d)[A-Z0-9]{8,}\\b"), // serial-like
 )
 
-/** Free text may quote anything the TV said, so strip secret-shaped substrings before export. */
-fun scrub(text: String?): String? = text?.let { SECRET_PATTERNS.fold(it) { s, r -> s.replace(r, "[removed]") } }
+/**
+ * Free text may quote anything the TV said, so strip secret-shaped substrings before export.
+ * [known] are exact strings (for example the device name) replaced verbatim first.
+ */
+fun scrub(text: String?, known: List<String> = emptyList()): String? = text?.let {
+    SECRET_PATTERNS.fold(known.filter(String::isNotBlank).fold(it) { s, k -> s.replace(k, "[removed]") }) { s, r ->
+        s.replace(r, "[removed]")
+    }
+}
 
-private fun item(i: QueueItem) = JSONObject()
+private fun item(i: QueueItem, k: List<String>) = JSONObject()
     .put("package", i.packageName).put("source", i.source.name).put("state", i.state.name)
     .put("enqueuedAt", i.enqueuedAt).put("startedAt", i.startedAt ?: JSONObject.NULL).put("finishedAt", i.finishedAt ?: JSONObject.NULL)
-    .put("failureReason", scrub(i.failureReason) ?: JSONObject.NULL)
+    .put("failureReason", scrub(i.failureReason, k) ?: JSONObject.NULL)
 
-fun buildDiagnosticsJson(d: DiagnosticsInput): String {
+fun buildDiagnosticsJson(d: DiagnosticsInput, known: List<String> = emptyList(), note: String? = null): String {
     val s = d.settings
     return JSONObject()
+        .apply { if (note != null) put("note", note) }
         .put("appVersion", d.appVersion).put("androidSdk", d.sdk).put("connection", d.connection)
         .put(
             "settings",
@@ -56,16 +71,16 @@ fun buildDiagnosticsJson(d: DiagnosticsInput): String {
             "watchedApps",
             JSONArray(d.watched.map {
                 JSONObject().put("package", it.packageName).put("autoOptimize", it.autoOptimize)
-                    .put("lastResult", scrub(it.lastResult) ?: JSONObject.NULL).put("lastOptimizedAt", it.lastOptimizedAt ?: JSONObject.NULL)
+                    .put("lastResult", scrub(it.lastResult, known) ?: JSONObject.NULL).put("lastOptimizedAt", it.lastOptimizedAt ?: JSONObject.NULL)
             }),
         )
-        .put("queue", JSONArray(d.queue.map(::item)))
-        .put("history", JSONArray(d.history.map(::item)))
+        .put("queue", JSONArray(d.queue.map { item(it, known) }))
+        .put("history", JSONArray(d.history.map { item(it, known) }))
         .put(
             "recentEvents",
             JSONArray(d.events.map {
                 JSONObject().put("time", it.timeMillis).put("package", it.packageName ?: JSONObject.NULL)
-                    .put("kind", it.kind).put("message", scrub(it.message))
+                    .put("kind", scrub(it.kind, known)).put("message", scrub(it.message, known))
             }),
         )
         .toString(2)
@@ -81,6 +96,7 @@ class DiagnosticsServer(
     private val onFinished: () -> Unit = {},
 ) : NanoHTTPD(0), WebServer {
     private val served = AtomicBoolean(false)
+    private val stopped = AtomicBoolean(false)
     private val timer = Timer("diagnostics-expiry", true)
 
     val token get() = session.token
@@ -92,6 +108,7 @@ class DiagnosticsServer(
     }
 
     override fun stop() {
+        if (!stopped.compareAndSet(false, true)) return
         timer.cancel()
         super.stop()
         onFinished()
@@ -102,8 +119,14 @@ class DiagnosticsServer(
             return reply(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
         if (!served.compareAndSet(false, true)) return reply(Response.Status.GONE, "text/plain", "Already downloaded")
-        Timer(true).schedule(1000) { stop() }
-        return reply(Response.Status.OK, "application/json", json).apply {
+        val bytes = json.toByteArray()
+        // Stop only once NanoHTTPD has written the body and closes the stream.
+        val body = object : FilterInputStream(ByteArrayInputStream(bytes)) {
+            override fun close() { super.close(); Thread { stop() }.start() }
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", body, bytes.size.toLong()).apply {
+            addHeader("Cache-Control", "no-store")
+            closeConnection(true)
             addHeader("Content-Disposition", "attachment; filename=\"speed-compiler-diagnostics.json\"")
         }
     }
@@ -115,7 +138,18 @@ class DiagnosticsServer(
         }
 }
 
-/** Same LAN-address pick as the pairing service. */
-fun localIp(): String = NetworkInterface.getNetworkInterfaces().toList()
+/** Same LAN-address pick as the pairing service; null when the TV has no site-local IPv4 address. Blocking. */
+fun localIp(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
     .flatMap { it.inetAddresses.toList() }
-    .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }?.hostAddress ?: "127.0.0.1"
+    .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }?.hostAddress
+
+/** JSON capped at [max] chars: drops older events (the list is newest first) until it fits. */
+fun buildCappedJson(d: DiagnosticsInput, known: List<String>, max: Int): String {
+    var n = d.events.size
+    var json = buildDiagnosticsJson(d, known)
+    while (json.length > max && n > 0) {
+        n /= 2
+        json = buildDiagnosticsJson(d.copy(events = d.events.take(n)), known, "trimmed, use the QR download for the full file")
+    }
+    return json
+}

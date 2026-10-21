@@ -1,8 +1,9 @@
 package dev.speedcompiler.tv.ui.help
 
-import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -32,24 +33,32 @@ import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.web.DiagnosticsInput
 import dev.speedcompiler.tv.web.DiagnosticsServer
 import dev.speedcompiler.tv.web.PairingSession
+import dev.speedcompiler.tv.web.buildCappedJson
 import dev.speedcompiler.tv.web.buildDiagnosticsJson
 import dev.speedcompiler.tv.web.localIp
 import dev.speedcompiler.tv.web.qrImageBitmap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-private suspend fun collect(g: AppGraph, version: String) = buildDiagnosticsJson(
-    DiagnosticsInput(
-        appVersion = version,
-        sdk = Build.VERSION.SDK_INT,
-        settings = g.settings.values.first(),
-        connection = g.connectionMonitor.state.first().name,
-        watched = g.database.watchedApps().list(),
-        queue = g.scheduler.queue.first().map { it.item },
-        history = g.scheduler.history.first(),
-        events = g.database.events().recent(200).first(),
-    ),
+private const val SHARE_MAX_CHARS = 100_000
+
+private suspend fun collect(g: AppGraph, version: String) = DiagnosticsInput(
+    appVersion = version,
+    sdk = Build.VERSION.SDK_INT,
+    settings = g.settings.values.first(),
+    connection = g.connectionMonitor.state.first().name,
+    watched = g.database.watchedApps().list(),
+    queue = g.scheduler.queue.first().map { it.item },
+    history = g.scheduler.history.first(),
+    events = g.database.events().recent(200).first(),
 )
+
+/** The TV's own names: replaced verbatim wherever free text quotes them. */
+private fun deviceNames(c: Context): List<String> = listOf("device_name", "bluetooth_name").mapNotNull {
+    runCatching { Settings.Global.getString(c.contentResolver, it) }.getOrNull()
+}
 
 @Composable
 fun DiagnosticsScreen(onBack: () -> Unit) {
@@ -72,7 +81,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         Button(
             onClick = {
                 scope.launch {
-                    val json = collect(graph, version)
+                    val json = buildCappedJson(collect(graph, version), deviceNames(context), SHARE_MAX_CHARS)
                     try {
                         context.startActivity(
                             Intent.createChooser(
@@ -80,8 +89,8 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                                 "Share diagnostics",
                             ),
                         )
-                    } catch (_: ActivityNotFoundException) {
-                        note = "No app on this TV can share. Use the QR code."
+                    } catch (_: RuntimeException) { // no handler, or TransactionTooLargeException
+                        note = "Sharing did not work on this TV. Use the QR code."
                     }
                 }
             },
@@ -90,11 +99,26 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         Button(
             onClick = {
                 scope.launch {
-                    server?.stop()
-                    val s = DiagnosticsServer(collect(graph, version), PairingSession(graph.clock), onFinished = { url = null })
-                    s.start()
-                    server = s
-                    url = "http://${localIp()}:${s.port}/${s.token}"
+                    val old = server
+                    server = null // so the old server's onFinished does not clear the new url
+                    old?.stop()
+                    url = null
+                    note = null
+                    val json = buildDiagnosticsJson(collect(graph, version), deviceNames(context))
+                    val ref = arrayOfNulls<DiagnosticsServer>(1)
+                    val made = withContext(Dispatchers.IO) {
+                        val ip = localIp() ?: return@withContext null
+                        val s = DiagnosticsServer(json, PairingSession(graph.clock), onFinished = { if (server === ref[0]) url = null })
+                        ref[0] = s
+                        s.start()
+                        s to "http://$ip:${s.port}/${s.token}"
+                    }
+                    if (made == null) {
+                        note = "Connect the TV to Wi-Fi or Ethernet to use the QR download"
+                    } else {
+                        server = made.first
+                        url = made.second
+                    }
                 }
             },
             modifier = Modifier.semantics { contentDescription = "Show QR code to download on a phone" },
