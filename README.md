@@ -7,7 +7,6 @@
 <p align="center">Compiles the Android TV apps you pick ahead of time, and again after each update.</p>
 
 <p align="center">
-  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases"><img src="https://img.shields.io/github/v/release/k45sle/android-tv-speed-compiler?include_prereleases&label=download&color=123524" alt="Latest release"></a>
   <a href="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml"><img src="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Android%20TV-11%2B-123524" alt="Android TV 11 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-123524" alt="MIT license"></a>
