@@ -33,3 +33,7 @@ local.properties
 *.iml
 .idea/
 .kotlin/
+
+# Signing keys never belong in the repo
+*.jks
+*.keystore

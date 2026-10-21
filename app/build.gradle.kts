@@ -16,6 +16,19 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    // Release key lives outside the repo (~/.gradle/gradle.properties); without it, release builds stay unsigned.
+    val releaseStore = providers.gradleProperty("releaseStoreFile").orNull
+    signingConfigs {
+        if (releaseStore != null) create("release") {
+            storeFile = file(releaseStore)
+            storePassword = providers.gradleProperty("releaseStorePassword").get()
+            keyAlias = providers.gradleProperty("releaseKeyAlias").get()
+            keyPassword = storePassword
+        }
+    }
+    buildTypes {
+        release { signingConfig = signingConfigs.findByName("release") }
+    }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
