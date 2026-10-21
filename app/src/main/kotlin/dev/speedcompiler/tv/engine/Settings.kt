@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
@@ -22,6 +23,9 @@ data class SettingsValues(
     val paused: Boolean = false,
     val keepTrusting: Boolean = true,
     val theme: ThemeChoice = ThemeChoice.System,
+    /** Index into the accent presets; ignored while [customHue] is set. */
+    val accentPreset: Int = 0,
+    val customHue: Float? = null,
 )
 
 interface Settings {
@@ -37,6 +41,8 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val paused = booleanPreferencesKey("paused")
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val theme = stringPreferencesKey("theme")
+    private val accentPreset = intPreferencesKey("accent_preset")
+    private val customHue = floatPreferencesKey("custom_hue")
 
     private fun read(p: Preferences): SettingsValues {
         val d = SettingsValues()
@@ -48,6 +54,8 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             paused = p[paused] ?: d.paused,
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
+            accentPreset = p[accentPreset] ?: d.accentPreset,
+            customHue = p[customHue],
         )
     }
 
@@ -64,6 +72,8 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[paused] = new.paused
             p[keepTrusting] = new.keepTrusting
             p[theme] = new.theme.name
+            p[accentPreset] = new.accentPreset
+            new.customHue?.let { p[customHue] = it } ?: p.remove(customHue)
         }
     }
 }

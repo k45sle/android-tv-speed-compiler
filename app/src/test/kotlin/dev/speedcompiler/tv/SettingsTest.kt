@@ -26,8 +26,12 @@ class SettingsTest {
         val settings = DataStoreSettings(store)
         assertEquals(SettingsValues(), settings.values.first())
 
-        settings.update { it.copy(mode = Mode.Manual, paused = true, theme = ThemeChoice.Dark) }
+        settings.update { it.copy(mode = Mode.Manual, paused = true, theme = ThemeChoice.Dark, accentPreset = 3, customHue = 200f) }
         val v = settings.values.first()
+        assertEquals(3, v.accentPreset)
+        assertEquals(200f, v.customHue)
+        settings.update { it.copy(customHue = null) }
+        assertEquals(null, settings.values.first().customHue)
         assertEquals(Mode.Manual, v.mode)
         assertEquals(true, v.paused)
         assertEquals(ThemeChoice.Dark, v.theme)
