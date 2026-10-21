@@ -8,7 +8,6 @@ import dev.speedcompiler.tv.engine.compileCommand
 import dev.speedcompiler.tv.engine.parseCompilerFilter
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
-import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,7 +23,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OptimizerTest {
-    private val v1 = File("../tests/fixtures/compilation.txt").readText()
+    private val v1 = javaClass.getResource("/fixtures/compilation.txt")!!.readText()
     private val art = javaClass.getResource("/fixtures/pm-art-dump.txt")!!.readText()
 
     private class Events : EventDao {
