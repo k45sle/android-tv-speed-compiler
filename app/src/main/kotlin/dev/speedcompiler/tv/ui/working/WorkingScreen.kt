@@ -187,23 +187,26 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
                     JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium)
                     JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium)
                 }
-                if (s.job != JobView.CouldntStart) Text(
-                    elapsedText(s.elapsedMillis), style = MonoStyle,
-                    modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
-                )
-                if (!s.job.finished) {
-                    Text(
-                        "Usually about ${usuallyMinutes(s.avgMillis)} min",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                    if (s.job != JobView.CouldntStart) Text(
+                        elapsedText(s.elapsedMillis), style = MonoStyle,
+                        modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
                     )
+                    if (!s.job.finished) {
+                        Text(
+                            "Usually about ${usuallyMinutes(s.avgMillis)} min",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Button(back, Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" }) {
                     Text(if (s.job.finished) "Done" else "Leave")
                 }
             }
         }
-        Text("Play while you wait", style = MaterialTheme.typography.titleMedium)
         val kind = playing
+        // Hidden while playing: header + title + game + hint would overflow 540dp and focus would scroll the header away.
+        if (kind == null) Text("Play while you wait", style = MaterialTheme.typography.titleMedium)
         if (kind == null) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                 GameKind.entries.forEachIndexed { i, k ->
@@ -232,7 +235,8 @@ private fun BouncingArt(art: ImageBitmap?, stopped: Boolean) {
         0f, 1f, infiniteRepeatable(tween(500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hop",
     )
     val hop = if (stopped) 0f else t
-    val mod = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(12.dp))
-        .offset { IntOffset(0, -(hop * 16.dp.toPx()).roundToInt()) }
+    // offset before clip: after it, the banner slid up inside its own clip and was cropped at the top.
+    val mod = Modifier.offset { IntOffset(0, -(hop * 16.dp.toPx()).roundToInt()) }
+        .size(160.dp, 90.dp).clip(RoundedCornerShape(12.dp))
     if (art != null) Image(art, null, mod) else Box(mod.background(LocalSpeedColors.current.accent))
 }
