@@ -17,6 +17,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
@@ -33,14 +38,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememberAppsDeps()) {
     val apps by produceState(emptyList<AppInfo>(), deps) { value = deps.loadApps() }
-    val queue by deps.scheduler.queue.collectAsState(emptyList())
-    val watched by deps.watched.collectAsState(emptyList())
+    val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
+    val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
+    val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
+    val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
     val mine = watched.firstOrNull { it.packageName == packageName }
     AppDetailContent(
         apps.firstOrNull { it.packageName == packageName } ?: AppInfo(packageName, packageName),
-        mine, queue.firstOrNull { it.item.packageName == packageName }, deps.now(), deps.zone,
+        mine, optimizedAtMap(watched, history)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
@@ -51,6 +58,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
 fun AppDetailContent(
     app: AppInfo,
     watched: WatchedApp?,
+    optimizedAt: Long?,
     entry: QueueEntry?,
     now: Long,
     zone: ZoneId,
@@ -60,7 +68,7 @@ fun AppDetailContent(
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.requestFocus() }
-    val checkedAt = watched?.lastOptimizedAt
+    val checkedAt = optimizedAt
     val state = when {
         entry?.state == QueueState.RUNNING -> "Optimizing now"
         entry != null -> etaText(entry.eta, now, zone) ?: "Queued"
@@ -89,6 +97,10 @@ fun AppDetailContent(
         if (watched != null) {
             ListRow(
                 "Auto-optimize this app", onClick = { onAuto(!watched.autoOptimize) },
+                modifier = Modifier.semantics {
+                    role = Role.Switch
+                    toggleableState = ToggleableState(watched.autoOptimize)
+                },
                 subtitle = "Speed compile again after each update",
             ) { Switch(watched.autoOptimize, null) }
         }

@@ -5,6 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
@@ -61,6 +69,11 @@ class AppsScreensTest {
 
     private fun show(content: @Composable () -> Unit) {
         rule.setContent { SpeedTheme { content() } }
+        // A Robolectric window starts in touch mode, where rows cannot take focus; a TV has none.
+        rule.runOnUiThread {
+            val root = android.view.View::class.java.getMethod("getViewRootImpl").invoke(rule.activity.window.decorView)!!
+            root.javaClass.getDeclaredMethod("ensureTouchMode", Boolean::class.java).apply { isAccessible = true }.invoke(root, false)
+        }
         rule.waitForIdle()
     }
 
@@ -204,5 +217,39 @@ class AppsScreensTest {
         watched.value = listOf(WatchedApp("a.alpha", "f"))
         detailScreen()
         assertEveryFocusableIsLabelled()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun holdingOkOpensTheMenuAndReleaseDoesNotNavigate() {
+        listScreen()
+        rule.onNodeWithText("Alpha").requestFocus()
+        rule.onNodeWithText("Alpha").performKeyInput {
+            keyDown(Key.DirectionCenter)
+            advanceEventTime(800) // held: the framework sends repeat KeyDowns
+            keyUp(Key.DirectionCenter)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Add to queue").assertIsDisplayed()
+        assertTrue(gone.isEmpty())
+    }
+
+    @Test
+    fun autoOptimizeRowIsASwitchWithState() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", autoOptimize = true))
+        detailScreen()
+        rule.onNodeWithText("Auto-optimize this app").assertIsOn().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch),
+        )
+    }
+
+    @Test
+    fun finishedJobMarksAnUnwatchedAppOptimized() {
+        val done = dev.speedcompiler.tv.watch.QueueItem(
+            1, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.MANUAL,
+            dev.speedcompiler.tv.watch.QueueState.DONE, enqueuedAt = 1, finishedAt = 50,
+        )
+        assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done)))
+        assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
     }
 }

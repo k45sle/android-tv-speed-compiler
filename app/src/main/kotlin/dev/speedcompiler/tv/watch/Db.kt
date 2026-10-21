@@ -97,6 +97,10 @@ interface WatchedAppDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(app: WatchedApp)
 
+    /** Single-column write so it cannot clobber fields a running job updates. */
+    @Query("UPDATE watched_app SET autoOptimize = :on WHERE packageName = :packageName")
+    suspend fun setAutoOptimize(packageName: String, on: Boolean)
+
     @Query("DELETE FROM watched_app WHERE packageName = :packageName")
     suspend fun delete(packageName: String)
 }

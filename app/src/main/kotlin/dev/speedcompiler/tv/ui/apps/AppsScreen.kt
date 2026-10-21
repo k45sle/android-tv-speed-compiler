@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +30,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -41,7 +45,6 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.core.graphics.drawable.toBitmap
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -93,23 +96,26 @@ fun rememberOptimizeNow(deps: AppsDeps, go: (String) -> Unit): (String) -> Unit 
 
 @Composable
 fun AppBanner(app: AppInfo, modifier: Modifier) {
-    val bitmap = remember(app) { app.banner?.toBitmap(160, 90)?.asImageBitmap() }
-    val shape = Modifier.clip(RoundedCornerShape(8.dp))
-    if (bitmap != null) Image(bitmap, null, modifier.then(shape), contentScale = ContentScale.Crop)
-    else Box(modifier.then(shape).background(MaterialTheme.colorScheme.surfaceVariant), Alignment.Center) {
-        Text(app.label.take(1), style = MaterialTheme.typography.titleLarge)
+    val bitmap by produceState<ImageBitmap?>(null, app.packageName) {
+        value = app.banner?.let { load -> withContext(Dispatchers.IO) { load()?.asImageBitmap() } }
     }
+    val box = modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+    val b = bitmap
+    if (b != null) Image(b, null, box, contentScale = ContentScale.Fit)
+    else Box(box, Alignment.Center) { Text(app.label.take(1), style = MaterialTheme.typography.titleLarge) }
 }
 
 @Composable
 fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememberAppsDeps()) {
     val apps by produceState(emptyList<AppInfo>(), deps) { value = deps.loadApps() }
-    val queue by deps.scheduler.queue.collectAsState(emptyList())
-    val watched by deps.watched.collectAsState(emptyList())
+    val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
+    val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
+    val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
+    val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
     AppsContent(
-        apps, queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, deps.now(), deps.zone,
+        apps, queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, optimizedAtMap(watched, history), now, deps.zone,
         onOpen = { go(Routes.appDetail(it)) },
         onOptimize = optimizeNow,
         onQueue = { pkg -> scope.launch { deps.scheduler.enqueue(pkg, QueueSource.MANUAL) } },
@@ -122,6 +128,7 @@ fun AppsContent(
     apps: List<AppInfo>,
     queue: Map<String, QueueEntry>,
     watched: Map<String, WatchedApp>,
+    optimizedAt: Map<String, Long>,
     now: Long,
     zone: ZoneId,
     onOpen: (String) -> Unit,
@@ -132,6 +139,7 @@ fun AppsContent(
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(Sort.Recent) }
     var menu by remember { mutableStateOf<AppInfo?>(null) }
+    var swallowUp by remember { mutableStateOf(false) }
     val shown = apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
         .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
     val c = LocalSpeedColors.current
@@ -157,7 +165,7 @@ fun AppsContent(
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
-                val pill = pillFor(queue[app.packageName], watched[app.packageName], now, zone)
+                val pill = pillFor(queue[app.packageName], optimizedAt[app.packageName], now, zone)
                 ListRow(
                     app.label,
                     Modifier.fillMaxWidth().semantics { onLongClick("Open menu") { menu = app; true } }
@@ -165,12 +173,18 @@ fun AppsContent(
                             val enter = it.key == Key.Enter || it.key == Key.DirectionCenter || it.key == Key.NumPadEnter
                             // Holding OK: the first repeat is the long press.
                             val long = enter && it.type == KeyEventType.KeyDown && it.nativeKeyEvent.repeatCount == 1
-                            if (long) menu = app
-                            long
+                            if (long) { menu = app; swallowUp = true }
+                            // The release after a long press must not click the row.
+                            val up = enter && it.type == KeyEventType.KeyUp && swallowUp
+                            if (up) swallowUp = false
+                            long || up
                         },
                     onClick = { onOpen(app.packageName) },
                 ) {
-                    if (pill != null) StatusPill(pill.first, pill.second)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+                        if (pill != null) StatusPill(pill.first, pill.second)
+                        AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp))
+                    }
                 }
             }
         }
