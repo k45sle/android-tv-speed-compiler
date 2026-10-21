@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.SpeedApp
+import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,7 @@ class SetupDeps(
     val onFinish: (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
 )
 
-class AndroidSetupEnv(private val context: Context) : SetupEnv {
+class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
     private fun global(name: String) = Settings.Global.getInt(context.contentResolver, name, 0) == 1
 
     override fun developerOptionsOn() = global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)
@@ -63,8 +64,7 @@ class AndroidSetupEnv(private val context: Context) : SetupEnv {
         context.stopService(Intent(context, PairingService::class.java))
     }
 
-    // shortcut: the connection monitor reconnects on its own once wireless debugging is on; give it a kick when the wiring chunk adds one.
-    override fun reconnect() = Unit
+    override fun reconnect() = monitor.connectNow()
 
     override suspend fun recentApps(): List<SetupApp> {
         val pm = context.packageManager
@@ -105,6 +105,6 @@ fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
     return remember {
         val graph = (context.applicationContext as SpeedApp).graph
-        SetupDeps(AndroidSetupEnv(context.applicationContext), graph.connectionMonitor.state, PairingService.url)
+        SetupDeps(AndroidSetupEnv(context.applicationContext, graph.connectionMonitor), graph.connectionMonitor.state, PairingService.url)
     }
 }

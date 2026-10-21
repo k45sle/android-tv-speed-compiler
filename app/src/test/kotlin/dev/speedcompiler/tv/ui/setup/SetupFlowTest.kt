@@ -166,6 +166,18 @@ class SetupFlowTest {
     }
 
     @Test
+    fun expiredPairingWhileDisconnectedIsAFailure() {
+        monitor.flow.value = ConnectionState.Disconnected
+        show { QuickRepairScreen({ backs++ }, deps) }
+        repeat(2) {
+            url.value = pairUrl; tick()
+            url.value = null; tick(2500)
+        }
+        see("Grab your phone.")
+        see("Show me how")
+    }
+
+    @Test
     fun quickRepairJumpsToPairingAndLeavesWhenConnected() {
         show { QuickRepairScreen({ backs++ }, deps) }
         see("Grab your phone.")

@@ -183,6 +183,7 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
 private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> Unit, onFail: () -> Unit) {
     val url by deps.pairingUrl.collectAsState(null)
     var seen by remember { mutableStateOf(false) }
+    var start by remember { mutableStateOf(ConnectionState.Unpaired) }
     val paired by rememberUpdatedState(onPaired)
     val failed by rememberUpdatedState(onFail)
     DisposableEffect(Unit) {
@@ -190,10 +191,17 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
         onDispose { deps.env.stopPairing() }
     }
     LaunchedEffect(url) {
-        if (url != null) { seen = true; return@LaunchedEffect }
+        if (url != null) { seen = true; start = deps.connection.first(); return@LaunchedEffect }
         if (!seen) return@LaunchedEffect
-        // The session ended: it worked if the connection layer left Unpaired shortly after.
-        val ok = withTimeoutOrNull(PairGraceMs) { deps.connection.first { it != ConnectionState.Unpaired } } != null
+        // The session ended: it worked if the connection layer moved on shortly after. From an Unpaired start any
+        // other state counts; from Disconnected/Connecting (re-pair) only a new Connecting or Connected does.
+        val ok = withTimeoutOrNull(PairGraceMs) {
+            deps.connection.first {
+                it == ConnectionState.Connected ||
+                    (it != start && it != ConnectionState.Unpaired &&
+                        (start == ConnectionState.Unpaired || it == ConnectionState.Connecting))
+            }
+        } != null
         if (ok) paired() else { seen = false; failed(); deps.env.startPairing() }
     }
     Page(4, "Grab your phone.") {

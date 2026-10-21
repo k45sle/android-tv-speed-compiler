@@ -18,6 +18,8 @@ enum class ConnectionState { Unpaired, Disconnected, Connecting, Connected }
 
 interface ConnectionMonitor {
     val state: Flow<ConnectionState>
+    /** Tries to connect now instead of waiting for the next retry. */
+    fun connectNow() {}
 }
 
 class FakeAdbShell(private val responses: Map<String, ShellResult> = emptyMap()) : AdbShell {
@@ -35,4 +37,6 @@ class FakePairing(var succeeds: Boolean = true) : Pairing {
 class FakeConnectionMonitor(initial: ConnectionState = ConnectionState.Unpaired) : ConnectionMonitor {
     val flow = MutableStateFlow(initial)
     override val state: Flow<ConnectionState> = flow
+    var connectNowCalls = 0
+    override fun connectNow() { connectNowCalls++ }
 }
