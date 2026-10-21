@@ -65,7 +65,7 @@ class ChangeDetector(
         val boot = system.bootCount()
         val storedBoot = state.get(KEY_BOOT_COUNT)?.toIntOrNull()
         val storedSeq = state.get(KEY_SEQUENCE)?.toIntOrNull()
-        val incrementalFrom = storedSeq.takeIf { storedBoot == boot }
+        val incrementalFrom = storedSeq.takeIf { boot >= 0 && storedBoot == boot } // unknown boot count: always full compare
         val changes = system.changedSince(incrementalFrom ?: 0)
         val candidates = if (incrementalFrom != null) {
             val touched = changes?.names?.toSet().orEmpty()
