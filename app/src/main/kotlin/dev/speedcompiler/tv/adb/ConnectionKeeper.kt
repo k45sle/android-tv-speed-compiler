@@ -2,6 +2,11 @@ package dev.speedcompiler.tv.adb
 
 import dev.speedcompiler.tv.engine.Settings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +41,7 @@ class ConnectionKeeper(
     private val shell: AdbShell,
     private val settings: Settings,
     private val packageName: String,
+    private val scope: CoroutineScope,
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
@@ -45,6 +51,20 @@ class ConnectionKeeper(
     val trustFailure = MutableStateFlow<String?>(null)
 
     private var granted = false
+    private val lock = Mutex()
+    private val inFlight = AtomicBoolean(false)
+
+    /** Starts [reconnect] in the app scope; ignored while one is already running. */
+    override fun connectNow() {
+        if (!inFlight.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                reconnect()
+            } finally {
+                inFlight.set(false)
+            }
+        }
+    }
 
     override val state: Flow<ConnectionState> = _status.map {
         when (it) {
@@ -56,7 +76,8 @@ class ConnectionKeeper(
     }
 
     /** Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. */
-    suspend fun reconnect() {
+    /** Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status. */
+    suspend fun reconnect(): KeeperStatus = lock.withLock {
         _status.value = KeeperStatus.Reconnecting
         try {
             connect()
@@ -65,10 +86,11 @@ class ConnectionKeeper(
         } catch (e: Exception) {
             val err = mapAdbError(e)
             _status.value = KeeperStatus.Failed(err, fixFor(err))
-            return
+            return@withLock _status.value
         }
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
+        _status.value
     }
 
     private suspend fun grant() {
