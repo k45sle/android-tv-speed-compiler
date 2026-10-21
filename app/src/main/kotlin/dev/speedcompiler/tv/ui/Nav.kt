@@ -50,7 +50,7 @@ fun AppNavHost() {
         composable(Routes.Setup) { SetupScreen(back) }
         composable(Routes.Home) { HomeScreen(go) }
         composable(Routes.Apps) { AppsScreen(go, back) }
-        composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), back) }
+        composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), go, back) }
         composable(Routes.Working) { WorkingScreen(it.arguments?.getString("pkg").orEmpty(), back) }
         composable(Routes.Activity) { ActivityScreen(back) }
         composable(Routes.Settings) { SettingsScreen(back) }
