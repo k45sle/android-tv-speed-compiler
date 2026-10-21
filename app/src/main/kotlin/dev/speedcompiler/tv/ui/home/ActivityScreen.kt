@@ -32,7 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.ListRow
@@ -114,7 +114,7 @@ fun ActivityContent(
                 val shape = RoundedCornerShape(RowRadius)
                 Row(
                     Modifier.fillMaxWidth().focusFx(1.025f, RowRadius) { open = if (open == h.id) null else h.id }.clip(shape)
-                        .border(1.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
+                        .border(2.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.x2),
                 ) {

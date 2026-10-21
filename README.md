@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/icon.png" width="128" height="128" alt="Speed Compile icon: a cream arrow made of horizontal bars with a gold tip, on dark green">
+  <img src="docs/media/icon.png" width="108" height="108" alt="Speed Compile icon: a pixel-art cream arrow made of horizontal bars with a gold tip, on dark green">
 </p>
 
 <h1 align="center">Speed Compile</h1>
@@ -13,15 +13,21 @@
 </p>
 
 > [!IMPORTANT]
-> **This app was written entirely by AI.** All of its code, tests and documentation were written by Claude (Anthropic's AI) in Claude Code, and the logo art was made with Google Gemini. I am not a programmer. What I did:
+> **This app was written entirely by AI.** All of its code, tests and documentation were written by Claude (Anthropic's AI) in Claude Code, and the original logo art was made with Google Gemini. I am not a programmer. What I did:
 >
 > - Came up with the idea, mostly so Nuvio and apps like it would run better on my TV.
 > - Decided to drop the first version, a Docker service you ran on a computer, in favour of an app that runs on the TV itself.
 > - Approved the screen designs before any of them were built.
 > - Turned down "TV Speed" for sounding like a scam, and picked the name.
 > - Made the logo, then rejected four fonts and one embossing experiment for the banner until it had no text left on it.
+> - Asked for a retro pixel-art look, then picked the pixel logo and the banner with its pixel wordmark from Claude's candidates.
 > - Set a budget of under $1 for the whole project and held Claude to it.
 > - Reviewed the work and pushed back on anything that looked like AI slop.
+
+<!-- Placeholder until the demo video is recorded. -->
+<p align="center">
+  <img src="docs/media/banner.png" width="640" height="360" alt="Speed Compile banner: the pixel-art arrow logo next to the words SPEED COMPILE in pixel letters, on dark green">
+</p>
 
 <p align="center">
   <picture>
@@ -115,4 +121,4 @@ The APK lands in `app/build/outputs/apk/debug/`. You need JDK 17 and the Android
 
 ## License
 
-[MIT](LICENSE). The bundled Geist fonts are under the [SIL Open Font License](third_party/GEIST-OFL.txt).
+[MIT](LICENSE). The bundled Geist and Pixelify Sans fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [Pixelify Sans](third_party/PIXELIFY-OFL.txt)).

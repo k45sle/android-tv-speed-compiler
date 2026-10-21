@@ -37,7 +37,12 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Roborazzi plugin is not in the catalog; this property alone makes captureRoboImage write files.
-        unitTests.all { it.systemProperty("roborazzi.test.record", "true") }
+        unitTests.all {
+            it.systemProperty("roborazzi.test.record", "true")
+            // Absolute, since tests run in app/ and a relative ../ path broke before.
+            it.systemProperty("pixelDir", rootProject.file("tools/pixel").absolutePath)
+            it.inputs.dir(rootProject.file("tools/pixel"))
+        }
     }
     // NanoHTTPD and Conscrypt ship duplicate license files
     packaging { resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1") }

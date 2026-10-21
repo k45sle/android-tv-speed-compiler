@@ -31,6 +31,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import kotlinx.coroutines.delay
 
@@ -75,8 +76,8 @@ fun GamePlayer(kind: GameKind, paused: Boolean, onExit: () -> Unit, modifier: Mo
         }
     }
     Box(
-        modifier.size(480.dp, 270.dp).clip(RoundedCornerShape(12.dp))
-            .border(2.dp, if (focused) colors.accent else colors.hairline, RoundedCornerShape(12.dp))
+        modifier.size(480.dp, 270.dp).clip(RoundedCornerShape(CardRadius))
+            .border(2.dp, if (focused) colors.accent else colors.hairline, RoundedCornerShape(CardRadius))
             .semantics { contentDescription = "${kind.title} game. Arrow keys move, Select to act or restart, Back to stop playing." }
             .focusRequester(focus).focusable(interactionSource = src)
             .onKeyEvent { e ->

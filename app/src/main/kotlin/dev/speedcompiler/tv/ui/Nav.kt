@@ -18,7 +18,7 @@ import dev.speedcompiler.tv.ui.home.rememberGraph
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.ui.apps.AppDetailScreen

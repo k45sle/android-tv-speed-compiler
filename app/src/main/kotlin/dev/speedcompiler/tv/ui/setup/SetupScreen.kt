@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -38,7 +37,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
@@ -287,7 +286,7 @@ private fun Page(step: Int?, title: String, content: @Composable ColumnScope.() 
         if (step == null) Text(title, style = MaterialTheme.typography.displaySmall)
         else {
             StepHeader(step - 1, Total, title)
-            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(LocalSpeedColors.current.hairline)) {
+            Box(Modifier.fillMaxWidth().height(4.dp).background(LocalSpeedColors.current.hairline)) {
                 Box(Modifier.fillMaxWidth((step - 1) / Total.toFloat()).fillMaxHeight().background(LocalSpeedColors.current.accent))
             }
         }

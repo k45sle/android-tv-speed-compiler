@@ -69,13 +69,13 @@ class PairingWebServer(
     companion object {
         private const val MIME_HTML = "text/html; charset=utf-8"
         private const val STYLE = "" +
-            ":root{color-scheme:light dark;--fg:#1a1c1a;--bg:#fff;--line:#6b736d;--accent:#123524;--on:#fff}" +
-            "@media(prefers-color-scheme:dark){:root{--fg:#e8ece9;--bg:#121413;--line:#8d968f;--accent:#7fc59a;--on:#08150d}}" +
+            ":root{color-scheme:light dark;--fg:#123524;--bg:#f2e6c4;--line:#3f6450;--accent:#123524;--on:#f2e6c4}" +
+            "@media(prefers-color-scheme:dark){:root{--fg:#f2e6c4;--bg:#0b2017;--line:#9dbfa9;--accent:#e8a33a;--on:#0b2017}}" +
             "body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}" +
             "main{max-width:28rem;padding:1rem}h1{font-size:1.5rem;margin:0 0 1rem}" +
             "label{display:block;margin:0 0 1rem}input{display:block;width:100%;box-sizing:border-box;min-height:44px;margin-top:.25rem;" +
-            "padding:.5rem;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:4px}" +
-            "button{min-height:44px;padding:0 1.5rem;font:inherit;font-weight:600;color:var(--on);background:var(--accent);border:0;border-radius:4px}" +
+            "padding:.5rem;font:inherit;color:inherit;background:var(--bg);border:2px solid var(--line);border-radius:0}" +
+            "button{min-height:44px;padding:0 1.5rem;font:inherit;font-weight:600;color:var(--on);background:var(--accent);border:0;border-radius:0}" +
             "input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}"
         val PAGE = """
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

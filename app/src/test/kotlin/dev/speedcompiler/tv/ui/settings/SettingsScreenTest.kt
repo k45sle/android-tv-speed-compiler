@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import dev.speedcompiler.tv.theme.Presets
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -143,7 +144,7 @@ class SettingsScreenTest {
         click("Dark")
         clickDesc("Plum")
         assertEquals(ThemeChoice.Dark, state.value.theme)
-        assertEquals(4, state.value.accentPreset)
+        assertEquals(Presets.indexOfFirst { it.name == "Plum" }, state.value.accentPreset)
         assertEquals(null, state.value.customHue)
         click("Custom")
         assertEquals(150f, state.value.customHue)

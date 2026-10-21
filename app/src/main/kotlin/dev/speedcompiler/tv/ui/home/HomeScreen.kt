@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -26,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
@@ -149,7 +148,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 BannerCard(look.label, Modifier.width(260.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                         look.banner?.let { Image(it, null, Modifier.size(64.dp, 36.dp)) }
-                        Box(Modifier.size(6.dp).background(toneColor(tone), CircleShape))
+                        Box(Modifier.size(6.dp).background(toneColor(tone)))
                     }
                 }
             }

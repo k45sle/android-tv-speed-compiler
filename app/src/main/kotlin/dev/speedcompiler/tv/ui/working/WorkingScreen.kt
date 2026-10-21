@@ -1,11 +1,5 @@
 package dev.speedcompiler.tv.ui.working
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -35,12 +28,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.Alignment
+import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
+import dev.speedcompiler.tv.theme.PixelLogoSprite
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.AppLook
@@ -60,7 +55,6 @@ import kotlinx.coroutines.delay
 import dev.speedcompiler.tv.adb.ConnectionState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlin.math.roundToInt
 
 /** What the job for this package is doing. Never a percentage: the engine cannot report one. */
 sealed interface JobView {
@@ -170,7 +164,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(Space.x2),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x3)) {
-            BouncingArt(s.art, s.job.finished)
+            WorkingArt(s.art, s.job.finished)
             Column(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                 Text(
                     if (s.job.finished) s.label else "Optimizing ${s.label}",
@@ -228,15 +222,12 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
     }
 }
 
-/** The app's banner (or a plain tile while it loads off the main thread) hopping up and down. */
+/** The pixel logo animating next to the app's banner (or a plain tile while it loads off the main thread). */
 @Composable
-private fun BouncingArt(art: ImageBitmap?, stopped: Boolean) {
-    val t by rememberInfiniteTransition(label = "bounce").animateFloat(
-        0f, 1f, infiniteRepeatable(tween(500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "hop",
-    )
-    val hop = if (stopped) 0f else t
-    // offset before clip: after it, the banner slid up inside its own clip and was cropped at the top.
-    val mod = Modifier.offset { IntOffset(0, -(hop * 16.dp.toPx()).roundToInt()) }
-        .size(160.dp, 90.dp).clip(RoundedCornerShape(12.dp))
-    if (art != null) Image(art, null, mod) else Box(mod.background(LocalSpeedColors.current.accent))
+private fun WorkingArt(art: ImageBitmap?, stopped: Boolean) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+        PixelLogoSprite(stopped, Modifier.semantics { contentDescription = if (stopped) "Done" else "Working" })
+        val mod = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(CardRadius))
+        if (art != null) Image(art, null, mod) else Box(mod.background(LocalSpeedColors.current.accent))
+    }
 }

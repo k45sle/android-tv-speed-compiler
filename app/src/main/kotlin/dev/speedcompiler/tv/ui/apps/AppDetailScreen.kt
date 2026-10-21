@@ -20,7 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Switch
 import androidx.tv.material3.Text

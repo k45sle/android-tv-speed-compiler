@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -40,7 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
@@ -53,6 +52,7 @@ import dev.speedcompiler.tv.theme.HueSlider
 import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.MonoStyle
+import dev.speedcompiler.tv.theme.Preset
 import dev.speedcompiler.tv.theme.Presets
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
@@ -60,7 +60,6 @@ import dev.speedcompiler.tv.theme.StatusPill
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
-import dev.speedcompiler.tv.theme.buildPalette
 import dev.speedcompiler.tv.theme.focusFx
 import dev.speedcompiler.tv.ui.Routes
 import kotlinx.coroutines.launch
@@ -115,7 +114,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
         }
         Chips {
             Presets.forEachIndexed { i, p ->
-                Swatch(p.name, p.seed, v.customHue == null && v.accentPreset == i) { set { it.copy(accentPreset = i, customHue = null) } }
+                Swatch(p, v.customHue == null && v.accentPreset == i) { set { it.copy(accentPreset = i, customHue = null) } }
             }
             Chip("Custom", v.customHue != null) { set { it.copy(customHue = it.customHue ?: 150f) } }
         }
@@ -161,19 +160,19 @@ private fun Chip(label: String, selected: Boolean, modifier: Modifier = Modifier
     Box(
         modifier.focusFx(1.05f, RowRadius, onClick).semantics { role = Role.RadioButton; this.selected = selected }
             .clip(shape).background(if (selected) c.accent else MaterialTheme.colorScheme.surfaceVariant)
-            .border(1.dp, c.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
+            .border(2.dp, c.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
     ) { Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) c.onAccent else MaterialTheme.colorScheme.onSurface) }
 }
 
 @Composable
-private fun Swatch(name: String, seed: Int, selected: Boolean, onClick: () -> Unit) {
+private fun Swatch(preset: Preset, selected: Boolean, onClick: () -> Unit) {
     val c = LocalSpeedColors.current
-    val color = remember(seed, c.dark) { Color(buildPalette(seed, c.dark).accent) }
+    val color = remember(preset, c.dark) { Color(preset.palette(c.dark).accent) }
     Box(
-        Modifier.size(Space.x4 + Space.x1).focusFx(1.15f, 20.dp, onClick)
-            .semantics { role = Role.RadioButton; this.selected = selected; contentDescription = name }
-            .background(color, CircleShape)
-            .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.onSurface else c.hairline, CircleShape),
+        Modifier.size(Space.x4 + Space.x1).focusFx(1.15f, RowRadius, onClick)
+            .semantics { role = Role.RadioButton; this.selected = selected; contentDescription = preset.name }
+            .background(color)
+            .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.onSurface else c.hairline),
     )
 }
 
@@ -193,7 +192,7 @@ private fun TimePicker(label: String, minute: Int, onStep: (Int) -> Unit) {
                     else -> false
                 }
             }
-            .clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).border(1.dp, c.hairline, shape)
+            .clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).border(2.dp, c.hairline, shape)
             .padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
         horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically,
     ) {

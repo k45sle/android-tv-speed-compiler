@@ -44,15 +44,19 @@ private fun variable(res: Int, w: Int) =
 val GeistSans = FontFamily(variable(R.font.geist_sans, 400), variable(R.font.geist_sans, 500), variable(R.font.geist_sans, 600))
 val GeistMono = FontFamily(variable(R.font.geist_mono, 400), variable(R.font.geist_mono, 500), variable(R.font.geist_mono, 600))
 
+/** Headings of 28 sp and up only; smaller pixel text is hard to read across a room. */
+val PixelifySans = FontFamily(variable(R.font.pixelify_sans, 600))
+
 /** Codes, URLs, times, versions and output: Geist Mono with tabular figures. */
 val MonoStyle = TextStyle(fontFamily = GeistMono, fontSize = 16.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
 
 private fun sans(size: Int, w: Int) = TextStyle(fontFamily = GeistSans, fontSize = size.sp, fontWeight = FontWeight(w))
+private fun pixel(size: Int) = TextStyle(fontFamily = PixelifySans, fontSize = size.sp, fontWeight = FontWeight(600))
 
-// Scale 14/16/18/22/28/40; 600 for headings, 500 for labels.
+// Scale 14/16/18/22/28/40; pixel font for 28+, 600 for headings, 500 for labels.
 private val SpeedTypography = Typography(
-    displayLarge = sans(40, 600), displayMedium = sans(40, 600), displaySmall = sans(28, 600),
-    headlineLarge = sans(40, 600), headlineMedium = sans(28, 600), headlineSmall = sans(22, 600),
+    displayLarge = pixel(40), displayMedium = pixel(40), displaySmall = pixel(28),
+    headlineLarge = pixel(40), headlineMedium = pixel(28), headlineSmall = sans(22, 600),
     titleLarge = sans(22, 600), titleMedium = sans(18, 600), titleSmall = sans(16, 600),
     bodyLarge = sans(18, 400), bodyMedium = sans(16, 400), bodySmall = sans(14, 400),
     labelLarge = sans(18, 500), labelMedium = sans(16, 500), labelSmall = sans(14, 500),
@@ -71,9 +75,9 @@ sealed interface SeedChoice {
     data class Preset(val index: Int) : SeedChoice
     data class Custom(val hue: Float) : SeedChoice
 
-    fun seed(): Int = when (this) {
-        is Preset -> Presets[index.coerceIn(Presets.indices)].seed
-        is Custom -> seedForHue(hue)
+    fun palette(dark: Boolean): Palette = when (this) {
+        is Preset -> Presets[index.coerceIn(Presets.indices)].palette(dark)
+        is Custom -> buildPalette(seedForHue(hue), dark)
     }
 }
 
@@ -92,10 +96,9 @@ fun SpeedTheme(
         ThemeChoice.Light -> false
         ThemeChoice.System -> isSystemInDarkTheme()
     }
-    val seedArgb = seed.seed()
-    val pair = remember(seedArgb, dark) {
-        val p = buildPalette(seedArgb, dark)
-        val hairline = p.onSurface.c().copy(alpha = 0.08f)
+    val pair = remember(seed, dark) {
+        val p = seed.palette(dark)
+        val hairline = p.line.c()
         val cs = (if (dark) darkColorScheme() else lightColorScheme()).copy(
             primary = p.accent.c(), onPrimary = p.onAccent.c(),
             primaryContainer = p.container.c(), onPrimaryContainer = p.onContainer.c(),
@@ -107,7 +110,7 @@ fun SpeedTheme(
         )
         cs to SpeedColors(
             p.accent.c(), p.onAccent.c(), hairline, dark,
-            statusArgb(145.0, dark).c(), statusArgb(75.0, dark).c(), statusArgb(25.0, dark).c(),
+            p.ok.c(), p.warn.c(), p.error.c(),
         )
     }
     CompositionLocalProvider(LocalSpeedColors provides pair.second) {

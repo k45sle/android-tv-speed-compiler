@@ -45,10 +45,11 @@ import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.tv.material3.Button
+import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.ListRow
+import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
@@ -79,7 +80,7 @@ private enum class Sort(val label: String) { Recent("Recently updated"), Name("A
 @Composable
 fun SimpleDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) = Dialog(onDismiss) {
     Column(
-        Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp)).padding(Space.x3),
+        Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(CardRadius)).padding(Space.x3),
         verticalArrangement = Arrangement.spacedBy(Space.x1),
     ) { content() }
 }
@@ -112,7 +113,7 @@ fun AppBanner(app: AppInfo, modifier: Modifier) {
     val bitmap by produceState<ImageBitmap?>(null, app.packageName, app.banner) {
         value = app.banner?.let { load -> withContext(Dispatchers.IO) { load()?.asImageBitmap() } }
     }
-    val box = modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+    val box = modifier.clip(RoundedCornerShape(RowRadius)).background(MaterialTheme.colorScheme.surfaceVariant)
     val b = bitmap
     if (b != null) Image(b, null, box, contentScale = ContentScale.Fit)
     else Box(box, Alignment.Center) { Text(app.label.take(1), style = MaterialTheme.typography.titleLarge) }
@@ -183,7 +184,7 @@ fun AppsContent(
         Text("Apps", style = MaterialTheme.typography.displaySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
             // TV pattern: the box takes focus like a button; OK starts editing (and the keyboard), Up/Down leave it.
-            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(1.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
+            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(2.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
                 BasicTextField(
                     query, { query = it },
                     Modifier.fillMaxWidth().focusRequester(field).onFocusChanged { if (!it.isFocused) editing = false }

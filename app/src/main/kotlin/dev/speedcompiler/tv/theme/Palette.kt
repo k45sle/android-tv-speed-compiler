@@ -4,9 +4,14 @@ import com.materialkolor.hct.Hct
 import kotlin.math.max
 import kotlin.math.pow
 
-class Preset(val name: String, val seed: Int)
+/** [dark] and [light] are fixed palettes; when absent both are derived from [seed]. */
+class Preset(val name: String, val seed: Int, private val dark: Palette? = null, private val light: Palette? = null) {
+    fun palette(isDark: Boolean): Palette = (if (isDark) dark else light) ?: buildPalette(seed, isDark)
+}
 
 val Presets = listOf(
+    Preset("Retro", Retro.GOLD, Retro.Dark, Retro.Light),
+    Preset("Retro neon", Retro.NeonDark.accent, Retro.NeonDark, Retro.NeonLight),
     Preset("Phthalo green", 0xFF123524.toInt()),
     Preset("Ink indigo", 0xFF262C6B.toInt()),
     Preset("Kiln clay", 0xFF6E2E14.toInt()),
@@ -18,12 +23,15 @@ val Presets = listOf(
 )
 
 /** Colors as ARGB ints so the contrast math is testable without Compose. */
-class Palette(
+data class Palette(
     val accent: Int, val onAccent: Int,
     val container: Int, val onContainer: Int,
     val background: Int, val surface: Int, val surfaceVariant: Int,
     val onSurface: Int, val onSurfaceVariant: Int,
-)
+    val line: Int, val ok: Int, val warn: Int, val error: Int,
+) {
+    fun all() = listOf(accent, onAccent, container, onContainer, background, surface, surfaceVariant, onSurface, onSurfaceVariant, line, ok, warn, error)
+}
 
 /** Seed for the Custom preset: one hue, fixed chroma and tone. */
 fun seedForHue(hue: Float): Int = Hct.from(hue.toDouble().mod(360.0), 48.0, 50.0).toInt()
@@ -56,12 +64,13 @@ fun buildPalette(seed: Int, dark: Boolean): Palette {
         accent = Hct.from(hue, chroma, tone).toInt()
     }
     fun n(t: Double) = Hct.from(hue, 4.0, t).toInt() // neutrals: seed hue, very low chroma
+    val status = arrayOf(statusArgb(145.0, dark), statusArgb(75.0, dark), statusArgb(25.0, dark))
     return if (dark) Palette(
         accent, onAccent, Hct.from(hue, chroma, 30.0).toInt(), Hct.from(hue, 16.0, 90.0).toInt(),
-        n(6.0), n(10.0), n(17.0), n(92.0), n(75.0),
+        n(6.0), n(10.0), n(17.0), n(92.0), n(75.0), n(30.0), status[0], status[1], status[2],
     ) else Palette(
         accent, onAccent, Hct.from(hue, chroma, 90.0).toInt(), Hct.from(hue, 16.0, 10.0).toInt(),
-        n(98.0), n(96.0), n(90.0), n(10.0), n(35.0),
+        n(98.0), n(96.0), n(90.0), n(10.0), n(35.0), n(78.0), status[0], status[1], status[2],
     )
 }
 

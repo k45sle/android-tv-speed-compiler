@@ -90,7 +90,7 @@ class ThemeShotTest {
             rule.waitForIdle()
             val name = "${if (dark) "dark" else "light"}_${Presets[i].name.replace(' ', '_').lowercase()}"
             rule.onRoot().captureRoboImage("build/outputs/roborazzi/theme_$name.png")
-            assertEquals(name, buildPalette(Presets[i].seed, dark).accent, seen)
+            assertEquals(name, Presets[i].palette(dark).accent, seen)
         }
     }
 }

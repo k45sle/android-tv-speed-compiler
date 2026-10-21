@@ -108,7 +108,8 @@ class ReadmeScreenshotsTest {
         rule.setContent { SpeedTheme(if (dark) ThemeChoice.Dark else ThemeChoice.Light) { content() } }
         rule.mainClock.advanceTimeBy(500)
         act()
-        rule.mainClock.advanceTimeByFrame()
+        // A game opens a few frames after its click; 1100 ms in, the 100 ms logo loop is on frame 3 (whole logo).
+        rule.mainClock.advanceTimeBy(600)
         val out = File("build/outputs/roborazzi/readme/$name.png")
         rule.onRoot().captureRoboImage(out.path)
         // README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.

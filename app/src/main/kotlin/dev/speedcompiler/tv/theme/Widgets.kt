@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,11 +53,16 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.RowScope
+import androidx.tv.material3.Border
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 
-val CardRadius = 16.dp
-val RowRadius = 12.dp
+// Retro look: near-square corners everywhere.
+val CardRadius = 2.dp
+val RowRadius = 2.dp
 
 /** The QR code must stay white in both themes so scanners can read it. */
 val QrWhite = Color.White
@@ -102,10 +106,10 @@ fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
         Tone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(
-        modifier.height(20.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp),
+        modifier.height(20.dp).clip(RoundedCornerShape(RowRadius)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Box(Modifier.size(6.dp).background(color))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.labelSmall, color = color)
     }
@@ -124,7 +128,7 @@ fun BannerCard(
     val shape = RoundedCornerShape(CardRadius)
     Row(
         modifier.focusFx(1.05f, CardRadius, onClick).clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant).border(1.dp, c.hairline, shape).padding(Space.x3),
+            .background(MaterialTheme.colorScheme.surfaceVariant).border(2.dp, c.hairline, shape).padding(Space.x3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1 / 2)) {
@@ -147,7 +151,7 @@ fun ListRow(
     val shape = RoundedCornerShape(RowRadius)
     Row(
         modifier.fillMaxWidth().focusFx(1.025f, RowRadius, onClick).clip(shape)
-            .border(1.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
+            .border(2.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -191,10 +195,10 @@ fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Mod
                 }
             },
     ) {
-        Box(Modifier.fillMaxWidth().height(Space.x2).align(Alignment.Center).clip(CircleShape).background(track).border(1.dp, c.hairline, CircleShape))
+        Box(Modifier.fillMaxWidth().height(Space.x2).align(Alignment.Center).background(track).border(2.dp, c.hairline))
         Box(
             Modifier.align(Alignment.CenterStart).offset(x = (width - Space.x3) * (hue / 360f) )
-                .size(Space.x3).background(Color(seedForHue(hue)), CircleShape).border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
+                .size(Space.x3).background(Color(seedForHue(hue))).border(2.dp, MaterialTheme.colorScheme.onSurface),
         )
     }
 }
@@ -234,4 +238,20 @@ fun Modifier.remembersFocus(mem: FocusMemory, id: String): Modifier {
         if (windowFocused && mem.pending && target) runCatching { r.requestFocus() }
     }
     return focusRequester(r).onFocusChanged { if (it.hasFocus) { mem.id.value = id; mem.pending = false; mem.touched.value = true } }
+}
+
+/** tv Button with the retro shape: near-square corners and a 2 dp border that turns accent on focus. */
+@Composable
+fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
+    val c = LocalSpeedColors.current
+    val shape = RoundedCornerShape(RowRadius)
+    androidx.tv.material3.Button(
+        onClick, modifier, enabled = enabled,
+        shape = ButtonDefaults.shape(shape),
+        border = ButtonDefaults.border(
+            border = Border(BorderStroke(2.dp, c.hairline), shape = shape),
+            focusedBorder = Border(BorderStroke(2.dp, c.accent), shape = shape),
+        ),
+        content = content,
+    )
 }
