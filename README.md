@@ -12,6 +12,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-123524" alt="MIT license"></a>
 </p>
 
+> [!IMPORTANT]
+> **This app was written entirely by AI.** All of its code, tests and documentation were written by Claude (Anthropic's AI) in Claude Code, and the logo art was made with Google Gemini. I am not a programmer. What I did:
+>
+> - Came up with the idea, mostly so Nuvio and apps like it would run better on my TV.
+> - Decided to drop the first version, a Docker service you ran on a computer, in favour of an app that runs on the TV itself.
+> - Approved the screen designs before any of them were built.
+> - Turned down "TV Speed" for sounding like a scam, and picked the name.
+> - Made the logo, then rejected four fonts and one embossing experiment for the banner until it had no text left on it.
+> - Set a budget of under $1 for the whole project and held Claude to it.
+> - Reviewed the work and pushed back on anything that looked like AI slop.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset="docs/media/home-light.png">
