@@ -21,3 +21,6 @@ adbkey.*
 bootstrap.token
 build/
 dist/
+
+# Private notes (ledger, progress logs): a separate git repo, never part of this public repo
+notes/
