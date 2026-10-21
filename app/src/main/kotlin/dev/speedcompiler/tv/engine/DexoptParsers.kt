@@ -10,7 +10,7 @@ fun isValidPackageId(id: String) = PACKAGE_ID.matches(id)
 /** The only compile command this app ever sends. Throws on an invalid id. */
 fun compileCommand(pkg: String): String {
     require(isValidPackageId(pkg)) { "invalid package id" }
-    return "cmd package compile -m speed -f $pkg; echo __rc=\$?"
+    return "cmd package compile -m speed -f $pkg"
 }
 
 fun artDumpCommand(pkg: String): String {
@@ -20,7 +20,7 @@ fun artDumpCommand(pkg: String): String {
 
 const val DEXOPT_DUMP_COMMAND = "dumpsys package dexopt"
 
-/** adb shell v1 drops the exit code, so the command echoes `__rc=`; success needs rc 0 and the word Success. */
+/** The shell appends `__rc=` itself and strips it; fixtures may still carry it. Success needs rc 0 and the word Success. */
 fun compileSucceeded(text: String): Boolean {
     val rc = RC.findAll(text).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()
     return (rc == null || rc == 0) && Regex("\\bSuccess\\b").containsMatchIn(text) &&

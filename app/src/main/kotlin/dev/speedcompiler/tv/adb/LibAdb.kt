@@ -6,9 +6,11 @@ import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -81,11 +83,17 @@ class LibAdb(
         // withTimeoutOrNull only reacts to its own deadline, so a caller's withTimeout still propagates as usual.
         val raw = withTimeoutOrNull(timeoutMillis) {
             adbCall {
-                manager.openStream("shell:$command; echo __rc=\$?").use { it.readAll() }
+                try {
+                    manager.openStream("shell:$command; echo __rc=\$?").use { it.readAll() }
+                } catch (e: IOException) {
+                    runCatching { manager.disconnect() } // dead socket: next run() reconnects
+                    throw e
+                }
             }
         }
         if (raw == null) {
-            runCatching { manager.disconnect() } // the stream may be wedged; the next command reconnects
+            // the stream may be wedged; the next command reconnects. Off the caller thread: the close writes to the socket.
+            withContext(NonCancellable + Dispatchers.IO) { runCatching { manager.disconnect() } }
             throw AdbFailure.Timeout()
         }
         return parseShellOutput(raw.toString(Charsets.UTF_8))

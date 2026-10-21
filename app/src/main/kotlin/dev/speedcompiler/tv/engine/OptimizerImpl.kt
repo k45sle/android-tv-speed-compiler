@@ -32,8 +32,8 @@ class OptimizerImpl(
     }
 
     private suspend fun compile(pkg: String): OptimizeResult {
-        val out = try {
-            withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)).output }
+        val res = try {
+            withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)) }
         } catch (e: TimeoutCancellationException) {
             return finish(pkg, false, "Didn't finish: the TV took more than ${timeoutMillis / 60_000} minutes.", "optimize_failed")
         } catch (e: CancellationException) {
@@ -41,7 +41,8 @@ class OptimizerImpl(
         } catch (e: Exception) {
             return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed")
         }
-        if (!compileSucceeded(out)) {
+        // exitCode -1 means the TV gave no code; the word Success then decides alone.
+        if (res.exitCode > 0 || !compileSucceeded(res.output)) {
             return finish(pkg, false, "Didn't finish: the TV refused to optimize this app.", "optimize_failed")
         }
         val filter = try {

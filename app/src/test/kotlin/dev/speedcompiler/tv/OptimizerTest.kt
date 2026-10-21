@@ -96,7 +96,7 @@ class OptimizerTest {
     }
 
     @Test fun rejectsBadIdInCommand() {
-        assertEquals("cmd package compile -m speed -f com.a_b; echo __rc=\$?", compileCommand("com.a_b"))
+        assertEquals("cmd package compile -m speed -f com.a_b", compileCommand("com.a_b"))
         assertTrue(runCatching { compileCommand("a b") }.isFailure)
     }
 
