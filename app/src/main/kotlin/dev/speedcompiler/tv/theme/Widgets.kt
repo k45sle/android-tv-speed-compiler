@@ -64,7 +64,7 @@ val RowRadius = 12.dp
 val QrWhite = Color.White
 
 /**
- * Focusable with a scale, a 2 dp accent outline drawn outside the bounds and a soft glow.
+ * Focusable with a scale, a 2 dp accent outline drawn outside the bounds.
  * Shape and size change, so focus never relies on color alone. [onClick] null means not clickable.
  */
 @Composable
@@ -79,15 +79,6 @@ fun Modifier.focusFx(scale: Float, radius: Dp, onClick: (() -> Unit)? = null): M
             if (focused) {
                 val r = radius.toPx()
                 val px = 1.dp.toPx()
-                // Glow: widening low-alpha rings, then the solid 2 dp ring just outside the edge.
-                for (i in 4 downTo 1) {
-                    val grow = (2 + i * 2) * px
-                    drawRoundRect(
-                        accent.copy(alpha = 0.16f / i), Offset(-grow, -grow),
-                        Size(size.width + 2 * grow, size.height + 2 * grow),
-                        CornerRadius(r + grow), Stroke(2 * px),
-                    )
-                }
                 drawRoundRect(
                     accent, Offset(-px, -px), Size(size.width + 2 * px, size.height + 2 * px),
                     CornerRadius(r + px), Stroke(2 * px),

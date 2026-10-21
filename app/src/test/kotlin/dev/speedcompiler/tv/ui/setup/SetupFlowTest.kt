@@ -87,7 +87,7 @@ class SetupFlowTest {
     @Test
     fun walksAllSevenScreensWithDpad() {
         show { SetupScreen({ backs++ }, deps = deps) }
-        see("Make your apps open faster."); shot("1_intro")
+        see("Compile your apps ahead of time."); shot("1_intro")
         enter()
         see("Turn on Developer options."); see("Step 1 of 5"); shot("2_developer_options")
         enter()
@@ -97,14 +97,14 @@ class SetupFlowTest {
         enter()
         assertTrue("openDeveloperOptions" in env.calls)
         env.wireless = true; tick()
-        see("Grab your phone."); see("Step 3 of 5")
+        see("Use your phone."); see("Step 3 of 5")
         assertTrue("startPairing" in env.calls)
         url.value = pairUrl; tick()
         see(pairUrl); shot("4_pair")
         url.value = null; monitor.flow.value = ConnectionState.Disconnected; tick()
         see("Allow this app."); see("Step 4 of 5"); shot("5_allow")
         monitor.flow.value = ConnectionState.Connected; tick()
-        see("Pick apps to speed up."); see("Step 5 of 5")
+        see("Pick apps to optimize."); see("Step 5 of 5")
         tick()
         enter() // list starts focused on Alpha
         press(Key.DirectionDown); press(Key.DirectionDown); enter() // Gamma
@@ -126,7 +126,7 @@ class SetupFlowTest {
         enter()
         see("Allow this app.")
         monitor.flow.value = ConnectionState.Connected; tick()
-        see("Pick apps to speed up.")
+        see("Pick apps to optimize.")
     }
 
     @Test
@@ -135,7 +135,7 @@ class SetupFlowTest {
         enter()
         see("Turn on Developer options.")
         back()
-        see("Make your apps open faster.")
+        see("Compile your apps ahead of time.")
         assertEquals(0, backs)
     }
 
@@ -156,7 +156,7 @@ class SetupFlowTest {
     @Test
     fun failedPairingRestartsAndOffersHelp() {
         show { QuickRepairScreen({ backs++ }, deps) }
-        see("Grab your phone.")
+        see("Use your phone.")
         repeat(2) {
             url.value = pairUrl; tick()
             url.value = null; tick(2500) // ended while still Unpaired
@@ -173,14 +173,14 @@ class SetupFlowTest {
             url.value = pairUrl; tick()
             url.value = null; tick(2500)
         }
-        see("Grab your phone.")
+        see("Use your phone.")
         see("Show me how")
     }
 
     @Test
     fun quickRepairJumpsToPairingAndLeavesWhenConnected() {
         show { QuickRepairScreen({ backs++ }, deps) }
-        see("Grab your phone.")
+        see("Use your phone.")
         url.value = pairUrl; tick()
         url.value = null; monitor.flow.value = ConnectionState.Connecting; tick()
         see("Allow this app.")

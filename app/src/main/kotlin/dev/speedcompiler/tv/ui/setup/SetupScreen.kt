@@ -105,7 +105,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
 
     if (help) return HelpPage(step) { help = false }
     when (step) {
-        1 -> Page(null, "Make your apps open faster.") {
+        1 -> Page(null, "Compile your apps ahead of time.") {
             Body("Android can fully compile apps ahead of time. This app does it for the apps you pick and redoes it after each update. Results vary, and each app uses a little more storage.")
             PrimaryButton("Start", ::advance)
         }
@@ -145,7 +145,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 else -> "$name and $others other${if (others == 1) "" else "s"}"
             }
             val finish = { now: Boolean -> scope.launch { deps.onFinish(chosen.map { it.packageName }, now); onBack() }; Unit }
-            Page(null, "You're set.") {
+            Page(null, "Setup is done.") {
                 Body("$subject will be optimized when nothing is playing. It takes a minute or two each.")
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                     PrimaryButton("Optimize now") { finish(true) }
@@ -208,7 +208,7 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
         } != null
         if (ok) paired() else { seen = false; failed(); deps.env.startPairing() }
     }
-    Page(4, "Grab your phone.") {
+    Page(4, "Use your phone.") {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x4), verticalAlignment = Alignment.CenterVertically) {
             QrCard {
                 val u = url
@@ -229,7 +229,7 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
 @Composable
 private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onContinue: () -> Unit) {
     val firstRow = remember { FocusRequester() }
-    Page(6, "Pick apps to speed up.") {
+    Page(6, "Pick apps to optimize.") {
         Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue") }
         if (apps.isEmpty()) Body("No apps found.")
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {

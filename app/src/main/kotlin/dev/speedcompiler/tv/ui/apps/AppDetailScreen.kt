@@ -99,7 +99,7 @@ fun AppDetailContent(
                     role = Role.Switch
                     toggleableState = ToggleableState(watched.autoOptimize)
                 },
-                subtitle = "Speed compile again after each update",
+                subtitle = "Optimize again after each update",
             ) { Switch(watched.autoOptimize, null) }
         }
     }
