@@ -111,7 +111,8 @@ class ReadmeScreenshotsTest {
         rule.mainClock.advanceTimeByFrame()
         val out = File("build/outputs/roborazzi/readme/$name.png")
         rule.onRoot().captureRoboImage(out.path)
-        System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png"), overwrite = true) }
+        // README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.
+        System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png").absoluteFile, overwrite = true) }
     }
 
     private fun optimized(pkg: String, agoMin: Long) =
