@@ -19,6 +19,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.ui.apps.AppDetailScreen
 import dev.speedcompiler.tv.ui.apps.AppsScreen
+import dev.speedcompiler.tv.ui.help.DiagnosticsScreen
+import dev.speedcompiler.tv.ui.help.HelpScreen
 import dev.speedcompiler.tv.ui.home.ActivityScreen
 import dev.speedcompiler.tv.ui.home.HomeScreen
 import dev.speedcompiler.tv.ui.settings.SettingsScreen
@@ -58,6 +60,8 @@ fun AppNavHost() {
         composable(Routes.Settings) { SettingsScreen(go, back) }
         composable(Routes.Reconnect) { ReconnectScreen(back) }
         composable(Routes.QuickRepair) { QuickRepairScreen(back) }
+        composable(Routes.Diagnostics) { DiagnosticsScreen(back) }
+        composable(Routes.Help) { HelpScreen(go, back) }
     }
 }
 
