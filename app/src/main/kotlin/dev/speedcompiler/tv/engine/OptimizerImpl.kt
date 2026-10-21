@@ -3,6 +3,7 @@ package dev.speedcompiler.tv.engine
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,6 +36,8 @@ class OptimizerImpl(
             withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)).output }
         } catch (e: TimeoutCancellationException) {
             return finish(pkg, false, "Didn't finish: the TV took more than ${timeoutMillis / 60_000} minutes.", "optimize_failed")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed")
         }
@@ -43,6 +46,8 @@ class OptimizerImpl(
         }
         val filter = try {
             verify(pkg)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

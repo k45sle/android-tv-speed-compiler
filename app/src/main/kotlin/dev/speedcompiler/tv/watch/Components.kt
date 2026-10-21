@@ -36,7 +36,7 @@ class PairingService : Service() {
             val s = dev.speedcompiler.tv.web.PairingWebServer(
                 session = dev.speedcompiler.tv.web.PairingSession(graph.clock),
                 pairing = graph.pairing,
-                host = { d.host ?: "127.0.0.1" },
+                host = { d.host ?: localIp() },
                 pairingPort = { d.port },
                 onFinished = { stopSelf() },
             )
