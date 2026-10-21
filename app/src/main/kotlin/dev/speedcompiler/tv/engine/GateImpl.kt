@@ -39,8 +39,7 @@ class GateImpl(
             is GateDecision.Wait -> when (val reason = decision.reason) {
                 WaitReason.Playback -> GateStatus.WaitingForPlayback
                 WaitReason.NotIdle -> GateStatus.WaitingForIdle
-                // shortcut: GateStatus has no Paused case, so a paused gate reports WaitingForIdle; add GateStatus.Paused when the UI needs it.
-                WaitReason.Paused -> GateStatus.WaitingForIdle
+                WaitReason.Paused -> GateStatus.Paused
                 is WaitReason.OutsideWindow -> GateStatus.OpensAt(reason.opensAt)
             }
         }

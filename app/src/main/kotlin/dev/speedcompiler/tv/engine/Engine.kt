@@ -4,7 +4,8 @@ import java.time.Instant
 
 data class InstalledPackage(val packageName: String, val fingerprint: String)
 
-data class OptimizeResult(val ok: Boolean, val detail: String = "")
+/** [connectionLost]: the compile failed because the ADB link dropped, so the job should retry after a reconnect. */
+data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false)
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 
@@ -14,6 +15,9 @@ interface PackageSource {
 
 interface Optimizer {
     suspend fun optimize(packageName: String): OptimizeResult
+
+    /** The compiler filter the TV reports for [packageName], or null when unknown. */
+    suspend fun verify(packageName: String): String? = null
 }
 
 /** Why the gate is open or closed. Only [OpensAt] carries a clock time, taken from the user's set hours. */
@@ -21,6 +25,7 @@ sealed interface GateStatus {
     data object Open : GateStatus
     data object WaitingForPlayback : GateStatus
     data object WaitingForIdle : GateStatus
+    data object Paused : GateStatus
     data class OpensAt(val at: Instant) : GateStatus
 }
 
@@ -34,17 +39,14 @@ interface Clock {
     fun nowMillis(): Long
 }
 
-interface DeviceSignals {
-    suspend fun musicActive(): Boolean
-    suspend fun wakefulness(): Wakefulness
-}
-
 class FakePackageSource(var packages: List<InstalledPackage> = emptyList()) : PackageSource {
     override suspend fun installed() = packages
 }
 
 class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimizer {
     val optimized = mutableListOf<String>()
+    val filters = mutableMapOf<String, String?>()
+    override suspend fun verify(packageName: String) = filters[packageName]
     override suspend fun optimize(packageName: String): OptimizeResult {
         optimized += packageName
         return result
@@ -55,14 +57,10 @@ class FakeGate(var status: GateStatus = GateStatus.Open) : Gate {
     override suspend fun status() = status
 }
 
-class FakeClock(var now: Long = 0L) : Clock {
-    override fun nowMillis() = now
+object SystemClock : Clock {
+    override fun nowMillis() = System.currentTimeMillis()
 }
 
-class FakeDeviceSignals(
-    var music: Boolean = false,
-    var wakefulness: Wakefulness = Wakefulness.Awake,
-) : DeviceSignals {
-    override suspend fun musicActive() = music
-    override suspend fun wakefulness() = wakefulness
+class FakeClock(var now: Long = 0L) : Clock {
+    override fun nowMillis() = now
 }

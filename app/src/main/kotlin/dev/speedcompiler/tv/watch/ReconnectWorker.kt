@@ -73,22 +73,18 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
     }
 
     /** Needed for expedited work below API 31. */
-    override suspend fun getForegroundInfo(): ForegroundInfo {
-        applicationContext.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Reconnect", NotificationManager.IMPORTANCE_LOW),
-        )
-        return ForegroundInfo(
-            2,
-            Notification.Builder(applicationContext, CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Reconnecting")
-                .build(),
-        )
-    }
+    override suspend fun getForegroundInfo() = foregroundInfo(applicationContext, 2, "reconnect", "Reconnecting")
+}
 
-    private companion object {
-        const val CHANNEL = "reconnect"
-    }
+/** Notification for expedited work below API 31. */
+fun foregroundInfo(context: Context, id: Int, channel: String, title: String): ForegroundInfo {
+    context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+        NotificationChannel(channel, title, NotificationManager.IMPORTANCE_LOW),
+    )
+    return ForegroundInfo(
+        id,
+        Notification.Builder(context, channel).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle(title).build(),
+    )
 }
 
 /** True once a default network is up, false after [timeoutMs] without one. */

@@ -64,8 +64,7 @@ class GateImplTest {
     fun pauseHoldsTheGateInEveryMode() = runBlocking {
         val clock = FakeClock(millisAt("2026-01-01T23:00:00Z"))
         for (mode in GateMode.entries) {
-            // shortcut: a paused gate reports WaitingForIdle because GateStatus has no Paused case.
-            assertEquals("mode=$mode", GateStatus.WaitingForIdle, gate(clock, Signals(), mode, paused = true).status())
+            assertEquals("mode=$mode", GateStatus.Paused, gate(clock, Signals(), mode, paused = true).status())
         }
     }
 }

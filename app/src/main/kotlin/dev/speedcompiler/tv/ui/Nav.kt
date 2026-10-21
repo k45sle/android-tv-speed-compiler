@@ -22,6 +22,8 @@ import dev.speedcompiler.tv.ui.apps.AppsScreen
 import dev.speedcompiler.tv.ui.home.ActivityScreen
 import dev.speedcompiler.tv.ui.home.HomeScreen
 import dev.speedcompiler.tv.ui.settings.SettingsScreen
+import dev.speedcompiler.tv.ui.setup.QuickRepairScreen
+import dev.speedcompiler.tv.ui.setup.ReconnectScreen
 import dev.speedcompiler.tv.ui.setup.SetupScreen
 import dev.speedcompiler.tv.ui.working.WorkingScreen
 
@@ -35,6 +37,8 @@ object Routes {
     fun working(pkg: String) = "working/$pkg"
     const val Activity = "activity"
     const val Settings = "settings"
+    const val Reconnect = "reconnect"
+    const val QuickRepair = "repair"
 }
 
 @Composable
@@ -50,6 +54,8 @@ fun AppNavHost() {
         composable(Routes.Working) { WorkingScreen(it.arguments?.getString("pkg").orEmpty(), back) }
         composable(Routes.Activity) { ActivityScreen(back) }
         composable(Routes.Settings) { SettingsScreen(back) }
+        composable(Routes.Reconnect) { ReconnectScreen(back) }
+        composable(Routes.QuickRepair) { QuickRepairScreen(back) }
     }
 }
 

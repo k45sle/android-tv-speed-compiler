@@ -18,6 +18,7 @@ data class SettingsValues(
     /** Allowed optimize window as minutes since midnight; default 02:00-06:00. */
     val windowStartMinute: Int = 120,
     val windowEndMinute: Int = 360,
+    val gateMode: GateMode = GateMode.Idle,
     val paused: Boolean = false,
     val keepTrusting: Boolean = true,
     val theme: ThemeChoice = ThemeChoice.System,
@@ -32,6 +33,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val mode = stringPreferencesKey("mode")
     private val start = intPreferencesKey("window_start")
     private val end = intPreferencesKey("window_end")
+    private val gateMode = stringPreferencesKey("gate_mode")
     private val paused = booleanPreferencesKey("paused")
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val theme = stringPreferencesKey("theme")
@@ -42,6 +44,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             mode = p[mode]?.let { runCatching { Mode.valueOf(it) }.getOrNull() } ?: d.mode,
             windowStartMinute = p[start] ?: d.windowStartMinute,
             windowEndMinute = p[end] ?: d.windowEndMinute,
+            gateMode = p[gateMode]?.let { runCatching { GateMode.valueOf(it) }.getOrNull() } ?: d.gateMode,
             paused = p[paused] ?: d.paused,
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
@@ -57,9 +60,18 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[mode] = new.mode.name
             p[start] = new.windowStartMinute
             p[end] = new.windowEndMinute
+            p[gateMode] = new.gateMode.name
             p[paused] = new.paused
             p[keepTrusting] = new.keepTrusting
             p[theme] = new.theme.name
         }
     }
+}
+
+/** Manual mode means no automatic jobs, so the gate treats it as paused. An empty window falls back to the default. */
+fun SettingsValues.toGateConfig(): GateConfig {
+    val d = SettingsValues()
+    val window = if (windowStartMinute == windowEndMinute) GateWindow(d.windowStartMinute, d.windowEndMinute)
+    else GateWindow(windowStartMinute, windowEndMinute)
+    return GateConfig(gateMode, window, paused || mode == Mode.Manual)
 }

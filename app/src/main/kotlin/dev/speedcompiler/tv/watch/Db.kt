@@ -63,6 +63,16 @@ interface QueueDao {
     )
     fun active(): Flow<List<QueueItem>>
 
+    /** Finished jobs, newest first. */
+    @Query("SELECT * FROM queue_item WHERE state IN ('DONE', 'FAILED', 'SKIPPED') ORDER BY finishedAt DESC, id DESC LIMIT 50")
+    fun history(): Flow<List<QueueItem>>
+
+    @Query("SELECT * FROM queue_item WHERE state IN ('QUEUED', 'WAITING_GATE', 'RUNNING')")
+    suspend fun activeNow(): List<QueueItem>
+
+    @Query("SELECT * FROM queue_item WHERE packageName = :packageName AND state IN ('QUEUED', 'WAITING_GATE', 'RUNNING') LIMIT 1")
+    suspend fun activeFor(packageName: String): QueueItem?
+
     @Query("SELECT * FROM queue_item WHERE id = :id")
     suspend fun get(id: Long): QueueItem?
 
@@ -77,6 +87,12 @@ interface QueueDao {
 interface WatchedAppDao {
     @Query("SELECT * FROM watched_app ORDER BY packageName")
     fun all(): Flow<List<WatchedApp>>
+
+    @Query("SELECT * FROM watched_app")
+    suspend fun list(): List<WatchedApp>
+
+    @Query("SELECT * FROM watched_app WHERE packageName = :packageName")
+    suspend fun get(packageName: String): WatchedApp?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(app: WatchedApp)
