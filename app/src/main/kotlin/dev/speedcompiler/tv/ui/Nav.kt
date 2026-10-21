@@ -23,6 +23,7 @@ import dev.speedcompiler.tv.ui.home.ActivityScreen
 import dev.speedcompiler.tv.ui.home.HomeScreen
 import dev.speedcompiler.tv.ui.settings.SettingsScreen
 import dev.speedcompiler.tv.ui.setup.SetupScreen
+import dev.speedcompiler.tv.ui.working.WorkingScreen
 
 object Routes {
     const val Setup = "setup"
@@ -30,6 +31,8 @@ object Routes {
     const val Apps = "apps"
     const val AppDetail = "apps/detail/{pkg}"
     fun appDetail(pkg: String) = "apps/detail/$pkg"
+    const val Working = "working/{pkg}"
+    fun working(pkg: String) = "working/$pkg"
     const val Activity = "activity"
     const val Settings = "settings"
 }
@@ -44,6 +47,7 @@ fun AppNavHost() {
         composable(Routes.Home) { HomeScreen(go) }
         composable(Routes.Apps) { AppsScreen(go, back) }
         composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), back) }
+        composable(Routes.Working) { WorkingScreen(it.arguments?.getString("pkg").orEmpty(), back) }
         composable(Routes.Activity) { ActivityScreen(back) }
         composable(Routes.Settings) { SettingsScreen(back) }
     }
