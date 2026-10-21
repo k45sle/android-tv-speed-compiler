@@ -44,8 +44,21 @@ class WorkingScreenTest {
 
     private val pkg = "a.alpha"
     private val base = 1_000_000L
-    private fun item(id: Long, state: QueueState, reason: String? = null, at: Long = base) =
-        QueueItem(id, pkg, QueueSource.MANUAL, state, enqueuedAt = at, failureReason = reason, runNow = true)
+    private fun item(id: Long, state: QueueState, reason: String? = null, at: Long = base, runNow: Boolean = true) =
+        QueueItem(
+            id, pkg, QueueSource.MANUAL, state, enqueuedAt = at, failureReason = reason, runNow = runNow,
+            finishedAt = if (state in setOf(QueueState.DONE, QueueState.FAILED, QueueState.SKIPPED)) at else null,
+        )
+
+    @Test
+    fun followsOldQueuedRowAndRunningNonRunNowRow() {
+        queue.value = listOf(QueueEntry(item(1, QueueState.QUEUED, at = base - 600_000, runNow = false), 0, Eta.InQueue(0, 0)))
+        show()
+        rule.onNodeWithText("#1 in queue, about 1 min").assertIsDisplayed()
+        queue.value = listOf(QueueEntry(item(1, QueueState.RUNNING, at = base - 600_000, runNow = false), 0, Eta.None))
+        rule.mainClock.advanceTimeBy(40_000)
+        rule.onNodeWithText("Working on it. This keeps going if you leave.").assertIsDisplayed()
+    }
 
     private val queue = MutableStateFlow(listOf(QueueEntry(item(1, QueueState.RUNNING), 0, Eta.None)))
     private val history = MutableStateFlow(emptyList<QueueItem>())
@@ -95,7 +108,7 @@ class WorkingScreenTest {
         rule.onNodeWithText("00:20").assertIsDisplayed()
         rule.onNodeWithContentDescription("Snake game. Arrow keys move, Select to act or restart, Back to stop playing.").assertIsDisplayed()
 
-        finish(item(1, QueueState.DONE))
+        finish(item(1, QueueState.DONE).copy(finishedAt = base + 20_000))
         rule.mainClock.advanceTimeBy(2_000)
         rule.onNodeWithText("Optimized. You can leave now.").assertIsDisplayed()
         rule.onNodeWithText("Game paused. Press Done when you are ready.").assertIsDisplayed()

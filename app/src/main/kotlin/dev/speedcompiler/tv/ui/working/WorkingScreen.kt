@@ -72,11 +72,14 @@ sealed interface JobView {
 
 const val RUN_WINDOW_MILLIS = 30_000L
 
-/** This screen's run: the newest run-now job for [pkg] queued at most 30 s before the screen opened, in the queue or in history. */
+/**
+ * This screen's run: any active job for [pkg] (optimize now reuses an existing row, so runNow and enqueuedAt can be old),
+ * else the newest finished one that ended at most 30 s before the screen opened.
+ */
 fun thisRun(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long): QueueItem? =
-    (queue.map { it.item } + history)
-        .filter { it.packageName == pkg && it.runNow && it.enqueuedAt >= openedAt - RUN_WINDOW_MILLIS }
-        .maxWithOrNull(compareBy({ it.enqueuedAt }, { it.id }))
+    queue.firstOrNull { it.item.packageName == pkg }?.item
+        ?: history.filter { it.packageName == pkg && (it.finishedAt ?: 0) >= openedAt - RUN_WINDOW_MILLIS }
+            .maxWithOrNull(compareBy({ it.finishedAt }, { it.id }))
 
 fun jobView(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long, now: Long): JobView {
     val run = thisRun(pkg, queue, history, openedAt)
