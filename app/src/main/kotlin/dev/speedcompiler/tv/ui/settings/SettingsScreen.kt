@@ -66,6 +66,12 @@ import kotlinx.coroutines.launch
 private const val STEP_MINUTES = 30
 private const val DAY = 24 * 60
 
+/** Steps from the stored value by [delta], skipping [other] so the window never has start == end. */
+internal fun stepMinute(cur: Int, delta: Int, other: Int): Int {
+    val n = (cur + delta + DAY) % DAY
+    return if (n == other) (n + delta + DAY) % DAY else n
+}
+
 fun clockText(minute: Int) = "%02d:%02d".format(minute / 60, minute % 60)
 
 @Composable
@@ -94,8 +100,8 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
         }
         if (v.gateMode == GateMode.Window) {
             Chips {
-                TimePicker("Start time", v.windowStartMinute) { m -> set { it.copy(windowStartMinute = m) } }
-                TimePicker("End time", v.windowEndMinute) { m -> set { it.copy(windowEndMinute = m) } }
+                TimePicker("Start time", v.windowStartMinute) { d -> set { it.copy(windowStartMinute = stepMinute(it.windowStartMinute, d, it.windowEndMinute)) } }
+                TimePicker("End time", v.windowEndMinute) { d -> set { it.copy(windowEndMinute = stepMinute(it.windowEndMinute, d, it.windowStartMinute)) } }
             }
         }
 
@@ -113,7 +119,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
             Chip("Custom", v.customHue != null) { set { it.copy(customHue = it.customHue ?: 150f) } }
         }
         v.customHue?.let { hue ->
-            HueSlider(hue, { h -> set { it.copy(customHue = h) } }, Modifier.semantics { contentDescription = "Custom accent hue, ${hue.toInt()} degrees" })
+            HueSlider(hue, { h -> val d = (h - hue + 540f) % 360f - 180f; set { it.copy(customHue = ((it.customHue ?: hue) + d + 360f) % 360f) } }, Modifier.semantics { contentDescription = "Custom accent hue, ${hue.toInt()} degrees" })
         }
 
         Heading("Connection")
@@ -172,7 +178,7 @@ private fun Swatch(name: String, seed: Int, selected: Boolean, onClick: () -> Un
 
 /** D-pad left/right moves by 30 minutes, wrapping around midnight. */
 @Composable
-private fun TimePicker(label: String, minute: Int, onChange: (Int) -> Unit) {
+private fun TimePicker(label: String, minute: Int, onStep: (Int) -> Unit) {
     val c = LocalSpeedColors.current
     val shape = RoundedCornerShape(RowRadius)
     Row(
@@ -181,8 +187,8 @@ private fun TimePicker(label: String, minute: Int, onChange: (Int) -> Unit) {
             .onKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (it.key) {
-                    Key.DirectionLeft -> { onChange((minute - STEP_MINUTES + DAY) % DAY); true }
-                    Key.DirectionRight -> { onChange((minute + STEP_MINUTES) % DAY); true }
+                    Key.DirectionLeft -> { onStep(-STEP_MINUTES); true }
+                    Key.DirectionRight -> { onStep(STEP_MINUTES); true }
                     else -> false
                 }
             }

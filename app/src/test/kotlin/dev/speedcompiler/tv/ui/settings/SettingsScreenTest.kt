@@ -118,6 +118,26 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun quickStepsAllLand() {
+        show()
+        click("During set hours")
+        rule.onNode(hasContentDescription("Start time", substring = true)).requestFocus()
+        rule.onNode(hasContentDescription("Start time", substring = true)).performKeyInput {
+            repeat(3) { pressKey(Key.DirectionRight) }
+        }
+        rule.waitForIdle()
+        assertEquals(120 + 90, state.value.windowStartMinute)
+    }
+
+    @Test
+    fun steppingOntoTheOtherEndSkipsIt() {
+        state.value = SettingsValues(gateMode = GateMode.Window, windowStartMinute = 120, windowEndMinute = 150)
+        show()
+        press("Start time", Key.DirectionRight)
+        assertEquals(180, state.value.windowStartMinute)
+    }
+
+    @Test
     fun appearancePersists() {
         show()
         click("Dark")
