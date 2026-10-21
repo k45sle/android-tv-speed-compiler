@@ -87,8 +87,9 @@ class PairingWebServer(
 <button type="submit">Pair</button>
 </form>
 <script>
-var c=document.getElementById('code');
-c.addEventListener('input',function(){c.value=c.value.replace(/\D/g,'').slice(0,6);if(c.value.length==6)document.getElementById('f').submit();});
+var f=document.getElementById('f'),c=document.getElementById('code'),s=0;
+f.addEventListener('submit',function(e){if(s)e.preventDefault();s=1;});
+c.addEventListener('input',function(){c.value=c.value.replace(/\D/g,'').slice(0,6);if(c.value.length==6&&!s){s=1;f.submit();}});
 </script></main></body></html>
 """.trimIndent()
     }
