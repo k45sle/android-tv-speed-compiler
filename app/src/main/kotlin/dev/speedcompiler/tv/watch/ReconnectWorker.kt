@@ -67,7 +67,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 } catch (_: SecurityException) {
                 }
             },
-            reconnect = { keeper.reconnect(); keeper.status.value },
+            reconnect = keeper::reconnect,
         )
         return Result.success()
     }
@@ -96,14 +96,17 @@ private suspend fun awaitNetwork(context: Context, timeoutMs: Long): Boolean {
     val cm = context.getSystemService(ConnectivityManager::class.java)
     if (cm.activeNetwork != null) return true
     return withTimeoutOrNull(timeoutMs) {
-        suspendCancellableCoroutine<Unit> { cont ->
-            val cb = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    if (cont.isActive) cont.resumeWith(Result.success(Unit))
-                }
+        var cb: ConnectivityManager.NetworkCallback? = null
+        try {
+            suspendCancellableCoroutine<Unit> { cont ->
+                cb = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        if (cont.isActive) cont.resumeWith(Result.success(Unit))
+                    }
+                }.also { cm.registerDefaultNetworkCallback(it) }
             }
-            cm.registerDefaultNetworkCallback(cb)
-            cont.invokeOnCancellation { cm.unregisterNetworkCallback(cb) }
+        } finally {
+            cb?.let { cm.unregisterNetworkCallback(it) } // the app may hold at most 100 callbacks
         }
         true
     } ?: false

@@ -4,6 +4,8 @@ import dev.speedcompiler.tv.engine.Settings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +51,7 @@ class ConnectionKeeper(
     val trustFailure = MutableStateFlow<String?>(null)
 
     private var granted = false
+    private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
     /** Starts [reconnect] in the app scope; ignored while one is already running. */
@@ -73,7 +76,8 @@ class ConnectionKeeper(
     }
 
     /** Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. */
-    suspend fun reconnect() {
+    /** Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status. */
+    suspend fun reconnect(): KeeperStatus = lock.withLock {
         _status.value = KeeperStatus.Reconnecting
         try {
             connect()
@@ -82,10 +86,11 @@ class ConnectionKeeper(
         } catch (e: Exception) {
             val err = mapAdbError(e)
             _status.value = KeeperStatus.Failed(err, fixFor(err))
-            return
+            return@withLock _status.value
         }
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
+        _status.value
     }
 
     private suspend fun grant() {
