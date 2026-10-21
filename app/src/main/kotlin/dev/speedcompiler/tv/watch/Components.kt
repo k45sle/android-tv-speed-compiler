@@ -6,9 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 
-/** Stub: chunk for boot handling fills this in. */
+/** Starts the reconnect job after boot. */
 class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = Unit
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) enqueueReconnect(context)
+    }
 }
 
 /** Foreground service that runs the pairing web server only while pairing; [url] feeds the QR code. */

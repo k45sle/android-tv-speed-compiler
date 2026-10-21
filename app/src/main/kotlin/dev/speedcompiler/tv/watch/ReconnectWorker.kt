@@ -1,0 +1,110 @@
+package dev.speedcompiler.tv.watch
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.provider.Settings
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import dev.speedcompiler.tv.SpeedApp
+import dev.speedcompiler.tv.adb.Fix
+import dev.speedcompiler.tv.adb.KeeperStatus
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+
+const val RECONNECT_WORK = "reconnect"
+private const val NETWORK_WAIT_MS = 60_000L
+private val BACKOFF_MS = listOf(5_000L, 10_000L, 20_000L, 40_000L)
+
+/** The one entry point for boot, app open and the periodic job. Does nothing if a reconnect is already queued. */
+fun enqueueReconnect(context: Context) {
+    val request = OneTimeWorkRequestBuilder<ReconnectWorker>()
+        .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork(RECONNECT_WORK, ExistingWorkPolicy.KEEP, request)
+}
+
+/**
+ * Waits for the network, then tries [reconnect] up to `backoff.size + 1` times, pausing between tries.
+ * Stops early once connected or when the user has to act. Without a network it tries anyway.
+ */
+suspend fun reconnectWithRetry(
+    waitForNetwork: suspend () -> Boolean,
+    enableWifiAdb: () -> Unit,
+    reconnect: suspend () -> KeeperStatus,
+    pause: suspend (Long) -> Unit = { delay(it) },
+    backoff: List<Long> = BACKOFF_MS,
+) {
+    waitForNetwork()
+    enableWifiAdb()
+    for (i in 0..backoff.size) {
+        val s = reconnect()
+        if (s == KeeperStatus.Connected) return
+        if (s is KeeperStatus.Failed && (s.fix == Fix.QuickRepair || s.fix == Fix.AllowPrompt)) return
+        if (i < backoff.size) pause(backoff[i])
+    }
+}
+
+/** Reconnects the app's ADB link; the keeper's status carries any failure to the UI. */
+class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val keeper = (applicationContext as SpeedApp).graph.connectionKeeper
+        reconnectWithRetry(
+            waitForNetwork = { awaitNetwork(applicationContext, NETWORK_WAIT_MS) },
+            enableWifiAdb = {
+                // Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on.
+                try {
+                    Settings.Global.putInt(applicationContext.contentResolver, "adb_wifi_enabled", 1)
+                } catch (_: SecurityException) {
+                }
+            },
+            reconnect = { keeper.reconnect(); keeper.status.value },
+        )
+        return Result.success()
+    }
+
+    /** Needed for expedited work below API 31. */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        applicationContext.getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL, "Reconnect", NotificationManager.IMPORTANCE_LOW),
+        )
+        return ForegroundInfo(
+            2,
+            Notification.Builder(applicationContext, CHANNEL)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentTitle("Reconnecting")
+                .build(),
+        )
+    }
+
+    private companion object {
+        const val CHANNEL = "reconnect"
+    }
+}
+
+/** True once a default network is up, false after [timeoutMs] without one. */
+private suspend fun awaitNetwork(context: Context, timeoutMs: Long): Boolean {
+    val cm = context.getSystemService(ConnectivityManager::class.java)
+    if (cm.activeNetwork != null) return true
+    return withTimeoutOrNull(timeoutMs) {
+        suspendCancellableCoroutine<Unit> { cont ->
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    if (cont.isActive) cont.resumeWith(Result.success(Unit))
+                }
+            }
+            cm.registerDefaultNetworkCallback(cb)
+            cont.invokeOnCancellation { cm.unregisterNetworkCallback(cb) }
+        }
+        true
+    } ?: false
+}

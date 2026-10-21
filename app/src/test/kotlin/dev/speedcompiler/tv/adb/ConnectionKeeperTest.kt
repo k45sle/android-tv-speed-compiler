@@ -2,6 +2,8 @@ package dev.speedcompiler.tv.adb
 
 import dev.speedcompiler.tv.engine.Settings
 import dev.speedcompiler.tv.engine.SettingsValues
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -27,8 +29,13 @@ private const val OFF = "settings delete global adb_allowed_connection_time"
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionKeeperTest {
-    private fun keeper(shell: AdbShell, settings: Settings = FakeSettings(), connect: suspend () -> Unit = {}) =
-        ConnectionKeeper(connect, shell, settings, "dev.test")
+    private fun keeper(
+        shell: AdbShell,
+        settings: Settings = FakeSettings(),
+        scope: CoroutineScope = CoroutineScope(UnconfinedTestDispatcher()),
+        connect: suspend () -> Unit = {},
+    ) =
+        ConnectionKeeper(connect, shell, settings, "dev.test", scope)
 
     @Test
     fun grantRunsOnceAfterConnect() = runTest {
@@ -95,5 +102,19 @@ class ConnectionKeeperTest {
         val s = k.status.value as KeeperStatus.Failed
         assertEquals(Fix.Retry, s.fix)
         assertEquals(ConnectionState.Disconnected, k.state.first())
+    }
+
+    @Test
+    fun connectNowRunsOneReconnectAndIgnoresCallsWhileRunning() = runTest {
+        var calls = 0
+        val gate = CompletableDeferred<Unit>()
+        val k = keeper(FakeAdbShell(), scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))) { calls++; gate.await() }
+        k.connectNow()
+        k.connectNow()
+        assertEquals(1, calls)
+        gate.complete(Unit)
+        assertEquals(KeeperStatus.Connected, k.status.value)
+        k.connectNow()
+        assertEquals(2, calls)
     }
 }
