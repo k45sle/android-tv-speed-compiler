@@ -40,7 +40,7 @@ fun rememberLook(): (String) -> AppLook {
     }
 }
 
-private fun lookup(context: Context, pkg: String): AppLook = runCatching {
+internal fun lookup(context: Context, pkg: String): AppLook = runCatching {
     val pm = context.packageManager
     val info = pm.getApplicationInfo(pkg, 0)
     AppLook(

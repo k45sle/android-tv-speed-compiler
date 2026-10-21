@@ -53,6 +53,14 @@ import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.StatusPill
+import dev.speedcompiler.tv.theme.focusFx
+import dev.speedcompiler.tv.theme.rememberFocusMemory
+import dev.speedcompiler.tv.theme.remembersFocus
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueSource
@@ -96,7 +104,7 @@ fun rememberOptimizeNow(deps: AppsDeps, go: (String) -> Unit): (String) -> Unit 
 
 @Composable
 fun AppBanner(app: AppInfo, modifier: Modifier) {
-    val bitmap by produceState<ImageBitmap?>(null, app.packageName) {
+    val bitmap by produceState<ImageBitmap?>(null, app.packageName, app.banner) {
         value = app.banner?.let { load -> withContext(Dispatchers.IO) { load()?.asImageBitmap() } }
     }
     val box = modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
@@ -140,6 +148,12 @@ fun AppsContent(
     var sort by remember { mutableStateOf(Sort.Recent) }
     var menu by remember { mutableStateOf<AppInfo?>(null) }
     var swallowUp by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    val field = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val mem = rememberFocusMemory("sort")
+    LaunchedEffect(editing) { if (editing) { runCatching { field.requestFocus() }; keyboard?.show() } }
     val shown = apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
         .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
     val c = LocalSpeedColors.current
@@ -147,28 +161,35 @@ fun AppsContent(
     Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
         Text("Apps", style = MaterialTheme.typography.displaySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
-                query, { query = it },
-                Modifier.weight(1f).semantics { contentDescription = "Search apps" }
-                    .border(1.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(c.accent),
-                decorationBox = { inner ->
-                    Box {
-                        if (query.isEmpty()) Text("Search apps", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        inner()
-                    }
-                },
-            )
-            Button({ sort = if (sort == Sort.Recent) Sort.Name else Sort.Recent }) { Text("Sort: ${sort.label}") }
+            // TV pattern: the box takes focus like a button; OK starts editing (and the keyboard), Up/Down leave it.
+            Box(Modifier.weight(1f).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(1.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
+                BasicTextField(
+                    query, { query = it },
+                    Modifier.fillMaxWidth().focusRequester(field).onFocusChanged { if (!it.isFocused) editing = false }
+                        .focusProperties { canFocus = editing }
+                        .onPreviewKeyEvent {
+                            val dir = when (it.key) { Key.DirectionDown -> FocusDirection.Down; Key.DirectionUp -> FocusDirection.Up; else -> null }
+                            if (dir != null && it.type == KeyEventType.KeyDown) { editing = false; focusManager.moveFocus(dir); true } else false
+                        },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(c.accent),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) Text("Search apps", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            inner()
+                        }
+                    },
+                )
+            }
+            Button({ sort = if (sort == Sort.Recent) Sort.Name else Sort.Recent }, Modifier.remembersFocus(mem, "sort")) { Text("Sort: ${sort.label}") }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
                 val pill = pillFor(queue[app.packageName], optimizedAt[app.packageName], now, zone)
                 ListRow(
                     app.label,
-                    Modifier.fillMaxWidth().semantics { onLongClick("Open menu") { menu = app; true } }
+                    Modifier.fillMaxWidth().remembersFocus(mem, app.packageName).semantics { onLongClick("Open menu") { menu = app; true } }
                         .onPreviewKeyEvent {
                             val enter = it.key == Key.Enter || it.key == Key.DirectionCenter || it.key == Key.NumPadEnter
                             // Holding OK: the first repeat is the long press.

@@ -11,6 +11,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import kotlinx.coroutines.flow.map
+import dev.speedcompiler.tv.ui.home.rememberGraph
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -50,8 +54,15 @@ fun AppNavHost() {
     val nav = rememberNavController()
     val go: (String) -> Unit = { nav.navigate(it) }
     val back: () -> Unit = { nav.popBackStack() }
-    NavHost(nav, startDestination = Routes.Home) {
-        composable(Routes.Setup) { SetupScreen(back) }
+    // First run starts at Setup; wait for the stored flag so Home never flashes first.
+    val graph = rememberGraph()
+    val setupDone by remember(graph) { graph.settings.values.map { it.setupDone } }.collectAsState(null)
+    val start = setupDone ?: return
+    NavHost(nav, startDestination = if (start) Routes.Home else Routes.Setup) {
+        // Setup can be the first screen, so leaving it goes Home instead of popping to nothing.
+        composable(Routes.Setup) {
+            SetupScreen(onBack = { if (!nav.popBackStack(Routes.Home, false)) nav.navigate(Routes.Home) { popUpTo(Routes.Setup) { inclusive = true } } })
+        }
         composable(Routes.Home) { HomeScreen(go) }
         composable(Routes.Apps) { AppsScreen(go, back) }
         composable(Routes.AppDetail) { AppDetailScreen(it.arguments?.getString("pkg").orEmpty(), go, back) }

@@ -2,7 +2,10 @@ package dev.speedcompiler.tv.ui.apps
 
 import android.content.ComponentName
 import androidx.activity.ComponentActivity
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.input.key.Key
@@ -78,7 +81,7 @@ class AppsScreensTest {
     }
 
     private fun listScreen() = show { AppsScreen({ gone += it }, {}, deps) }
-    private fun detailScreen(pkg: String = "a.alpha") = show { AppDetailScreen(pkg, { gone += it }, {}, deps) }
+    private fun detailScreen(pkg: String = "a.alpha", d: AppsDeps = deps) = show { AppDetailScreen(pkg, { gone += it }, {}, d) }
     private fun top(text: String) = rule.onNodeWithText(text).getBoundsInRoot().top
     private fun longPress(text: String) {
         rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnLongClick)
@@ -95,6 +98,22 @@ class AppsScreensTest {
             val c = it.config
             assertTrue("unlabelled focusable: $c", SemanticsProperties.Text in c || SemanticsProperties.ContentDescription in c)
         }
+    }
+
+    @Test
+    fun opensWithFocusOnSortNotInTheSearchBox() {
+        listScreen()
+        rule.onNodeWithText("Sort: Recently updated").assertIsFocused()
+    }
+
+    @Test
+    fun detailShowsTheBannerOnceTheAppLoads() {
+        val d = AppsDeps(
+            loadApps = { listOf(AppInfo("a.alpha", "Alpha", banner = { Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) })) },
+            scheduler = scheduler, watched = watched, musicActive = { false }, setAutoOptimize = { _, _ -> },
+        )
+        detailScreen(d = d)
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("A").fetchSemanticsNodes().isEmpty() } // the letter placeholder is gone
     }
 
     @Test

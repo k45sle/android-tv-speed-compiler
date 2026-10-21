@@ -37,6 +37,8 @@ import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.Tone
+import dev.speedcompiler.tv.theme.remembersFocus
+import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueEntry
@@ -53,6 +55,7 @@ class HomeState(
     val queue: List<QueueEntry>,
     val events: List<Event>,
     val look: (String) -> AppLook,
+    val setupDone: Boolean = true,
 )
 
 @Composable
@@ -99,28 +102,32 @@ fun HomeScreen(go: (String) -> Unit) {
     val queue by (flows[3] as Flow<List<QueueEntry>>).collectAsState(emptyList())
     @Suppress("UNCHECKED_CAST")
     val events by (flows[4] as Flow<List<Event>>).collectAsState(emptyList())
-    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look), go)
+    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone), go)
 }
 
 @Composable
 fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()) {
     val waiting = s.queue.count { it.state != QueueState.RUNNING }
+    val mem = rememberFocusMemory()
     val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(Space.x2),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            val (text, action) = when (s.connection) {
+            val (text, action) = if (!s.setupDone) "Not set up yet" to "Set up" else when (s.connection) {
                 ConnectionState.Connected -> "$onOff · Connected" to null
                 ConnectionState.Connecting -> "$onOff · Connecting" to null
                 ConnectionState.Disconnected -> "Disconnected · $waiting waiting" to "Reconnect"
                 ConnectionState.Unpaired -> "The TV forgot this app. Approve it again." to "Approve"
             }
             Text(text, style = MaterialTheme.typography.headlineMedium)
-            if (action != null) Button({ go(if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) }) { Text(action) }
+            if (action != null) Button(
+                { go(if (!s.setupDone) Routes.Setup else if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) },
+                Modifier.remembersFocus(mem, "status"),
+            ) { Text(action) }
         }
-        if (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting) {
+        if (s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)) {
             val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
             val line = when {
                 waiting == 0 -> "Nothing waiting"
@@ -136,7 +143,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
             items(s.watched, key = { it.packageName }) { app ->
                 val look = s.look(app.packageName)
                 val tone = dotTone(app, s.queue)
-                BannerCard(look.label, Modifier.width(260.dp), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }) {
+                BannerCard(look.label, Modifier.width(260.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                         look.banner?.let { Image(it, null, Modifier.size(64.dp, 36.dp)) }
                         Box(Modifier.size(6.dp).background(toneColor(tone), CircleShape))
@@ -157,10 +164,10 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            Button({ go(Routes.Apps) }) { Text("Apps") }
-            Button({ go(Routes.Activity) }) { Text("Activity") }
-            Button({ go(Routes.Settings) }) { Text("Settings") }
-            Button({ go(Routes.Setup) }) { Text("Setup") }
+            Button({ go(Routes.Apps) }, Modifier.remembersFocus(mem, "apps")) { Text("Apps") }
+            Button({ go(Routes.Activity) }, Modifier.remembersFocus(mem, "activity")) { Text("Activity") }
+            Button({ go(Routes.Settings) }, Modifier.remembersFocus(mem, "settings")) { Text("Settings") }
+            Button({ go(Routes.Setup) }, Modifier.remembersFocus(mem, "setup")) { Text("Setup") }
         }
     }
 }

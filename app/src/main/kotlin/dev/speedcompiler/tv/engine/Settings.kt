@@ -26,6 +26,8 @@ data class SettingsValues(
     /** Index into the accent presets; ignored while [customHue] is set. */
     val accentPreset: Int = 0,
     val customHue: Float? = null,
+    /** Set when the first-run Setup finishes. */
+    val setupDone: Boolean = false,
 )
 
 interface Settings {
@@ -43,6 +45,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
     private val customHue = floatPreferencesKey("custom_hue")
+    private val setupDone = booleanPreferencesKey("setup_done")
 
     private fun read(p: Preferences): SettingsValues {
         val d = SettingsValues()
@@ -56,6 +59,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
             customHue = p[customHue],
+            setupDone = p[setupDone] ?: d.setupDone,
         )
     }
 
@@ -73,6 +77,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[keepTrusting] = new.keepTrusting
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset
+            p[setupDone] = new.setupDone
             new.customHue?.let { p[customHue] = it } ?: p.remove(customHue)
         }
     }

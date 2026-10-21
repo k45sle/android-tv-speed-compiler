@@ -21,6 +21,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -195,4 +202,16 @@ fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Mod
                 .size(Space.x3).background(Color(seedForHue(hue)), CircleShape).border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
         )
     }
+}
+
+/** Id of the last focused item on a screen. Saved with the back stack entry, so it survives leaving and returning. */
+@Composable
+fun rememberFocusMemory(first: String = ""): MutableState<String> = rememberSaveable { mutableStateOf(first) }
+
+/** Tracks focus into [mem] and takes focus when [mem] holds [id]: first visit gets the first item, Back gets the last one. */
+@Composable
+fun Modifier.remembersFocus(mem: MutableState<String>, id: String): Modifier {
+    val r = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (mem.value == id) runCatching { r.requestFocus() } }
+    return focusRequester(r).onFocusChanged { if (it.hasFocus) mem.value = id }
 }

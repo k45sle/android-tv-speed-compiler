@@ -100,6 +100,16 @@ class HomeActivityTest {
     }
 
     @Test
+    fun homeBeforeSetupSaysSoAndOffersSetup() {
+        var went: String? = null
+        show { HomeContent(HomeState(ConnectionState.Connecting, true, emptyList(), emptyList(), emptyList(), look, setupDone = false), { went = it }, now, utc) }
+        rule.onNodeWithText("Not set up yet").assertIsDisplayed()
+        rule.onNodeWithText("Auto-optimize is on · Connecting").assertDoesNotExist()
+        rule.onNodeWithText("Set up").invokeClick()
+        assertEquals("setup", went)
+    }
+
+    @Test
     fun homeDisconnectedShowsWaitingCountAndReconnectNavigates() {
         var went: String? = null
         home(ConnectionState.Disconnected) { went = it }

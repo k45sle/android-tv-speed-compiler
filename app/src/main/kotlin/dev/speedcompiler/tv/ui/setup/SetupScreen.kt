@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
@@ -298,6 +299,8 @@ private fun Body(text: String) =
 @Composable
 private fun PrimaryButton(label: String, onClick: () -> Unit) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    val focusManager = LocalFocusManager.current
+    // Compose can hand focus to the new button as it attaches; the button's focus style misses that. Clear and ask again.
+    LaunchedEffect(Unit) { focusManager.clearFocus(); focus.requestFocus() }
     Button(onClick = onClick, modifier = Modifier.focusRequester(focus)) { Text(label) }
 }

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -15,8 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +26,8 @@ import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.Space
+import dev.speedcompiler.tv.theme.rememberFocusMemory
+import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -66,8 +65,7 @@ fun AppDetailContent(
     onToggleWatch: () -> Unit,
     onAuto: (Boolean) -> Unit,
 ) {
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
+    val mem = rememberFocusMemory("optimize")
     val checkedAt = optimizedAt
     val state = when {
         entry?.state == QueueState.RUNNING -> "Optimizing now"
@@ -91,8 +89,8 @@ fun AppDetailContent(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            Button(onOptimize, Modifier.focusRequester(first)) { Text("Optimize now") }
-            Button(onToggleWatch) { Text(if (watched != null) "Stop watching" else "Watch") }
+            Button(onOptimize, Modifier.remembersFocus(mem, "optimize")) { Text("Optimize now") }
+            Button(onToggleWatch, Modifier.remembersFocus(mem, "watch")) { Text(if (watched != null) "Stop watching" else "Watch") }
         }
         if (watched != null) {
             ListRow(

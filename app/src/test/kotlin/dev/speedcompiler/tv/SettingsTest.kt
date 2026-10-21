@@ -30,8 +30,9 @@ class SettingsTest {
         val v = settings.values.first()
         assertEquals(3, v.accentPreset)
         assertEquals(200f, v.customHue)
-        settings.update { it.copy(customHue = null) }
+        settings.update { it.copy(customHue = null, setupDone = true) }
         assertEquals(null, settings.values.first().customHue)
+        assertEquals(true, settings.values.first().setupDone)
         assertEquals(Mode.Manual, v.mode)
         assertEquals(true, v.paused)
         assertEquals(ThemeChoice.Dark, v.theme)

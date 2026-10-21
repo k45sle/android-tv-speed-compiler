@@ -46,7 +46,11 @@ import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.AppLook
 import dev.speedcompiler.tv.ui.home.etaText
 import dev.speedcompiler.tv.ui.home.rememberGraph
-import dev.speedcompiler.tv.ui.home.rememberLook
+import dev.speedcompiler.tv.ui.home.lookup
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import dev.speedcompiler.tv.watch.DEFAULT_AVG_DURATION_MILLIS
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.QueueEntry
@@ -113,7 +117,10 @@ class WorkingState(val label: String, val art: ImageBitmap?, val job: JobView, v
 fun WorkingScreen(pkg: String, back: () -> Unit) {
     val graph = rememberGraph()
     val flows = remember(graph) { graph.scheduler.queue to graph.scheduler.history }
-    WorkingHost(pkg, rememberLook()(pkg), flows.first, flows.second, back = back)
+    // Loaded in an effect, not from composition: the label must land after the first read of it, or it never shows.
+    val context = LocalContext.current
+    val look by produceState(AppLook(pkg), pkg) { value = withContext(Dispatchers.IO) { lookup(context, pkg) } }
+    WorkingHost(pkg, look, flows.first, flows.second, back = back)
 }
 
 /** Observes the job (it runs in WorkManager, so leaving never cancels it). Elapsed comes from timestamps, not counted ticks. */

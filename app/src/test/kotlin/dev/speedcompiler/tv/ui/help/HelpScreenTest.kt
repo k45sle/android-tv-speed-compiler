@@ -39,5 +39,6 @@ class HelpScreenTest {
         rule.onNodeWithText("Repair").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Routes.QuickRepair), went)
         rule.onNode(hasContentDescription("Repair")).assertIsDisplayed()
+        rule.onNodeWithText("Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.").assertIsDisplayed()
     }
 }

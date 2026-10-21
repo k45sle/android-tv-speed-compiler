@@ -58,6 +58,8 @@ import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.StatusPill
 import dev.speedcompiler.tv.theme.Tone
+import dev.speedcompiler.tv.theme.rememberFocusMemory
+import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.theme.buildPalette
 import dev.speedcompiler.tv.theme.focusFx
 import dev.speedcompiler.tv.ui.Routes
@@ -80,8 +82,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
     val status by remember(deps) { deps.status }.collectAsState(KeeperStatus.Reconnecting)
     val scope = rememberCoroutineScope()
     val set: ((SettingsValues) -> SettingsValues) -> Unit = { f -> scope.launch { deps.update(f) } }
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
+    val mem = rememberFocusMemory("auto")
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(Space.x2),
@@ -90,7 +91,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
         Heading("When to optimize")
         Chips {
-            Chip("Auto", v.mode == Mode.Auto, Modifier.focusRequester(first)) { set { it.copy(mode = Mode.Auto) } }
+            Chip("Auto", v.mode == Mode.Auto, Modifier.remembersFocus(mem, "auto")) { set { it.copy(mode = Mode.Auto) } }
             Chip("Manual", v.mode == Mode.Manual) { set { it.copy(mode = Mode.Manual) } }
         }
         Chips {
@@ -131,15 +132,15 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
         StatusPill(text, tone)
         SwitchRow("Keep this TV trusting the app", "Stops the TV asking to allow debugging again", v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
         Chips {
-            Button({ go(Routes.Reconnect) }) { Text("Reconnect") }
-            Button({ go(Routes.QuickRepair) }) { Text("Pair again") }
+            Button({ go(Routes.Reconnect) }, Modifier.remembersFocus(mem, "reconnect")) { Text("Reconnect") }
+            Button({ go(Routes.QuickRepair) }, Modifier.remembersFocus(mem, "pair")) { Text("Pair again") }
         }
 
         Heading("About and help")
         Text("Version ${deps.version}", style = MonoStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Chips {
-            Button({ go(Routes.Diagnostics) }) { Text("Export diagnostics") }
-            Button({ go(Routes.Help) }) { Text("Help") }
+            Button({ go(Routes.Diagnostics) }, Modifier.remembersFocus(mem, "diag")) { Text("Export diagnostics") }
+            Button({ go(Routes.Help) }, Modifier.remembersFocus(mem, "help")) { Text("Help") }
             Button(back) { Text("Back") }
         }
     }

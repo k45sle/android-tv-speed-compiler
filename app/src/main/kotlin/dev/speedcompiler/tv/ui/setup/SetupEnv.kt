@@ -113,6 +113,7 @@ fun rememberSetupDeps(): SetupDeps {
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
                 graph.appScope.launch {
+                    graph.settings.update { it.copy(setupDone = true) }
                     selected.forEach { graph.scheduler.watch(it) }
                     if (optimizeNow) selected.forEach { graph.scheduler.optimizeNow(it) }
                 }
