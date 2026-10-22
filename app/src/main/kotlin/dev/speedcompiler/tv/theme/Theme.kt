@@ -53,6 +53,9 @@ val MonoStyle = TextStyle(fontFamily = GeistMono, fontSize = 16.sp, fontWeight =
 private fun sans(size: Int, w: Int) = TextStyle(fontFamily = GeistSans, fontSize = size.sp, fontWeight = FontWeight(w))
 private fun pixel(size: Int) = TextStyle(fontFamily = VT323, fontSize = size.sp)
 
+/** Arcade labels, numbers and status words (call sites uppercase). Arcade scale: VT323 56 marquee, 52 title, 36 section, 26 label. */
+val PixelLabel = TextStyle(fontFamily = VT323, fontSize = 26.sp)
+
 // Scale 14/16/18/22/28/40; pixel font for 28+, 600 for headings, 500 for labels.
 // VT323 runs small: 36 and 52 sp give the cap height of a 28 and 40 sp sans heading.
 private val SpeedTypography = Typography(

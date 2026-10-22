@@ -58,18 +58,19 @@ fun buildPalette(seed: Int, dark: Boolean): Palette {
     val onAccent = if (dark) Hct.from(hue, 8.0, 10.0).toInt() else 0xFFFFFFFF.toInt()
     var tone = if (dark) 82.0 else 47.0
     var accent = Hct.from(hue, chroma, tone).toInt()
-    // Contrast guard: walk lightness away from the text color until it reads at 4.5:1.
-    while (contrast(onAccent, accent) < 4.5 && tone in 1.0..99.0) {
+    val container = Hct.from(hue, chroma, if (dark) 30.0 else 90.0).toInt()
+    // Contrast guard: walk lightness away from the text color until accent text and accent-on-container read at 4.5:1.
+    while ((contrast(onAccent, accent) < 4.5 || contrast(accent, container) < 4.5) && tone in 1.0..99.0) {
         tone += if (dark) 1 else -1
         accent = Hct.from(hue, chroma, tone).toInt()
     }
     fun n(t: Double) = Hct.from(hue, 4.0, t).toInt() // neutrals: seed hue, very low chroma
     val status = arrayOf(statusArgb(145.0, dark), statusArgb(75.0, dark), statusArgb(25.0, dark))
     return if (dark) Palette(
-        accent, onAccent, Hct.from(hue, chroma, 30.0).toInt(), Hct.from(hue, 16.0, 90.0).toInt(),
+        accent, onAccent, container, Hct.from(hue, 16.0, 90.0).toInt(),
         n(6.0), n(10.0), n(17.0), n(92.0), n(75.0), n(30.0), status[0], status[1], status[2],
     ) else Palette(
-        accent, onAccent, Hct.from(hue, chroma, 90.0).toInt(), Hct.from(hue, 16.0, 10.0).toInt(),
+        accent, onAccent, container, Hct.from(hue, 16.0, 10.0).toInt(),
         n(98.0), n(96.0), n(90.0), n(10.0), n(35.0), n(78.0), status[0], status[1], status[2],
     )
 }

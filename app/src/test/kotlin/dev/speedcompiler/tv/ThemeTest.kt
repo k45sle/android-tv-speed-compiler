@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.theme.BannerCard
+import dev.speedcompiler.tv.theme.Cabinet
 import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.Presets
@@ -53,6 +54,21 @@ class ContrastTest {
             val cr = contrast(p.onAccent, p.accent)
             assertTrue("seed %08x dark=$dark contrast $cr".format(seed), cr >= 4.5)
         }
+    }
+
+    @Test
+    fun rolePairsPassForEveryPresetCustomHueAndMode() {
+        val palettes = Presets.flatMap { p -> listOf(true, false).map { "${p.name} dark=$it" to p.palette(it) } } +
+            listOf(0f, 90f, 180f, 270f).flatMap { h -> listOf(true, false).map { "hue $h dark=$it" to buildPalette(seedForHue(h), it) } }
+        for ((name, p) in palettes) {
+            val pairs = listOf(p.background, p.surfaceVariant, p.container).flatMap { bg ->
+                listOf(p.onSurface to bg, p.onSurfaceVariant to bg)
+            } + listOf(p.accent to p.background, p.accent to p.container, p.onAccent to p.accent)
+            for ((fg, bg) in pairs) assertTrue("$name %08x on %08x".format(fg, bg), contrast(fg, bg) >= 4.5)
+        }
+        for (body in listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.PLUM, Cabinet.LOGO))
+            assertTrue("cream on %08x".format(body), contrast(Cabinet.CREAM, body) >= 3.0)
+        assertTrue(contrast(Cabinet.INK, Cabinet.GREY) >= 4.5)
     }
 }
 
