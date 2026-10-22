@@ -1,7 +1,6 @@
 package dev.speedcompiler.tv.ui.apps
 
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
+import dev.speedcompiler.tv.ComposeTestBase
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsFocused
@@ -21,7 +20,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.isFocusable
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -33,28 +31,10 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.ConscryptMode
-import org.robolectric.annotation.GraphicsMode
 
-@RunWith(RobolectricTestRunner::class)
-@ConscryptMode(ConscryptMode.Mode.OFF)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w960dp-h540dp")
-class AppsScreensTest {
-    init {
-        val app = RuntimeEnvironment.getApplication()
-        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
-    }
-
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-
+class AppsScreensTest : ComposeTestBase() {
     private val scheduler = FakeScheduler()
     private val watched = MutableStateFlow(emptyList<WatchedApp>())
     private val gone = mutableListOf<String>()

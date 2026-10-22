@@ -37,8 +37,9 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Roborazzi plugin is not in the catalog; this property alone makes captureRoboImage write files.
+        // Opt-in: ./gradlew test -Proborazzi.record. Without it captureRoboImage does nothing.
         unitTests.all {
-            it.systemProperty("roborazzi.test.record", "true")
+            if (providers.gradleProperty("roborazzi.record").isPresent) it.systemProperty("roborazzi.test.record", "true")
             // Absolute, since tests run in app/ and a relative ../ path broke before.
             it.systemProperty("pixelDir", rootProject.file("tools/pixel").absolutePath)
             it.inputs.dir(rootProject.file("tools/pixel"))

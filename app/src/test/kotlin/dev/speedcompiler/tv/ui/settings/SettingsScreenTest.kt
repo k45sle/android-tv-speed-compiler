@@ -1,15 +1,12 @@
 package dev.speedcompiler.tv.ui.settings
 
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
+import dev.speedcompiler.tv.ComposeTestBase
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.isFocusable
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -28,30 +25,11 @@ import dev.speedcompiler.tv.ui.Routes
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import dev.speedcompiler.tv.theme.Presets
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.ConscryptMode
-import org.robolectric.annotation.GraphicsMode
 
-@RunWith(RobolectricTestRunner::class)
-@ConscryptMode(ConscryptMode.Mode.OFF)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w960dp-h540dp")
 @OptIn(ExperimentalTestApi::class)
-class SettingsScreenTest {
-    init {
-        val app = RuntimeEnvironment.getApplication()
-        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
-    }
-
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-
+class SettingsScreenTest : ComposeTestBase() {
     private val state = MutableStateFlow(SettingsValues())
     private val status = MutableStateFlow<KeeperStatus>(KeeperStatus.Connected)
     private val gone = mutableListOf<String>()

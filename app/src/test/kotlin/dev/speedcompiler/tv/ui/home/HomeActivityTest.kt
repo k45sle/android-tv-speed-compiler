@@ -1,13 +1,11 @@
 package dev.speedcompiler.tv.ui.home
 
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
+import dev.speedcompiler.tv.ComposeTestBase
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -30,28 +28,9 @@ import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.ConscryptMode
-import org.robolectric.annotation.GraphicsMode
 
-@RunWith(RobolectricTestRunner::class)
-@ConscryptMode(ConscryptMode.Mode.OFF)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w960dp-h540dp")
-class HomeActivityTest {
-    init {
-        val app = RuntimeEnvironment.getApplication()
-        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
-    }
-
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-
+class HomeActivityTest : ComposeTestBase() {
     private val utc = ZoneId.of("UTC")
     private val now = Instant.parse("2026-01-01T00:30:00Z")
     private val look: (String) -> AppLook = { AppLook(it.substringAfterLast('.').replaceFirstChar(Char::uppercase)) }
