@@ -13,6 +13,13 @@ private val lowest = object : Random() {
 
 class GamesTest {
     @Test
+    fun hudGlyphsAreAllDistinctExceptOAndZero() {
+        val chars = (32..127).map { it.toChar() }.filter { Surface.glyph(it) != 0 && it != 'O' }
+        val dupes = chars.groupBy { Surface.glyph(it) }.values.filter { it.size > 1 }
+        assertEquals(emptyList<List<Char>>(), dupes)
+    }
+
+    @Test
     fun alienRunJumpsAndLandsWithDust() {
         val g = AlienRun(lowest)
         g.step(Input.SELECT)
