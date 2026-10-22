@@ -44,19 +44,20 @@ private fun variable(res: Int, w: Int) =
 val GeistSans = FontFamily(variable(R.font.geist_sans, 400), variable(R.font.geist_sans, 500), variable(R.font.geist_sans, 600))
 val GeistMono = FontFamily(variable(R.font.geist_mono, 400), variable(R.font.geist_mono, 500), variable(R.font.geist_mono, 600))
 
-/** Headings of 28 sp and up only; smaller pixel text is hard to read across a room. */
-val PixelifySans = FontFamily(variable(R.font.pixelify_sans, 600))
+/** Headings only; smaller pixel text is hard to read across a room. One weight, no variable axes. */
+val VT323 = FontFamily(Font(R.font.vt323))
 
 /** Codes, URLs, times, versions and output: Geist Mono with tabular figures. */
 val MonoStyle = TextStyle(fontFamily = GeistMono, fontSize = 16.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
 
 private fun sans(size: Int, w: Int) = TextStyle(fontFamily = GeistSans, fontSize = size.sp, fontWeight = FontWeight(w))
-private fun pixel(size: Int) = TextStyle(fontFamily = PixelifySans, fontSize = size.sp, fontWeight = FontWeight(600))
+private fun pixel(size: Int) = TextStyle(fontFamily = VT323, fontSize = size.sp)
 
 // Scale 14/16/18/22/28/40; pixel font for 28+, 600 for headings, 500 for labels.
+// VT323 runs small: 36 and 52 sp give the cap height of a 28 and 40 sp sans heading.
 private val SpeedTypography = Typography(
-    displayLarge = pixel(40), displayMedium = pixel(40), displaySmall = pixel(28),
-    headlineLarge = pixel(40), headlineMedium = pixel(28), headlineSmall = sans(22, 600),
+    displayLarge = pixel(52), displayMedium = pixel(52), displaySmall = pixel(36),
+    headlineLarge = pixel(52), headlineMedium = pixel(36), headlineSmall = sans(22, 600),
     titleLarge = sans(22, 600), titleMedium = sans(18, 600), titleSmall = sans(16, 600),
     bodyLarge = sans(18, 400), bodyMedium = sans(16, 400), bodySmall = sans(14, 400),
     labelLarge = sans(18, 500), labelMedium = sans(16, 500), labelSmall = sans(14, 500),

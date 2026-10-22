@@ -121,4 +121,4 @@ The APK lands in `app/build/outputs/apk/debug/`. You need JDK 17 and the Android
 
 ## License
 
-[MIT](LICENSE). The bundled Geist and Pixelify Sans fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [Pixelify Sans](third_party/PIXELIFY-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0).
+[MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0).
