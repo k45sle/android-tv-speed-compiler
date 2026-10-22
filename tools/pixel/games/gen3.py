@@ -303,7 +303,7 @@ def board_space():
 # ---------- Arcade picker ----------
 CAB = {"run": ("ALIEN RUN", "mesa2", "mesa3", "mesa1", "sand1", "mesa3"),
        "arrow": ("STAR ARROW", "indigo", "navy", "plum", "navy", "yellow"),
-       "conga": ("COSMIC WORM", "blue", "navy", "sky2", "sky1", "outline")}
+       "worm": ("COSMIC WORM", "blue", "navy", "sky2", "sky1", "outline")}
 
 
 def cabinet(key, lit):

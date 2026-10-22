@@ -135,7 +135,10 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
 }
 
 object CosmicWormDef : GameDef("Cosmic Worm", "Eat stars, use the gates") {
-    override fun create(): Game = CosmicWorm()
+    /** Tests set this to make the food positions repeatable. */
+    var seed: Int? = null
+
+    override fun create(): Game = CosmicWorm(seed?.let { Random(it) } ?: Random.Default)
 
     @Composable override fun renderer(): GameRenderer {
         val board = ImageBitmap.imageResource(R.drawable.game_worm_board)

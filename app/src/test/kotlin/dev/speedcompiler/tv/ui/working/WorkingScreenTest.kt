@@ -1,7 +1,12 @@
 package dev.speedcompiler.tv.ui.working
 
 import dev.speedcompiler.tv.ComposeTestBase
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -103,7 +108,7 @@ class WorkingScreenTest : ComposeTestBase() {
         assertTrue("status top ${status.top}", status.top >= 0f && status.bottom < root.height / 4)
         rule.onNodeWithText("Back to stop").assertIsDisplayed()
         rule.onNodeWithText("00:01").assertIsDisplayed()
-        rule.onNodeWithText("Play while you wait").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Play while you wait").assertDoesNotExist()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_playing.png")
     }
 
@@ -114,8 +119,32 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.mainClock.advanceTimeBy(500)
         rule.onNodeWithContentDescription(GAME).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
         rule.mainClock.advanceTimeBy(100)
-        rule.onNodeWithText("Play while you wait").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Play while you wait").assertIsDisplayed()
         assertEquals(0, left)
+    }
+
+    @Test
+    fun cabinetsTakeFocusMoveWithRightAndSelectOpensTheGame() {
+        show()
+        rule.mainClock.advanceTimeBy(1000)
+        val worm = rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates")
+        val alien = rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti")
+        rule.onNodeWithContentDescription("Play Star Arrow. Fly through the rocks").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        worm.assertIsFocused()
+        worm.performKeyInput { keyDown(Key.DirectionRight); keyUp(Key.DirectionRight) }
+        rule.mainClock.advanceTimeBy(100)
+        alien.assertIsFocused()
+        alien.performKeyInput { keyDown(Key.DirectionCenter); keyUp(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1000)
+        rule.onNodeWithContentDescription(GAME).assertIsDisplayed()
+    }
+
+    @Test
+    fun screenFitsWithoutScrolling() {
+        show()
+        val scroll = rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).fetchSemanticsNode()
+        assertEquals(0f, scroll.config[SemanticsProperties.VerticalScrollAxisRange].maxValue(), 0f)
     }
 
     @Test
@@ -159,9 +188,8 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("00:20").assertIsDisplayed() // the clock stopped with the job
         assertEquals(0, left) // not auto-closed
         rule.onNodeWithContentDescription(GAME.replace("Alien Run", "Cosmic Worm")).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
-        rule.mainClock.autoAdvance = true // nothing else requests a frame once the game is frozen
-        rule.waitForIdle()
-        rule.mainClock.autoAdvance = false
+        rule.waitForIdle() // applies the key press; the picker bulbs never go idle, so frames are stepped by hand
+        rule.mainClock.advanceTimeBy(1000)
         rule.onNodeWithContentDescription("Done, leave this screen").invokeClick()
         assertEquals(1, left)
     }

@@ -29,6 +29,7 @@ import dev.speedcompiler.tv.ui.settings.SettingsScreen
 import dev.speedcompiler.tv.ui.working.JobView
 import dev.speedcompiler.tv.ui.working.WorkingContent
 import dev.speedcompiler.tv.ui.working.WorkingState
+import dev.speedcompiler.tv.ui.working.games.CosmicWormDef
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.FakeScheduler
@@ -146,11 +147,16 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         )
     }
 
-    @Test fun workingDark() = shoot(
-        "working-dark", true,
-        act = { rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").performSemanticsAction(SemanticsActions.OnClick) },
-    ) {
-        WorkingContent(WorkingState("Retro Arcade", banner(demo[1]).asImageBitmap(), JobView.Running, 72_000, 120_000), {})
+    @Test fun workingDark() {
+        CosmicWormDef.seed = 7 // the food positions are random otherwise, so the shot changed on every run
+        try {
+            shoot(
+                "working-dark", true,
+                act = { rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").performSemanticsAction(SemanticsActions.OnClick) },
+            ) {
+                WorkingContent(WorkingState("Retro Arcade", banner(demo[1]).asImageBitmap(), JobView.Running, 72_000, 120_000), {})
+            }
+        } finally { CosmicWormDef.seed = null }
     }
 
     @Test fun settingsDark() = shoot("settings-dark", true) {

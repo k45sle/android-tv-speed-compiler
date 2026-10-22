@@ -185,8 +185,8 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
         return
     }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
-        verticalArrangement = Arrangement.spacedBy(Space.x2),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 27.dp, end = 48.dp), // no bottom padding: header + 380 dp room must fit 540 dp
+        verticalArrangement = Arrangement.spacedBy(Space.x1),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x3)) {
             WorkingArt(s.art, s.job.finished)
@@ -206,7 +206,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
                     JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium)
                     JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
                     if (s.job != JobView.CouldntStart) Text(
                         elapsedText(s.elapsedMillis), style = MonoStyle,
                         modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
@@ -217,23 +217,13 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-                Button(back, Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" }) {
-                    Text(if (s.job.finished) "Done" else "Leave")
-                }
-            }
-        }
-        Text("Play while you wait", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            GameKind.entries.forEachIndexed { i, k ->
-                Button(
-                    { playing = k },
-                    (if (i == 0) Modifier.focusRequester(first) else Modifier).semantics { contentDescription = "Play ${k.title}. ${k.hint}" },
-                ) {
-                    Column { Text(k.title); Text(k.hint, style = MaterialTheme.typography.bodySmall) }
+                    Button(back, Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" }) {
+                        Text(if (s.job.finished) "Done" else "Leave")
+                    }
                 }
             }
         }
+        ArcadePicker({ playing = it }, first)
     }
 }
 
