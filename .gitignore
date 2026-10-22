@@ -1,39 +1,23 @@
-.venv*/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-*.egg-info/
-instance/
-*.db
-*.db-*
-*.sqlite3
-*.sqlite3-*
-*.sqlite
-*.sqlite-*
+build/
+.serena/
+
+# Secrets never belong in the repo
 .env
 .env.*
-!.env.example
-.serena/
 adbkey
 adbkey.pub
 adbkey.*
-bootstrap.token
-build/
-dist/
+*.jks
+*.keystore
 
 # Private notes (ledger, progress logs): a separate git repo, never part of this public repo
 notes/
 # Session handoff files from /handoff (private working notes)
 .claude/handoffs/
 
-# Android / Gradle (v2)
+# Android / Gradle
 .gradle/
 local.properties
 *.iml
 .idea/
 .kotlin/
-
-# Signing keys never belong in the repo
-*.jks
-*.keystore
