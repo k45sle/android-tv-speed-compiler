@@ -1,6 +1,21 @@
 package dev.speedcompiler.tv
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
+import org.junit.Assume.assumeNotNull
+import dev.speedcompiler.tv.ui.working.WorkingHost
+import dev.speedcompiler.tv.ui.Routes
+import com.github.takahirom.roborazzi.recordRoboVideo
+import com.github.takahirom.roborazzi.RoboVideoOptions
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -101,17 +116,20 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     private fun optimized(pkg: String, agoMin: Long) =
         WatchedApp(pkg, "1", lastResult = "Optimized (checked)", lastOptimizedAt = nowMs - agoMin * min)
 
-    private fun homeState(): HomeState {
+    private fun q(id: Long, pkg: String, st: QueueState) = QueueItem(id, pkg, QueueSource.AUTO, st, enqueuedAt = 1_000)
+    private val newsEntry = QueueEntry(q(1, "com.example.newstoday", QueueState.WAITING_GATE), 0, Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z")))
+
+    /** [newsDone]: News Today was just optimized (the demo flow's last screen). */
+    private fun homeState(newsDone: Boolean = false): HomeState {
         val watched = listOf(
             optimized("com.example.streambox", 20), optimized("com.example.retroarcade", 180),
-            WatchedApp("com.example.newstoday", "1"), optimized("com.example.musichub", 26 * 60),
+            if (newsDone) optimized("com.example.newstoday", 0) else WatchedApp("com.example.newstoday", "1"),
+            optimized("com.example.musichub", 26 * 60),
         )
-        fun q(id: Long, pkg: String, st: QueueState) = QueueItem(id, pkg, QueueSource.AUTO, st, enqueuedAt = 1_000)
-        val queue = listOf(
-            QueueEntry(q(1, "com.example.newstoday", QueueState.WAITING_GATE), 0, Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z"))),
-            QueueEntry(q(2, "com.example.podcastplayer", QueueState.QUEUED), 1, Eta.InQueue(1, 120_000)),
-        )
-        val events = listOf(
+        val podcast = QueueEntry(q(2, "com.example.podcastplayer", QueueState.QUEUED), 1, Eta.InQueue(1, 120_000))
+        val queue = if (newsDone) listOf(QueueEntry(podcast.item, 0, Eta.InQueue(0, 120_000))) else listOf(newsEntry, podcast)
+        val events = listOfNotNull(
+            if (newsDone) Event(4, nowMs, "com.example.newstoday", "optimize_verified", "Optimized (checked)") else null,
             Event(1, nowMs - 20 * min, "com.example.streambox", "optimize_verified", "Optimized (checked)"),
             Event(2, nowMs - 180 * min, "com.example.retroarcade", "optimize_verified", "Optimized (checked)"),
             Event(3, nowMs - 26 * 60 * min, "com.example.musichub", "optimize_verified", "Optimized (checked)"),
@@ -162,5 +180,80 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun settingsDark() = shoot("settings-dark", true) {
         val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Dark))
         SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
+    }
+
+    private enum class Step { Home, Apps, Detail, Working, HomeDone }
+
+    /**
+     * README demo clip: Home, Apps, News Today, Optimize now, the Working screen with a few seconds of Cosmic Worm, the job
+     * finishing, Done, and Home with News Today optimized. Runs only with DEMO_FLOW_GIF=<absolute path>; tools/demo.sh builds the video.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "w960dp-h540dp-mdpi") // 960x540 like the old demo; 1080p frames run out of heap
+    @Test fun demoFlow() {
+        val path = System.getenv("DEMO_FLOW_GIF")
+        assumeNotNull(path)
+        val news = demo[2]
+        val clock = { nowMs + rule.mainClock.currentTime }
+        var run = q(9, news.pkg, QueueState.RUNNING).copy(source = QueueSource.MANUAL, runNow = true)
+        val queue = MutableStateFlow(emptyList<QueueEntry>())
+        val history = MutableStateFlow(emptyList<QueueItem>())
+        var step by mutableStateOf(Step.Home)
+        rule.mainClock.autoAdvance = false // the games and the Working banner never go idle
+        rule.setContent {
+            // Robolectric starts in touch mode, where the clickable rows cannot take focus; a TV remote is keyboard mode.
+            val input = LocalInputModeManager.current
+            LaunchedEffect(Unit) { input.requestInputMode(InputMode.Keyboard) }
+            SpeedTheme(ThemeChoice.Dark) {
+                when (step) {
+                    Step.Home -> HomeContent(homeState(), { if (it == Routes.Apps) step = Step.Apps }, now, utc)
+                    Step.Apps -> AppsScreen({ if (it == Routes.appDetail(news.pkg)) step = Step.Detail }, {}, appsDeps())
+                    Step.Detail -> AppDetailContent(
+                        AppInfo(news.pkg, news.label, "3.2", nowMs - 27L * 24 * 60 * min, banner = { banner(news) }),
+                        WatchedApp(news.pkg, "1"), null, QueueEntry(newsEntry.item.copy(state = QueueState.QUEUED), 0, Eta.InQueue(0, 60_000)), nowMs, utc,
+                        { run = run.copy(startedAt = clock()); queue.value = listOf(QueueEntry(run, 0, Eta.None)); step = Step.Working }, {}, {},
+                    )
+                    Step.Working -> WorkingHost(news.pkg, look(news.pkg), queue, history, clock) { step = Step.HomeDone }
+                    Step.HomeDone -> HomeContent(homeState(newsDone = true), {}, now, utc)
+                }
+            }
+        }
+        rule.mainClock.advanceTimeByFrame() // keyboard mode first, so the first focus shows its ring
+        // Robolectric's window never gets focus, and the screens wait for it before taking their first focus.
+        rule.runOnUiThread { rule.activity.window.decorView.dispatchWindowFocusChanged(true) }
+        rule.mainClock.advanceTimeByFrame()
+        // Key events go to whatever has focus, as with a remote.
+        fun press(key: Key = Key.DirectionCenter) = rule.onRoot().performKeyInput { pressKey(key) }
+        CosmicWormDef.seed = 270 // picked by simulation: the gate loop below eats two stars on it
+        try {
+            rule.onRoot().recordRoboVideo(rule, File(path), RoboVideoOptions(fps = 15, settleTimeoutMillis = 100)) {
+                // The first focus shows no ring under Robolectric, so step off the Apps button and back.
+                delay(1_200)
+                press(Key.DirectionRight)
+                delay(600)
+                press(Key.DirectionLeft)
+                delay(900)
+                press()
+                delay(1_000)
+                repeat(3) { press(Key.DirectionDown); delay(500) }
+                delay(500)
+                press()
+                delay(2_500)
+                press()
+                delay(2_000)
+                press()
+                // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
+                delay(1_000)
+                press(Key.DirectionUp)
+                delay(7_000)
+                queue.value = emptyList()
+                history.value = listOf(run.copy(state = QueueState.DONE, finishedAt = clock()))
+                delay(2_000)
+                press(Key.Back)
+                delay(1_500)
+                press()
+                delay(3_000)
+            }
+        } finally { CosmicWormDef.seed = null }
     }
 }

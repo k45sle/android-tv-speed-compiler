@@ -29,9 +29,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="640" height="360" alt="While an app compiles, the Working screen offers an arcade of three mini-games: Cosmic Worm, Alien Run and Star Arrow">
+  <img src="docs/media/demo.gif" width="640" height="360" alt="Demo: from Home, open Apps, pick News Today and press Optimize now. While it compiles, play Cosmic Worm from the arcade on the Working screen. When it finishes, press Done; Home now lists News Today as optimized">
   <br>
-  <a href="docs/media/demo.mp4">Watch the 30-second demo (MP4)</a>
+  <a href="docs/media/demo.mp4">Watch the 26-second demo (MP4)</a>
 </p>
 
 <p align="center">
