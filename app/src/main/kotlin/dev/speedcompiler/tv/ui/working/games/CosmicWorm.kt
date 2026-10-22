@@ -28,6 +28,8 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     /** Last moved direction: index into [DX]/[DY] (right, down, left, up). */
     var dir = 0; private set
     private var want = 0
+    /** A second quick turn pressed within one step, played on the next step; -1 if none. */
+    private var queued = -1
     var foodX = 0; internal set
     var foodY = 0; internal set
     var t = 0f; private set
@@ -78,11 +80,16 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         for (i in flash.indices) if (flash[i] >= 0f) { flash[i] += DT; if (flash[i] > 0.4f) flash[i] = -1f }
         if (over) { dead += DT; return }
         val d = when (input) { Input.RIGHT -> 0; Input.DOWN -> 1; Input.LEFT -> 2; Input.UP -> 3; else -> -1 }
-        if (d >= 0 && (d + 2) % 4 != dir) want = d // reversing into the neck is ignored
+        // Reversing into the neck is ignored; a second turn within one step waits for the next step, so UP then LEFT is a quick U-turn.
+        if (d >= 0) {
+            if (want == dir) { if ((d + 2) % 4 != dir) want = d }
+            else if (queued < 0 && d != want && (d + 2) % 4 != want) queued = d
+        }
         acc += DT
         if (acc < STEP) return
         acc -= STEP
         dir = want
+        if (queued >= 0) { want = queued; queued = -1 }
         val n = neighbour(bx[0], by[0], dir)
         // The tail cell frees up as the worm moves on, so it does not count.
         if (n < 0 || onBody(n % W, n / W, len - 1)) {
@@ -150,6 +157,7 @@ private class WormRenderer(
     private var kx = FloatArray(128); private var ky = FloatArray(128)
     private var ptX = FloatArray(512); private var ptY = FloatArray(512)
     private var n = 0
+    private var minX = 0f; private var maxX = 0f; private var minY = 0f; private var maxY = 0f
 
     override fun draw(s: Surface, g: Game, best: Int) {
         g as CosmicWorm
@@ -164,8 +172,8 @@ private class WormRenderer(
         val p = if (g.over) 1f else min(1f, g.acc / CosmicWorm.STEP)
         path(g, p)
         val travel = (g.moves + p) * 20f
-        tube(g, 0f, 0f, travel)
-        tube(g, 300f, 0f, travel); tube(g, -300f, 0f, travel); tube(g, 0f, 140f, travel); tube(g, 0f, -140f, travel)
+        // The unwrapped line can sit one board away on both axes after two gate passes, so try all nine copies; most are culled.
+        for (oy in -1..1) for (ox in -1..1) tube(g, ox * 300f, oy * 140f, travel)
         val pf = floor(g.t * 8f).toInt() % 4
         for (i in 0 until CosmicWorm.PORTALS) {
             val wide = CosmicWorm.P_WIDE[i]
@@ -176,6 +184,7 @@ private class WormRenderer(
         }
         if (g.sparkle >= 0f) s.img(sparkle, min(3, (g.sparkle / 0.1f).toInt()) * 11, 0, 11, 11, (20 + 20 * g.sparkleX - 5).toFloat(), (40 + 20 * g.sparkleY - 12).toFloat())
         s.shake = 0
+        s.rect(GameColors.outline, 255f, s.hudY - 2f, 63f, 9f) // plate under the HUD, which overlaps the top rail
         s.hud(g.score, best, dark = false)
         if (g.canRestart) s.banner("GAME OVER", "SCORE ", g.score, GameColors.pink)
     }
@@ -208,6 +217,8 @@ private class WormRenderer(
         }
         ptX = grow(ptX, n + 1); ptY = grow(ptY, n + 1)
         ptX[n] = kx[len - 1]; ptY[n] = ky[len - 1]; n++
+        minX = ptX[0]; maxX = minX; minY = ptY[0]; maxY = minY
+        for (i in 1 until n) { minX = min(minX, ptX[i]); maxX = max(maxX, ptX[i]); minY = min(minY, ptY[i]); maxY = max(maxY, ptY[i]) }
     }
 
     private fun rad(i: Int): Int {
@@ -219,6 +230,8 @@ private class WormRenderer(
 
     /** One copy of the worm shifted by ([ox],[oy]); everything outside the force field is cut off, so a gate pass shows two halves. */
     private fun tube(g: CosmicWorm, ox: Float, oy: Float, travel: Float) {
+        // 14 px covers the widest stamp, the shadow drop and the antennae.
+        if (maxX + ox + 14 < FX0 || minX + ox - 14 > FX1 || maxY + oy + 14 < FY0 || minY + oy - 14 > FY1) return
         // Shadow, outline, belly side, body: each layer from the tail to the head.
         for (layer in 0 until 4) for (i in n - 1 downTo 0) {
             val r = rad(i) + if (layer == 1) 1 else 0

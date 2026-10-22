@@ -32,6 +32,17 @@ class CosmicWormTest {
     }
 
     @Test
+    fun twoQuickTurnsWithinOneStepMakeAUTurn() {
+        val g = CosmicWorm(Random(1))
+        g.step(Input.UP); g.step(Input.LEFT) // both before the next move; LEFT alone would be a reversal
+        g.move()
+        assertEquals(4 to 2, g.head())
+        g.move()
+        assertEquals(3 to 2, g.head())
+        assertFalse(g.over)
+    }
+
+    @Test
     fun eatsAStarAndGrowsOneCell() {
         val g = CosmicWorm(Random(1))
         g.foodX = 5; g.foodY = 3
