@@ -31,7 +31,9 @@ import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
+import java.time.Instant
 import java.time.ZoneId
+import dev.speedcompiler.tv.ui.home.etaText
 import kotlinx.coroutines.launch
 
 @Composable
@@ -69,7 +71,7 @@ fun AppDetailContent(
     val checkedAt = optimizedAt
     val state = when {
         entry?.state == QueueState.RUNNING -> "Optimizing now"
-        entry != null -> etaText(entry.eta, now, zone) ?: "Queued"
+        entry != null -> etaText(entry.eta, Instant.ofEpochMilli(now), zone).ifEmpty { "Queued" }
         checkedAt != null -> "Optimized for speed · checked ${agoText(checkedAt, now)}"
         else -> "Not optimized yet"
     }

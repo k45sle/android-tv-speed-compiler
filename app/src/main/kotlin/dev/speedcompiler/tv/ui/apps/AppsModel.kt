@@ -22,9 +22,9 @@ import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.Scheduler
 import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.Instant
+import dev.speedcompiler.tv.ui.home.etaText
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -49,28 +49,10 @@ class AppsDeps(
     val zone: ZoneId = ZoneId.systemDefault(),
 )
 
-private val clock = DateTimeFormatter.ofPattern("HH:mm")
-
-/** Wait text for a queued job. Never a percentage; a clock time only when the user set hours. */
-fun etaText(eta: Eta, now: Long, zone: ZoneId): String? = when (eta) {
-    Eta.None -> null
-    is Eta.StartsAt -> {
-        val at = eta.at.atZone(zone)
-        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        (if (at.toLocalDate() == today) "Starts at " else "Starts tomorrow ") + clock.format(at)
-    }
-    Eta.WaitingForIdle -> "Waiting for the TV to be idle"
-    Eta.WaitingForPlayback -> "Waiting for playback to stop"
-    Eta.Paused -> "Auto-optimize is off"
-    is Eta.InQueue ->
-        if (eta.position < 1) "Next in queue"
-        else "#${eta.position} in queue, about ${(eta.approxMillis / 60_000.0).roundToLong().coerceAtLeast(1)} min"
-}
-
 /** Row pill: Running, Queued (with ETA; gate-held jobs read Queued too), Optimized, or none. */
 fun pillFor(entry: QueueEntry?, optimizedAt: Long?, now: Long, zone: ZoneId): Pair<String, Tone>? = when {
     entry?.state == QueueState.RUNNING -> "Running" to Tone.Info
-    entry != null -> ("Queued" + (etaText(entry.eta, now, zone)?.let { " · $it" } ?: "")) to Tone.Warn
+    entry != null -> ("Queued" + (etaText(entry.eta, Instant.ofEpochMilli(now), zone).let { if (it.isEmpty()) "" else " · $it" })) to Tone.Warn
     optimizedAt != null -> "Optimized" to Tone.Ok
     else -> null
 }

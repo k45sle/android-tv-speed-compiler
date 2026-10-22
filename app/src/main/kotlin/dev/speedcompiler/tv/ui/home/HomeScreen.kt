@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,20 +88,11 @@ private fun dotLabel(tone: Tone) = when (tone) {
 fun HomeScreen(go: (String) -> Unit) {
     val graph = rememberGraph()
     val look = rememberLook()
-    // Flows are built once: a new Flow per recomposition would restart collection (and the gate probe behind queue).
-    val flows = remember(graph) {
-        listOf(graph.connectionMonitor.state, graph.settings.values, graph.database.watchedApps().all(), graph.scheduler.queue, graph.database.events().recent(4))
-    }
-    @Suppress("UNCHECKED_CAST")
-    val connection by (flows[0] as Flow<ConnectionState>).collectAsState(ConnectionState.Disconnected)
-    @Suppress("UNCHECKED_CAST")
-    val loadedSettings by (flows[1] as Flow<SettingsValues?>).collectAsState(null)
-    @Suppress("UNCHECKED_CAST")
-    val watched by (flows[2] as Flow<List<WatchedApp>>).collectAsState(emptyList())
-    @Suppress("UNCHECKED_CAST")
-    val queue by (flows[3] as Flow<List<QueueEntry>>).collectAsState(emptyList())
-    @Suppress("UNCHECKED_CAST")
-    val events by (flows[4] as Flow<List<Event>>).collectAsState(emptyList())
+    val connection by remember(graph) { graph.connectionMonitor.state }.collectAsState(ConnectionState.Disconnected)
+    val loadedSettings by remember(graph) { graph.settings.values }.collectAsState(null)
+    val watched by remember(graph) { graph.database.watchedApps().all() }.collectAsState(emptyList())
+    val queue by remember(graph) { graph.scheduler.queue }.collectAsState(emptyList())
+    val events by remember(graph) { graph.database.events().recent(4) }.collectAsState(emptyList())
     val settings = loadedSettings ?: SettingsValues()
     HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null), go)
 }
