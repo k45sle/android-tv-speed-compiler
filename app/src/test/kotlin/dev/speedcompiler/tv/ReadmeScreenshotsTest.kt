@@ -1,16 +1,13 @@
 package dev.speedcompiler.tv
 
-import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -46,32 +43,16 @@ import java.time.ZoneId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.ConscryptMode
-import org.robolectric.annotation.GraphicsMode
 
 /**
  * README screenshots from made-up demo data at 1920x1080. They go to build/outputs/roborazzi/readme, and to the
- * directory in env README_SHOTS_DIR (docs/media) when it is set, so a normal test run never touches tracked files.
+ * directory in env README_SHOTS_DIR (docs/media) when it is set. Recording is opt-in, so a normal test run writes nothing:
+ * README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests ReadmeScreenshotsTest -Proborazzi.record
  */
-@RunWith(RobolectricTestRunner::class)
-@ConscryptMode(ConscryptMode.Mode.OFF)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w960dp-h540dp-xhdpi")
-class ReadmeScreenshotsTest {
-    init {
-        val app = RuntimeEnvironment.getApplication()
-        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
-    }
-
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-
+class ReadmeScreenshotsTest : ComposeTestBase() {
     private val utc = ZoneId.of("UTC")
     private val now = Instant.parse("2026-01-01T00:30:00Z")
     private val nowMs = now.toEpochMilli()
@@ -112,8 +93,8 @@ class ReadmeScreenshotsTest {
         rule.mainClock.advanceTimeBy(600)
         val out = File("build/outputs/roborazzi/readme/$name.png")
         rule.onRoot().captureRoboImage(out.path)
-        // README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.
-        System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png").absoluteFile, overwrite = true) }
+        // Copies only when recording, else out is missing or stale. README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.
+        if (System.getProperty("roborazzi.test.record") == "true") System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png").absoluteFile, overwrite = true) }
     }
 
     private fun optimized(pkg: String, agoMin: Long) =

@@ -1,12 +1,10 @@
 package dev.speedcompiler.tv.ui.setup
 
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
+import dev.speedcompiler.tv.ComposeTestBase
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -18,29 +16,9 @@ import dev.speedcompiler.tv.theme.SpeedTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.ConscryptMode
-import org.robolectric.annotation.GraphicsMode
 
-@RunWith(RobolectricTestRunner::class)
-@ConscryptMode(ConscryptMode.Mode.OFF)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w960dp-h540dp")
-class SetupFlowTest {
-    // No ui-test-manifest in the catalog, so register the host activity by hand before the rule launches it.
-    init {
-        val app = RuntimeEnvironment.getApplication()
-        shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app.packageName, ComponentActivity::class.java.name))
-    }
-
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
-
+class SetupFlowTest : ComposeTestBase() {
     private val env = FakeSetupEnv(apps = listOf(SetupApp("a.alpha", "Alpha"), SetupApp("b.beta", "Beta"), SetupApp("c.gamma", "Gamma")))
     private val monitor = FakeConnectionMonitor(ConnectionState.Unpaired)
     private val url = MutableStateFlow<String?>(null)
