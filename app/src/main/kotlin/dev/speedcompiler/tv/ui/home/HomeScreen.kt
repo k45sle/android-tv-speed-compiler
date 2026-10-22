@@ -58,17 +58,6 @@ class HomeState(
     val loaded: Boolean = true,
 )
 
-@Composable
-fun toneColor(tone: Tone) = LocalSpeedColors.current.let {
-    when (tone) {
-        Tone.Ok -> it.ok
-        Tone.Warn -> it.warn
-        Tone.Error -> it.error
-        Tone.Info -> it.accent
-        Tone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-}
-
 private fun dotTone(app: WatchedApp, queue: List<QueueEntry>) = when {
     queue.any { it.item.packageName == app.packageName } -> Tone.Info
     app.lastResult == null -> Tone.Neutral
@@ -135,10 +124,9 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
             items(s.watched, key = { it.packageName }) { app ->
                 val look = s.look(app.packageName)
                 val tone = dotTone(app, s.queue)
-                BannerCard(look.label, Modifier.width(260.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }) {
+                BannerCard(look.label, Modifier.width(260.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }, tone) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                         look.banner?.let { Image(it, null, Modifier.size(64.dp, 36.dp)) }
-                        Box(Modifier.size(6.dp).background(toneColor(tone)))
                     }
                 }
             }

@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -349,10 +350,11 @@ fun ArcadeButton(
                 val select = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
                 if (select && enabled) when (e.type) {
                     KeyEventType.KeyDown -> pressed = true
-                    KeyEventType.KeyUp -> { pressed = false; onClick() }
+                    KeyEventType.KeyUp -> if (pressed) { pressed = false; onClick() } // ignore a release whose press landed elsewhere
                 }
                 select
             }
+            .onFocusChanged { if (!it.isFocused) pressed = false }
             .focusFx(1.05f, RowRadius, src, preview)
             .pointerInput(enabled) {
                 if (enabled) detectTapGestures(onPress = { pressed = true; tryAwaitRelease(); pressed = false }, onTap = { onClick() })
