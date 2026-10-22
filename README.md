@@ -62,7 +62,7 @@ The app was written with the Nuvio community in mind, but it works with any app 
 - Watches the apps you pick and queues a compile when one of them updates.
 - Waits until nothing is playing, or until a time window you set, so it does not slow down what you are watching.
 - Reconnects by itself after the TV restarts, as long as Wireless debugging stays on.
-- Lets you play Alien Run, a flappy game or Cosmic Worm while a compile runs.
+- Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
 - Shows a history of each job, with the reason when one fails.
 - Has eight accent colours plus a custom one, and light and dark themes.
 

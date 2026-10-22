@@ -81,7 +81,7 @@ class StarArrow(private val rng: Random = Random.Default) : Game {
         x += SPEED * DT
         for (c in columns) {
             c.x -= SPEED * DT
-            if (!c.passed && c.x + COL_W < BX) { c.passed = true; score++; pops.add(Pop(BX, y - 12f)) }
+            if (!c.passed && c.x + COL_W < BX - HALF) { c.passed = true; score++; pops.add(Pop(BX, y - 12f)) }
         }
         if (columns[0].x < -30f) columns.removeAt(0)
         val last = columns.last()
@@ -104,7 +104,7 @@ class StarArrow(private val rng: Random = Random.Default) : Game {
         const val HALF = 6f
         const val GROUND = 160
         const val GAP = 60
-        const val COL_W = 26
+        const val COL_W = 31 // rightmost rock reach (dx 18 + radius 10, rounded up), so a column scores only once it can no longer hit
         const val SPACING = 120f
         const val SPEED = 70f
         const val GRAVITY = 520f
