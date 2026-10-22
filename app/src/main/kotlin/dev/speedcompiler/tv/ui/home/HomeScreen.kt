@@ -1,38 +1,45 @@
 package dev.speedcompiler.tv.ui.home
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.speedcompiler.tv.theme.Button
-import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.SettingsValues
+import dev.speedcompiler.tv.theme.ArcadeButton
 import dev.speedcompiler.tv.theme.BannerCard
-import dev.speedcompiler.tv.theme.LocalSpeedColors
-import dev.speedcompiler.tv.theme.MonoStyle
+import dev.speedcompiler.tv.theme.Cabinet
+import dev.speedcompiler.tv.theme.FocusMemory
+import dev.speedcompiler.tv.theme.Lamp
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
+import dev.speedcompiler.tv.theme.ScoreRow
+import dev.speedcompiler.tv.theme.ScoreTable
+import dev.speedcompiler.tv.theme.toneColor
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.theme.remembersFocus
@@ -91,63 +98,90 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
     val waiting = s.queue.count { it.state != QueueState.RUNNING }
     val mem = rememberFocusMemory(if (!s.setupDone || s.connection == ConnectionState.Disconnected || s.connection == ConnectionState.Unpaired) "status" else "apps")
     val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
-        verticalArrangement = Arrangement.spacedBy(Space.x2),
-    ) {
-        if (s.loaded) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            val (text, action) = if (!s.setupDone) "Not set up yet" to "Set up" else when (s.connection) {
-                ConnectionState.Connected -> "$onOff · Connected" to null
-                ConnectionState.Connecting -> "$onOff · Connecting" to null
-                ConnectionState.Disconnected -> "Disconnected · $waiting waiting" to "Reconnect"
-                ConnectionState.Unpaired -> "The TV forgot this app. Approve it again." to "Approve"
-            }
-            Text(text, style = MaterialTheme.typography.headlineMedium)
-            if (action != null) Button(
-                { go(if (!s.setupDone) Routes.Setup else if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) },
-                Modifier.remembersFocus(mem, "status"),
-            ) { Text(action) }
-        }
-        if (s.loaded && s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)) {
-            val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
-            val line = when {
-                waiting == 0 -> "Nothing waiting"
-                next.isEmpty() -> "$waiting waiting"
-                else -> "$waiting waiting · next: $next"
-            }
-            Text(line, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (s.watched.isNotEmpty()) LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(Space.x2),
-            contentPadding = PaddingValues(vertical = Space.x1),
-        ) {
-            items(s.watched, key = { it.packageName }) { app ->
-                val look = s.look(app.packageName)
-                val tone = dotTone(app, s.queue)
-                BannerCard(look.label, Modifier.width(260.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }, tone) {
-                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+    val online = s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)
+    val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
+    val queueLine = when {
+        waiting == 0 -> "Nothing waiting"
+        next.isEmpty() -> "$waiting waiting"
+        else -> "$waiting waiting · next: $next"
+    }
+    // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
+    val (title, subtitle) = when {
+        !s.loaded -> "" to null
+        !s.setupDone -> "Not set up yet" to null
+        s.connection == ConnectionState.Disconnected -> "Disconnected" to "$waiting waiting"
+        s.connection == ConnectionState.Unpaired -> "Not paired" to "The TV forgot this app. Approve it again."
+        else -> onOff to queueLine
+    }
+    val action = if (!s.loaded) null else if (!s.setupDone) "Set up" else when (s.connection) {
+        ConnectionState.Disconnected -> "Reconnect"
+        ConnectionState.Unpaired -> "Approve"
+        else -> null
+    }
+    RoomBackdrop {
+        Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Marquee(title, subtitle = subtitle, trailing = {
+                if (action != null) Button(
+                    { go(if (!s.setupDone) Routes.Setup else if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) },
+                    Modifier.remembersFocus(mem, "status"),
+                ) { Text(action.uppercase()) }
+                else if (s.loaded && online) {
+                    val connected = s.connection == ConnectionState.Connected
+                    StatusChip(if (connected) "Connected" else "Connecting", if (connected) Tone.Ok else Tone.Info)
+                }
+            })
+            if (s.watched.isNotEmpty()) LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(Space.x2),
+                contentPadding = PaddingValues(end = 4.dp),
+            ) {
+                items(s.watched, key = { it.packageName }) { app ->
+                    val look = s.look(app.packageName)
+                    val tone = dotTone(app, s.queue)
+                    BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }, tone) {
                         look.banner?.let { Image(it, null, Modifier.size(64.dp, 36.dp)) }
                     }
                 }
             }
-        }
-        if (s.events.isNotEmpty()) {
-            Text("Recent activity", style = MaterialTheme.typography.titleMedium)
-            s.events.forEach { e ->
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                    Text(clockText(e.timeMillis, zone), style = MonoStyle.copy(fontSize = 14.sp))
-                    Text(
-                        e.packageName?.let { s.look(it).label + ": " }.orEmpty() + e.message,
-                        style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                if (s.events.isNotEmpty()) ScoreTable(
+                    "Recent activity",
+                    s.events.take(2).map { e ->
+                        val (word, tone) = when {
+                            "fail" in e.kind -> "Failed" to Tone.Error
+                            "verified" in e.kind -> "Optimized" to Tone.Ok
+                            else -> "Note" to Tone.Neutral
+                        }
+                        ScoreRow(clockText(e.timeMillis, zone), e.packageName?.let { s.look(it).label } ?: e.message, word, tone)
+                    },
+                    Modifier.weight(1f),
+                ) else Spacer(Modifier.weight(1f))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                        HomeButton("Apps", Cabinet.BLUE, mem, "apps") { go(Routes.Apps) }
+                        HomeButton("Activity", Cabinet.ORANGE, mem, "activity") { go(Routes.Activity) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                        HomeButton("Settings", Cabinet.PLUM, mem, "settings") { go(Routes.Settings) }
+                        HomeButton("Setup", Cabinet.LOGO, mem, "setup") { go(Routes.Setup) }
+                    }
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            Button({ go(Routes.Apps) }, Modifier.remembersFocus(mem, "apps")) { Text("Apps") }
-            Button({ go(Routes.Activity) }, Modifier.remembersFocus(mem, "activity")) { Text("Activity") }
-            Button({ go(Routes.Settings) }, Modifier.remembersFocus(mem, "settings")) { Text("Settings") }
-            Button({ go(Routes.Setup) }, Modifier.remembersFocus(mem, "setup")) { Text("Setup") }
-        }
+    }
+}
+
+@Composable
+private fun RowScope.HomeButton(label: String, fill: Int, mem: FocusMemory, id: String, onClick: () -> Unit) =
+    ArcadeButton(label, onClick, Modifier.weight(1f).remembersFocus(mem, id), fill = Color(fill), contentColor = Color(Cabinet.CREAM))
+
+/** Outlined chip with a lamp and a status word, for the sign's right side. */
+@Composable
+private fun StatusChip(text: String, tone: Tone) {
+    Row(
+        Modifier.border(2.dp, toneColor(tone)).padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Lamp(toneColor(tone))
+        PixelText(text, color = toneColor(tone))
     }
 }

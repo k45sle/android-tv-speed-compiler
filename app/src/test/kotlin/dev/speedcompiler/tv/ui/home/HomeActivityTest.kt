@@ -71,9 +71,10 @@ class HomeActivityTest : ComposeTestBase() {
     @Test
     fun homeConnectedShowsStatusEtaAndLabels() {
         home(ConnectionState.Connected)
-        rule.onNodeWithText("Auto-optimize is on · Connected").assertIsDisplayed()
+        rule.onNodeWithText("Auto-optimize is on", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Connected", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("1 waiting · next: Starts at 02:00").assertIsDisplayed()
-        rule.onNodeWithText("Recent activity").assertIsDisplayed()
+        rule.onNodeWithText("Recent activity", ignoreCase = true).assertIsDisplayed()
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_connected.png")
     }
@@ -82,9 +83,9 @@ class HomeActivityTest : ComposeTestBase() {
     fun homeBeforeSetupSaysSoAndOffersSetup() {
         var went: String? = null
         show { HomeContent(HomeState(ConnectionState.Connecting, true, emptyList(), emptyList(), emptyList(), look, setupDone = false), { went = it }, now, utc) }
-        rule.onNodeWithText("Not set up yet").assertIsDisplayed()
-        rule.onNodeWithText("Auto-optimize is on · Connecting").assertDoesNotExist()
-        rule.onNodeWithText("Set up").invokeClick()
+        rule.onNodeWithText("Not set up yet", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Connecting", ignoreCase = true).assertDoesNotExist()
+        rule.onNodeWithText("Set up", ignoreCase = true).invokeClick()
         assertEquals("setup", went)
     }
 
@@ -92,8 +93,9 @@ class HomeActivityTest : ComposeTestBase() {
     fun homeDisconnectedShowsWaitingCountAndReconnectNavigates() {
         var went: String? = null
         home(ConnectionState.Disconnected) { went = it }
-        rule.onNodeWithText("Disconnected · 1 waiting").assertIsDisplayed()
-        rule.onNodeWithText("Reconnect").invokeClick()
+        rule.onNodeWithText("Disconnected", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("1 waiting").assertIsDisplayed()
+        rule.onNodeWithText("Reconnect", ignoreCase = true).invokeClick()
         assertEquals("reconnect", went)
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_disconnected.png")
