@@ -42,6 +42,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --generate-notes
+        # A suffix (v2.0.0-rc1) marks a pre-release, so test tags never become "Latest".
+        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --generate-notes $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
