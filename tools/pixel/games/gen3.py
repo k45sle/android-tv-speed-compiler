@@ -355,9 +355,9 @@ def room():
     rnd = random.Random(4); W, H = 432, 190; im = img(W, H)
     for y in range(H):
         for x in range(W):
-            if y < 160: put(im, x, y, "indigo" if (x // 24) % 2 else "navy")
-            else: put(im, x, y, "navy")
-    for x in range(W): put(im, x, 159, "outline"); put(im, x, 160, "plum")
+            if y < 160: put(im, x, y, "logo" if (x // 24) % 2 else "outline")
+            else: put(im, x, y, "outline")
+    for x in range(W): put(im, x, 159, "outline"); put(im, x, 160, "green7")
     for _ in range(70):  # arcade carpet: small shapes in bright colors
         x, y, c = rnd.randrange(W), rnd.randrange(163, 188), rnd.choice(["pink", "yellow", "sky2", "green3"])
         kind = rnd.randrange(3)
