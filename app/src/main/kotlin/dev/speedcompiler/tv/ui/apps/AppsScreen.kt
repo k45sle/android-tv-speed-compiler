@@ -48,12 +48,26 @@ import androidx.compose.ui.window.Dialog
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
-import dev.speedcompiler.tv.theme.StatusPill
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import dev.speedcompiler.tv.theme.Lamp
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
+import dev.speedcompiler.tv.theme.SelectRow
+import dev.speedcompiler.tv.theme.Selector
+import dev.speedcompiler.tv.theme.Tone
+import dev.speedcompiler.tv.theme.toneColor
 import dev.speedcompiler.tv.theme.focusFx
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
@@ -134,6 +148,7 @@ fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememb
         onOptimize = optimizeNow,
         onQueue = { pkg -> scope.launch { deps.scheduler.enqueue(pkg, QueueSource.MANUAL) } },
         onToggleWatch = { pkg, isWatched -> scope.launch { if (isWatched) deps.scheduler.unwatch(pkg) else deps.scheduler.watch(pkg) } },
+        onBack = onBack,
     )
 }
 
@@ -149,6 +164,7 @@ fun AppsContent(
     onOptimize: (String) -> Unit,
     onQueue: (String) -> Unit,
     onToggleWatch: (pkg: String, isWatched: Boolean) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(Sort.Recent) }
@@ -180,11 +196,13 @@ fun AppsContent(
         .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
     val c = LocalSpeedColors.current
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
-        Text("Apps", style = MaterialTheme.typography.displaySmall)
+    RoomBackdrop {
+    Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+        Marquee("Your apps", compact = true, onBack = onBack, trailing = { PixelText("${apps.size} apps · ${watched.size} watched", color = c.accent) })
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+            PixelText("search:", color = MaterialTheme.colorScheme.onSurfaceVariant)
             // TV pattern: the box takes focus like a button; OK starts editing (and the keyboard), Up/Down leave it.
-            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(2.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x2)) {
+            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(2.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x1)) {
                 BasicTextField(
                     query, { query = it },
                     Modifier.fillMaxWidth().focusRequester(field).onFocusChanged { if (!it.isFocused) editing = false }
@@ -208,14 +226,29 @@ fun AppsContent(
                     },
                 )
             }
-            Button({ sort = if (sort == Sort.Recent) Sort.Name else Sort.Recent }, Modifier.remembersFocus(mem, "sort")) { Text("Sort: ${sort.label}") }
+            val toggleSort = { sort = if (sort == Sort.Recent) Sort.Name else Sort.Recent }
+            var sortFocused by remember { mutableStateOf(false) }
+            Box(
+                Modifier.remembersFocus(mem, "sort").onFocusChanged { sortFocused = it.hasFocus }
+                    .onKeyEvent {
+                        val select = it.key == Key.DirectionCenter || it.key == Key.Enter || it.key == Key.NumPadEnter
+                        if (select && it.type == KeyEventType.KeyUp) toggleSort()
+                        select
+                    }
+                    // Not clickable(): that takes focus only outside touch mode, which would refuse the focus restore (as ArcadeButton does).
+                    .focusFx(1.05f, RowRadius, remember { MutableInteractionSource() }, false)
+                    .pointerInput(Unit) { detectTapGestures { toggleSort() } }
+                    .semantics(mergeDescendants = true) { role = Role.Button; onClick { toggleSort(); true } }
+                    .background(if (sortFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                    .border(2.dp, c.hairline).padding(horizontal = Space.x2, vertical = Space.x1),
+            ) { Selector("Sort: ${sort.label}", sortFocused) }
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
                 val pill = pillFor(queue[app.packageName], optimizedAt[app.packageName], now, zone)
-                ListRow(
+                SelectRow(
                     app.label,
-                    Modifier.fillMaxWidth().remembersFocus(mem, app.packageName).semantics { onLongClick("Open menu") { menu = app; true } }
+                    Modifier.remembersFocus(mem, app.packageName).semantics { onLongClick("Open menu") { menu = app; true } }
                         .onPreviewKeyEvent {
                             val enter = it.key == Key.Enter || it.key == Key.DirectionCenter || it.key == Key.NumPadEnter
                             // Holding OK: the first repeat is the long press.
@@ -226,15 +259,21 @@ fun AppsContent(
                             if (up) swallowUp = false
                             long || up
                         },
+                    subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
                     onClick = { onOpen(app.packageName) },
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-                        if (pill != null) StatusPill(pill.first, pill.second)
-                        AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp))
-                    }
-                }
+                    trailing = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+                            if (pill != null) {
+                                Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
+                                PixelText(pill.first, color = toneColor(pill.second))
+                            }
+                            AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp))
+                        }
+                    },
+                )
             }
         }
+    }
     }
 
     LaunchedEffect(menu) { if (menu == null) swallowUp = false } // the dialog eats the key-up, so clear the flag on close

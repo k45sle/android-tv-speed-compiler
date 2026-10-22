@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.watch.FakeScheduler
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -50,8 +51,8 @@ class AppsScreensTest : ComposeTestBase() {
         setAutoOptimize = { p, on -> auto += p to on }, now = { 1_800_000_000_000 },
     )
 
-    private fun show(content: @Composable () -> Unit) {
-        rule.setContent { SpeedTheme { content() } }
+    private fun show(theme: ThemeChoice = ThemeChoice.Dark, content: @Composable () -> Unit) {
+        rule.setContent { SpeedTheme(theme) { content() } }
         // A Robolectric window starts in touch mode, where rows cannot take focus; a TV has none.
         rule.runOnUiThread {
             val root = android.view.View::class.java.getMethod("getViewRootImpl").invoke(rule.activity.window.decorView)!!
@@ -64,12 +65,12 @@ class AppsScreensTest : ComposeTestBase() {
     private fun detailScreen(pkg: String = "a.alpha", d: AppsDeps = deps) = show { AppDetailScreen(pkg, { gone += it }, {}, d) }
     private fun top(text: String) = rule.onNodeWithText(text).getBoundsInRoot().top
     private fun longPress(text: String) {
-        rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnLongClick)
+        rule.onNodeWithText(text, ignoreCase = true).performSemanticsAction(SemanticsActions.OnLongClick)
         rule.waitForIdle()
     }
     // TV buttons react to OK, not touch, so invoke the click action directly.
     private fun click(text: String) {
-        rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithText(text, ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
         rule.waitForIdle()
     }
 
@@ -83,7 +84,7 @@ class AppsScreensTest : ComposeTestBase() {
     @Test
     fun opensWithFocusOnSortNotInTheSearchBox() {
         listScreen()
-        rule.onNodeWithText("Sort: Recently updated").assertIsFocused()
+        rule.onNodeWithText("Sort: Recently updated", substring = true, ignoreCase = true).assertIsFocused()
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -117,9 +118,9 @@ class AppsScreensTest : ComposeTestBase() {
         rule.onNodeWithText("Beta").requestFocus()
         okKey(android.view.KeyEvent.ACTION_DOWN)
         okKey(android.view.KeyEvent.ACTION_DOWN, repeat = 1) // holding OK: the first repeat is the long press
-        rule.onNodeWithText("Optimize now").assertIsDisplayed()
+        rule.onNodeWithText("Optimize now", ignoreCase = true).assertIsDisplayed()
         click("Add to queue") // closes the menu; the key-up went to the dialog, never to the row
-        rule.onNodeWithText("Optimize now").assertDoesNotExist()
+        rule.onNodeWithText("Optimize now", ignoreCase = true).assertDoesNotExist()
         rule.onNodeWithText("Gamma").requestFocus()
         okKey(android.view.KeyEvent.ACTION_DOWN)
         okKey(android.view.KeyEvent.ACTION_UP)
@@ -142,9 +143,10 @@ class AppsScreensTest : ComposeTestBase() {
         listScreen()
         assertTrue(top("Beta") < top("Gamma") && top("Gamma") < top("Alpha")) // newest first
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_list.png")
-        click("Sort: Recently updated")
+        rule.onNodeWithText("Sort: Recently updated", substring = true, ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
         assertTrue(top("Alpha") < top("Beta") && top("Beta") < top("Gamma"))
-        rule.onNodeWithText("Sort: A–Z").assertIsDisplayed()
+        rule.onNodeWithText("Sort: A–Z", substring = true, ignoreCase = true).assertIsDisplayed()
     }
 
     @Test
@@ -280,5 +282,24 @@ class AppsScreensTest : ComposeTestBase() {
         )
         assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done)))
         assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
+    }
+
+    @Test
+    fun lightShots() {
+        watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1_800_000_000_000 - 2 * 3_600_000))
+        show(ThemeChoice.Light) { AppsScreen({}, {}, deps) }
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_list_light.png")
+    }
+
+    @Test
+    fun lightDetailShot() {
+        val now = 1_800_000_000_000
+        val w = WatchedApp("a.alpha", "f", autoOptimize = true, lastOptimizedAt = now - 2 * 3_600_000)
+        val runs = listOf(
+            dev.speedcompiler.tv.watch.QueueItem(1, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.AUTO, dev.speedcompiler.tv.watch.QueueState.DONE, enqueuedAt = 1, finishedAt = now - 2 * 3_600_000),
+            dev.speedcompiler.tv.watch.QueueItem(2, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.MANUAL, dev.speedcompiler.tv.watch.QueueState.FAILED, enqueuedAt = 1, finishedAt = now - 90_000_000),
+        )
+        show(ThemeChoice.Light) { AppDetailContent(apps[0], w, w.lastOptimizedAt, null, now, java.time.ZoneOffset.UTC, {}, {}, {}, runs = runs) }
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail_light.png")
     }
 }
