@@ -29,9 +29,9 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="640" height="360" alt="Demo: from Home, open Apps, pick News Today and press Optimize now. While it compiles, play Cosmic Worm from the arcade on the Working screen. When it finishes, press Done; Home now lists News Today as optimized">
+  <img src="docs/media/demo.gif" width="640" height="360" alt="Demo: from Home, open Apps, pick Nuvio and press Optimize now. While it compiles, the Working screen's arcade plays a few seconds each of Alien Run, Star Arrow and Cosmic Worm, going back to the arcade between games. The job finishes during Cosmic Worm; press Done, and Home now lists Nuvio as optimized">
   <br>
-  <a href="docs/media/demo.mp4">Watch the 26-second demo (MP4)</a>
+  <a href="docs/media/demo.mp4">Watch the 36-second demo (MP4)</a>
 </p>
 
 <p align="center">
@@ -41,18 +41,46 @@
   </picture>
 </p>
 
+<h3 align="center">Setup</h3>
+
 <table align="center">
   <tr>
-    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/apps-light.png"><img src="docs/media/apps-dark.png" width="400" alt="Apps screen: a searchable list of apps, each marked Optimized or Queued"></picture></td>
-    <td><img src="docs/media/appdetail-dark.png" width="400" alt="App detail: an optimized app with Optimize now, Stop watching and an auto-optimize switch"></td>
+    <td><img src="docs/media/setup-welcome-dark.png" width="400" alt="Setup welcome page: Compile your apps ahead of time, with a Start button"></td>
+    <td><img src="docs/media/setup-pair-dark.png" width="400" alt="Setup pairing page: a QR code and an address to open on your phone, with steps for typing the 6-digit pairing code"></td>
   </tr>
   <tr>
-    <td><img src="docs/media/working-dark.png" width="400" alt="Working screen: an app being optimized, with a timer and a game to play while waiting"></td>
+    <td><img src="docs/media/setup-apps-dark.png" width="400" alt="Setup app picker: a list of recent apps, with Nuvio selected"></td>
+    <td><img src="docs/media/setup-done-dark.png" width="400" alt="Setup is done: Nuvio and 1 other will be optimized when nothing is playing, with Optimize now and Done buttons"></td>
+  </tr>
+</table>
+
+<h3 align="center">Everyday</h3>
+
+<table align="center">
+  <tr>
+    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/apps-light.png"><img src="docs/media/apps-dark.png" width="400" alt="Apps screen: a searchable list of apps with their banners, each marked Optimized or Queued"></picture></td>
+    <td><img src="docs/media/appdetail-dark.png" width="400" alt="App detail for Nuvio: optimized 20 minutes ago, with Optimize now, Stop watching and an auto-optimize switch"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/activity-dark.png" width="400" alt="Activity screen: a queue with Cancel buttons, and a history of finished jobs, one failed with Connection lost and a Retry button"></td>
     <td><img src="docs/media/settings-dark.png" width="400" alt="Settings: when to optimize, pause, theme and accent colour"></td>
   </tr>
 </table>
 
-<p align="center"><sub>Screenshots use made-up demo apps.</sub></p>
+<h3 align="center">While you wait</h3>
+
+<table align="center">
+  <tr>
+    <td><img src="docs/media/working-dark.png" width="400" alt="Working screen: Nuvio being optimized, with a timer, a Leave button and an arcade room of three game cabinets"></td>
+    <td><img src="docs/media/alienrun-dark.png" width="400" alt="Alien Run: a green alien in a space helmet runs across a pixel-art desert, jumping cacti, while a strip at the top says Nuvio is still optimizing"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/stararrow-dark.png" width="400" alt="Star Arrow: a gold chevron ship flies between columns of tumbling asteroids past a ringed planet, with a round shield gauge at 100 percent"></td>
+    <td><img src="docs/media/cosmicworm-dark.png" width="400" alt="Cosmic Worm: a blue worm crawls across a purple space board toward a star, with gates on the walls"></td>
+  </tr>
+</table>
+
+<p align="center"><sub>The Nuvio name and logo belong to the Nuvio project (GPL-3.0, <a href="https://github.com/NuvioMedia/NuvioTV">github.com/NuvioMedia/NuvioTV</a>) and are used with its developers' blessing. Other apps in the screenshots are made up.</sub></p>
 
 ## About this app
 
@@ -126,4 +154,4 @@ The APK lands in `app/build/outputs/apk/debug/`. You need JDK 17 and the Android
 
 ## License
 
-[MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0).
+[MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0). The Nuvio art in the screenshots is used only by the screenshot tests and is not part of the app (see [its notice](app/src/test/resources/nuvio/NOTICE)).

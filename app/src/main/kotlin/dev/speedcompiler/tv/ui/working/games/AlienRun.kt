@@ -84,7 +84,10 @@ class AlienRun(private val rng: Random = Random.Default) : Game {
 }
 
 object AlienRunDef : GameDef("Alien Run", "Jump the cacti") {
-    override fun create(): Game = AlienRun()
+    /** Tests set this to make the obstacles repeatable. */
+    var seed: Int? = null
+
+    override fun create(): Game = AlienRun(seed?.let { Random(it) } ?: Random.Default)
 
     @Composable override fun renderer(): GameRenderer {
         val sky = ImageBitmap.imageResource(R.drawable.game_sky)

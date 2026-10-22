@@ -121,7 +121,10 @@ class StarArrow(private val rng: Random = Random.Default) : Game {
 }
 
 object StarArrowDef : GameDef("Star Arrow", "Fly through the rocks") {
-    override fun create(): Game = StarArrow()
+    /** Tests set this to make the obstacles repeatable. */
+    var seed: Int? = null
+
+    override fun create(): Game = StarArrow(seed?.let { Random(it) } ?: Random.Default)
 
     @Composable override fun renderer(): GameRenderer {
         val sky = ImageBitmap.imageResource(R.drawable.game_arrow_sky)
