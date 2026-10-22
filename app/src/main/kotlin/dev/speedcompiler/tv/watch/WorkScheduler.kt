@@ -5,11 +5,13 @@ import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,6 +56,8 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         val existing = queueDao.activeFor(packageName)
         // shortcut: an update that lands during a running compile is not re-queued (REPLACE would kill the worker); the weekly verify catches it.
         if (existing != null && (existing.state == QueueState.RUNNING || existing.runNow)) return
+        // The row says RUNNING only once the worker holds runLock; REPLACE on a started worker could cancel its compile.
+        if (existing != null && work.getWorkInfosForUniqueWorkFlow(workName(packageName)).first().any { it.state == WorkInfo.State.RUNNING }) return
         schedule(existing ?: insert(packageName, source, runNow = false), debounce = existing?.state != QueueState.WAITING_GATE)
     }
 

@@ -161,6 +161,12 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return Result.retry()
         }
         val now = g.clock.nowMillis()
+        // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
+        // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.
+        // Re-enqueueing from here is not possible: REPLACE under this worker's own name would cancel it.
+        // Written while the row still says RUNNING, so an enqueue cannot REPLACE this worker before it lands.
+        val watched = g.database.watchedApps()
+        watched.get(pkg)?.let { watched.upsert(it.copy(fingerprint = fingerprint, lastResult = result.detail, lastOptimizedAt = now)) }
         dao.update(
             item.copy(
                 state = if (result.ok) QueueState.DONE else QueueState.FAILED,
@@ -168,11 +174,6 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 failureReason = result.detail.takeUnless { result.ok },
             ),
         )
-        // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
-        // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.
-        // Re-enqueueing from here is not possible: REPLACE under this worker's own name would cancel it.
-        val watched = g.database.watchedApps()
-        watched.get(pkg)?.let { watched.upsert(it.copy(fingerprint = fingerprint, lastResult = result.detail, lastOptimizedAt = now)) }
         return Result.success()
     }
 

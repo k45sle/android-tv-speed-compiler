@@ -173,6 +173,22 @@ class SchedulingTest {
         assertEquals(listOf("a"), optimizer.optimized)
     }
 
+    @Test fun detectLeavesAStartedWorkerAloneWhileItsRowStillSaysWaiting() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        optimizer.before = { release.await() }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("running") { state(1) == QueueState.RUNNING }
+        val id = infos("a").single().id
+        // The window between a retry worker starting and it writing RUNNING.
+        g.database.queue().update(g.database.queue().get(1)!!.copy(state = QueueState.WAITING_GATE))
+        runDetect(g)
+        assertEquals(listOf(id to WorkInfo.State.RUNNING), infos("a").map { it.id to it.state })
+        release.complete(Unit)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
     @Test fun weeklyVerifyRequeuesADowngradedApp() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         g.database.watchedApps().upsert(WatchedApp("b", "1"))

@@ -102,7 +102,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     fun fail() { failures[step] = (failures[step] ?: 0) + 1 }
     val helpOffer = if ((failures[step] ?: 0) >= 2) ({ help = true }) else null
 
-    LaunchedEffect(step == 6) { if (step == 6) apps = env.recentApps() }
+    LaunchedEffect(step) { if (step == 6 || (step == 7 && apps.isEmpty())) apps = env.recentApps() } // step 7 after a restore needs the labels too
     BackHandler(enabled = help || step > first) { if (help) help = false else back() }
 
     if (help) return HelpPage(step) { help = false }
@@ -146,7 +146,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 others <= 0 -> name
                 else -> "$name and $others other${if (others == 1) "" else "s"}"
             }
-            val finish = { now: Boolean -> scope.launch { deps.onFinish(chosen.map { it.packageName }, now); onBack() }; Unit }
+            val finish = { now: Boolean -> scope.launch { deps.onFinish(picked.toList(), now); onBack() }; Unit }
             Page(null, "Setup is done.") {
                 Body("$subject will be optimized when nothing is playing. It takes a minute or two each.")
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {

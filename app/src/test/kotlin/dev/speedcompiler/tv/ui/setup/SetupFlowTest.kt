@@ -120,6 +120,25 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     @Test
+    fun keepsThePicksOnTheLastStepAfterProcessDeath() {
+        env.developerOptions = true; env.wireless = true
+        monitor.flow.value = ConnectionState.Connected
+        val restorer = StateRestorationTester(rule)
+        restorer.setContent { SpeedTheme { SetupScreen({ backs++ }, deps = deps) } }
+        leaveTouchMode()
+        enter()
+        see("Pick apps to optimize."); tick()
+        enter() // picks Alpha, the focused row
+        press(Key.DirectionUp); enter() // Continue
+        see("Setup is done.")
+        restorer.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        see("Alpha will be optimized when nothing is playing. It takes a minute or two each.")
+        tick(); enter() // Optimize now, focused on entry
+        assertEquals(listOf("a.alpha") to true, finished)
+    }
+
+    @Test
     fun skipsStepsAlreadyDone() {
         env.developerOptions = true; env.wireless = true
         monitor.flow.value = ConnectionState.Disconnected // paired already
