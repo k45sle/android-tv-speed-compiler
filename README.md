@@ -24,9 +24,14 @@
 > - Set a budget of under $1 for the whole project and held Claude to it.
 > - Reviewed the work and pushed back on anything that looked like AI slop.
 
-<!-- Placeholder until the demo video is recorded. -->
 <p align="center">
   <img src="docs/media/banner.gif" width="640" height="360" alt="Speed Compile banner: a gold pixel-art chevron rolls over streaming cream dashes next to the words SPEED COMPILE in pixel letters, on dark green">
+</p>
+
+<p align="center">
+  <img src="docs/media/demo.gif" width="640" height="360" alt="While an app compiles, the Working screen offers an arcade of three mini-games: Cosmic Worm, Alien Run and Star Arrow">
+  <br>
+  <a href="docs/media/demo.mp4">Watch the 30-second demo (MP4)</a>
 </p>
 
 <p align="center">
