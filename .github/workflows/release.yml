@@ -1,0 +1,47 @@
+name: Release
+
+# Push a tag like v2.0.0 (three numbers, optional -suffix) to build a signed APK and attach it to a GitHub Release.
+# Needs repository secrets RELEASE_KEYSTORE_B64 (base64 of the .jks), RELEASE_STORE_PASSWORD and RELEASE_KEY_ALIAS.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          # Fail rather than publish an unsigned APK.
+          test -n "$KEYSTORE_B64" || { echo "RELEASE_KEYSTORE_B64 is not set"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Build signed APK
+        env:
+          ORG_GRADLE_PROJECT_releaseStoreFile: ${{ runner.temp }}/release.jks
+          ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: ./gradlew lint test assembleRelease "-PappVersion=${GITHUB_REF_NAME#v}"
+      - name: Verify signature
+        run: |
+          apk="speed-compile-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          # No --print-certs: the certificate names its owner and the logs are public.
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify "$apk"
+          echo "APK=$apk" >> "$GITHUB_ENV"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --generate-notes
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

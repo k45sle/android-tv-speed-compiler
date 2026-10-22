@@ -12,8 +12,10 @@ android {
         applicationId = "dev.speedcompiler.tv"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // The release workflow passes the tag (v2.1.3 -> 2.1.3); versionCode 2.1.3 -> 20103 so each release installs over the last.
+        val ver = providers.gradleProperty("appVersion").orNull ?: "0.1.0"
+        versionName = ver
+        versionCode = ver.substringBefore('-').split('.').map(String::toInt).let { (a, b, c) -> a * 10000 + b * 100 + c }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Release key lives outside the repo (~/.gradle/gradle.properties); without it, release builds stay unsigned.
