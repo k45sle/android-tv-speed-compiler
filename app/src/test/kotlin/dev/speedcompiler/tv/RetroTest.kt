@@ -1,17 +1,26 @@
 package dev.speedcompiler.tv
 
 import dev.speedcompiler.tv.theme.Palette
-import dev.speedcompiler.tv.theme.PixelLogo
+import dev.speedcompiler.tv.theme.LOGO_FRAMES
 import dev.speedcompiler.tv.theme.Presets
 import dev.speedcompiler.tv.theme.Retro
 import dev.speedcompiler.tv.theme.RetroColors
 import dev.speedcompiler.tv.theme.contrast
-import dev.speedcompiler.tv.theme.pixelLogoFrame
+import dev.speedcompiler.tv.ui.working.games.GameColors
+import androidx.compose.ui.graphics.toArgb
+import android.graphics.BitmapFactory
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.ConscryptMode
+import org.robolectric.annotation.GraphicsMode
 
+@RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RetroTest {
     private val pixelDir = File(System.getProperty("pixelDir") ?: error("pixelDir not set by Gradle"))
 
@@ -46,22 +55,22 @@ class RetroTest {
     @Test fun pixelSourcesUseOnlyPaletteColors() {
         val files = pixelDir.listFiles { f -> f.extension == "xpm" }!!
         assertTrue("no XPM files in $pixelDir", files.isNotEmpty())
-        for (f in files) for ((ch, c) in xpm(f.name).first) assertTrue("${f.name} '$ch' %08x not in RetroColors".format(c), c in RetroColors)
+        val allowed = RetroColors + GameColors.all.map { it.toArgb() }
+        for (f in files) for ((ch, c) in xpm(f.name).first) assertTrue("${f.name} '$ch' %08x not in the palette".format(c), c in allowed)
     }
 
-    @Test fun iconSourceMatchesTheInAppLogo() {
-        val (colors, rows) = xpm("icon.xpm")
-        assertEquals(Retro.LOGO_BASE, colors['.'])
-        assertEquals(Retro.CREAM, colors['c'])
-        assertEquals(Retro.GOLD, colors['g'])
-        assertEquals(PixelLogo, rows.subList(5, 22).map { it.substring(5, 22) })
-        assertTrue("art outside the centre", (rows.take(5) + rows.drop(22)).all { it.all { c -> c == '.' } })
+    @Test fun iconAndBannerSourcesAreTheLogoSize() {
+        assertEquals(27, xpm("icon.xpm").second.size)
+        assertEquals(36, xpm("banner.xpm").second.size)
+        assertEquals(Retro.LOGO_BASE, xpm("banner.xpm").first['.'])
     }
 
-    @Test fun logoLoopBuildsUpThenBlinksTheTip() {
-        assertTrue(pixelLogoFrame(0).all { r -> r.drop(4).all { it == '.' } })
-        assertEquals(PixelLogo, pixelLogoFrame(7))
-        assertTrue(pixelLogoFrame(4).none { 'g' in it })
-        assertEquals(pixelLogoFrame(3), pixelLogoFrame(11))
+    @Test fun bannerSheetHoldsTheLoopAndFrameZeroMatchesTheStaticBanner() {
+        val sheet = BitmapFactory.decodeFile(File(pixelDir, "../../app/src/main/res/drawable-nodpi/logo_banner.png").path)
+        assertEquals(64 * LOGO_FRAMES to 36, sheet.width to sheet.height)
+        val (colors, rows) = xpm("banner.xpm")
+        // Frame 0 is the key frame; only the wordmark streak differs, so compare the logo half (x < 30) exactly.
+        for (y in rows.indices) for (x in 0 until 30)
+            assertEquals("pixel $x,$y", colors[rows[y][x]], sheet.getPixel(x, y))
     }
 }

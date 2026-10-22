@@ -26,7 +26,7 @@
 
 <!-- Placeholder until the demo video is recorded. -->
 <p align="center">
-  <img src="docs/media/banner.png" width="640" height="360" alt="Speed Compile banner: the pixel-art arrow logo next to the words SPEED COMPILE in pixel letters, on dark green">
+  <img src="docs/media/banner.gif" width="640" height="360" alt="Speed Compile banner: a gold pixel-art chevron rolls over streaming cream dashes next to the words SPEED COMPILE in pixel letters, on dark green">
 </p>
 
 <p align="center">

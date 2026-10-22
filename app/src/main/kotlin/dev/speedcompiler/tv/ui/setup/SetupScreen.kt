@@ -45,6 +45,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.ListRow
+import dev.speedcompiler.tv.theme.PixelBanner
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.QrCard
@@ -286,6 +287,7 @@ private fun AutoAdvance(isMet: () -> Boolean, onMet: () -> Unit) {
 @Composable
 private fun Page(step: Int?, title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().padding(Space.x4 + Space.x2), verticalArrangement = Arrangement.spacedBy(Space.x3)) {
+        PixelBanner(false, Modifier.align(Alignment.End), 128.dp)
         if (step == null) Text(title, style = MaterialTheme.typography.displaySmall)
         else {
             StepHeader(step - 1, Total, title)

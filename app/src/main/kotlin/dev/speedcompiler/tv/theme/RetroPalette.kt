@@ -27,34 +27,3 @@ object Retro {
 
 val RetroColors: Set<Int> = setOf(Retro.LOGO_BASE, Retro.CREAM, Retro.GOLD) +
     listOf(Retro.Dark, Retro.Light, Retro.NeonDark, Retro.NeonLight).flatMap { it.all() }
-
-/** The logo's 17x17 art (centre of tools/pixel/icon.xpm): '.' clear, 'c' cream, 'g' gold. */
-val PixelLogo = listOf(
-    ".................",
-    ".................",
-    ".c.cc............",
-    ".................",
-    "cc.cc.ccc........",
-    ".................",
-    "..cc.cccccccc....",
-    "........cccccgg..",
-    "ccc.cc.ccccccgggg",
-    "........cccccgg..",
-    ".ccc.cccccccc....",
-    ".................",
-    "ccc.ccccc........",
-    ".................",
-    "..ccc............",
-    ".................",
-    ".................",
-)
-
-/** Frame [frame] of the 8-frame logo loop: bars sweep in from the left over frames 0-3, then the gold tip blinks. */
-fun pixelLogoFrame(frame: Int): List<String> {
-    val f = frame.mod(LOGO_FRAMES)
-    val cut = intArrayOf(4, 8, 12, 17, 17, 17, 17, 17)[f]
-    val tipOff = f == 4 || f == 6
-    return PixelLogo.map { row -> String(CharArray(row.length) { x -> if (x < cut && !(tipOff && row[x] == 'g')) row[x] else '.' }) }
-}
-
-const val LOGO_FRAMES = 8

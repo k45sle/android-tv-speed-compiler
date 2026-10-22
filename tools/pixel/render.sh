@@ -9,3 +9,4 @@ for d in mdpi:4 hdpi:6 xhdpi:8 xxhdpi:12 xxxhdpi:16; do
 done
 magick tools/pixel/banner.xpm -scale 1000% "$res/drawable-xhdpi/banner.png"
 magick tools/pixel/icon.xpm -scale 1600% docs/media/icon.png
+cp "$res/drawable-xhdpi/banner.png" docs/media/banner.png

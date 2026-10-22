@@ -43,7 +43,7 @@ import androidx.tv.material3.Text
 import androidx.compose.ui.Alignment
 import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
-import dev.speedcompiler.tv.theme.PixelLogoSprite
+import dev.speedcompiler.tv.theme.PixelBanner
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.AppLook
@@ -262,7 +262,7 @@ private fun StatusLine(s: WorkingState) {
 @Composable
 private fun WorkingArt(art: ImageBitmap?, stopped: Boolean) {
     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-        PixelLogoSprite(stopped, Modifier.semantics { contentDescription = if (stopped) "Done" else "Working" })
+        PixelBanner(stopped, Modifier.semantics { contentDescription = if (stopped) "Done" else "Working" })
         val mod = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(CardRadius))
         if (art != null) Image(art, null, mod) else Box(mod.background(LocalSpeedColors.current.accent))
     }
