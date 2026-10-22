@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
@@ -193,18 +194,18 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
             Column(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                 Text(
                     if (s.job.finished) s.label else "Optimizing ${s.label}",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 // Without a connection the worker loops running -> retry; say what it is really waiting on.
                 if (!s.job.finished && s.connection != ConnectionState.Connected) {
-                    Text(s.connection?.let(::waitingForConnectionText) ?: "Starting…", style = MaterialTheme.typography.titleMedium)
+                    Text(s.connection?.let(::waitingForConnectionText) ?: "Starting…", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 } else when (val j = s.job) {
-                    is JobView.Done -> Text("Optimized. You can leave now.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.ok)
-                    is JobView.Failed -> Text("Didn't finish: ${j.reason}", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
-                    is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium)
-                    JobView.CouldntStart -> Text("Couldn't start. Try again from the app.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error)
-                    JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium)
-                    JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium)
+                    is JobView.Done -> Text("Optimized. You can leave now.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.ok, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    is JobView.Failed -> Text("Didn't finish: ${j.reason}", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    JobView.CouldntStart -> Text("Couldn't start. Try again from the app.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
                     if (s.job != JobView.CouldntStart) Text(

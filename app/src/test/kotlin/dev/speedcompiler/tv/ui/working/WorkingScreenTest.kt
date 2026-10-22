@@ -148,6 +148,14 @@ class WorkingScreenTest : ComposeTestBase() {
     }
 
     @Test
+    fun longFailureStillFitsWithoutScrolling() {
+        finish(item(1, QueueState.FAILED, reason = "The device stopped answering while the compile was running, so it was stopped. ".repeat(3)))
+        show()
+        val scroll = rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).fetchSemanticsNode()
+        assertEquals(0f, scroll.config[SemanticsProperties.VerticalScrollAxisRange].maxValue(), 0f)
+    }
+
+    @Test
     fun finishedRunSavesBestScoreForTheGame() {
         val saved = mutableListOf<Pair<String, Int>>()
         rule.mainClock.autoAdvance = false

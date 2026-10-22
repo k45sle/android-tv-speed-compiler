@@ -10,6 +10,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -145,6 +147,7 @@ private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, requester
                 select
             }
             .focusable()
+            .pointerInput(Unit) { detectTapGestures { onPlay() } }
             .semantics(mergeDescendants = true) {
                 role = Role.Button; contentDescription = "Play ${kind.title}. ${kind.hint}"
                 onClick { onPlay(); true }
