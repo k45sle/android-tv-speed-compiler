@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.imageResource
 import dev.speedcompiler.tv.R
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -13,6 +15,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Flappy-style flyer in art pixels (320x180) at 30 Hz. Select or Up flaps; each hit costs a shield cell and three end the run. */
@@ -194,19 +197,61 @@ object StarArrowDef : GameDef("Star Arrow", "Fly through the rocks") {
         } else if (d < 1f) ring(s, cy, 30f + (d - 0.5f) * 10f, GameColors.grey7)
     }
 
-    /** Three cells under the status line; the last one turns red and flashes. */
+    /**
+     * Reactor shield gauge under the status line: a breathing core inside a ring of three arc cells with a highlight orbiting
+     * the lit ones, and a percent readout. A lost cell flashes white; at one cell the gauge flickers and the readout blinks pink.
+     */
     private fun shieldBar(s: Surface, g: StarArrow) {
-        val sy = s.hudY - 1f
-        s.rect(GameColors.navy, 2f, sy - 2f, 66f, 11f)
-        s.text("SHIELD", 4, sy.roundToInt() + 1, GameColors.cream)
+        val cx = 12f; val cy = s.hudY.roundToInt() + 7f
         val low = g.shield == 1
-        for (i in 0 until 3) {
-            val cx = 30f + i * 12
-            s.rect(GameColors.outline, cx, sy, 11f, 7f)
-            val on = i < g.shield
-            val flash = low && floor(g.t * 4f).toInt() % 2 == 1
-            s.rect(if (!on) GameColors.grey7 else if (low) (if (flash) GameColors.pink else GameColors.red) else GameColors.blue, cx + 1, sy + 1, 9f, 5f)
-            if (on) s.rect(if (low) GameColors.pink else GameColors.sky2, cx + 1, sy + 1, 9f, 1f)
+        val flick = low && g.t % 0.7f < 0.1f
+        val lamp = low && g.t % 0.5f < 0.25f
+        val bright = sin(g.t * 4f) > 0f && !flick
+        val age = if (g.over) g.dead else g.hitT // hitT stops once the run is over; dead keeps counting from the final hit
+        val flash = age < 0.45f && floor(age / 0.06f).toInt() % 2 == 0
+        val orbit = (g.t * 2.5f) % TAU
+        for (i in RD.indices) {
+            val d = RD[i]
+            val c = when {
+                d <= 3.6f -> if (g.over) GameColors.grey7 else if (d < 1.6f) (if (flick) GameColors.sky2 else GameColors.white) else if (bright) GameColors.sky1 else GameColors.sky2
+                d <= 4.6f -> GameColors.outline
+                d <= 5.6f -> if (g.over) GameColors.navy else GameColors.blue
+                d <= 6.4f -> GameColors.outline
+                d <= 9.4f -> {
+                    val seg = RSEG[i]
+                    if (seg < 0) GameColors.outline
+                    else if (seg == g.shield && flash) GameColors.white
+                    else if (seg < g.shield) {
+                        val da = abs((RA[i] - orbit + 3 * PI_F) % TAU - PI_F)
+                        if (flick) GameColors.blue else if (da < 0.35f) GameColors.cream2 else if (d < 7.4f) GameColors.sky1 else if (d < 8.4f) GameColors.sky2 else GameColors.sky3
+                    } else if (d < 7.4f) GameColors.indigo else GameColors.navy
+                }
+                else -> GameColors.outline
+            }
+            s.rect(c, cx + RX[i], cy + RY[i], 1f, 1f)
         }
+        val ry = cy - 3f
+        s.rect(GameColors.outline, cx + 11f, ry, 22f, 9f)
+        s.rect(GameColors.navy, cx + 12f, ry + 1f, 20f, 7f)
+        val tc = if (g.over) GameColors.grey7 else if (lamp) GameColors.pink else GameColors.sky2
+        s.number(g.shield * 100 / 3, 3, (cx + 14f).toInt(), (ry + 2f).toInt(), tc) // 0, 33, 66, 100
+        s.text("%", (cx + 26f).toInt(), (ry + 2f).toInt(), tc)
+    }
+
+    private const val PI_F = 3.1415927f
+    private const val TAU = 2 * PI_F
+
+    // Ring pixels within radius 10.4 of the core, measured once: offset, distance, angle from the top (clockwise), arc cell or -1 in a gap.
+    private val RX: FloatArray; private val RY: FloatArray; private val RD: FloatArray; private val RA: FloatArray; private val RSEG: IntArray
+    init {
+        val xs = ArrayList<Float>(); val ys = ArrayList<Float>(); val ds = ArrayList<Float>(); val angs = ArrayList<Float>(); val segs = ArrayList<Int>()
+        for (y in -10..10) for (x in -10..10) {
+            val d = sqrt((x * x + y * y).toFloat())
+            if (d > 10.4f) continue
+            val a = (atan2(y.toFloat(), x.toFloat()) + PI_F / 2 + 2 * TAU) % TAU
+            val third = TAU / 3; val seg = (a / third).toInt().coerceAtMost(2); val into = a - seg * third
+            xs += x.toFloat(); ys += y.toFloat(); ds += d; angs += a; segs += if (into < 0.22f || into > third - 0.22f) -1 else seg
+        }
+        RX = xs.toFloatArray(); RY = ys.toFloatArray(); RD = ds.toFloatArray(); RA = angs.toFloatArray(); RSEG = segs.toIntArray()
     }
 }
