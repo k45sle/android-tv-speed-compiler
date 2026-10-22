@@ -38,7 +38,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private val lock = Mutex()
 
     override suspend fun watch(packageName: String) = lock.withLock {
-        val fingerprint = graph.packageSource.installed().firstOrNull { it.packageName == packageName }?.fingerprint ?: ""
+        val fingerprint = graph.packageSystem.installed().firstOrNull { it.packageName == packageName }?.fingerprint ?: ""
         graph.database.watchedApps().upsert(WatchedApp(packageName, fingerprint))
         doEnqueue(packageName, QueueSource.AUTO)
     }

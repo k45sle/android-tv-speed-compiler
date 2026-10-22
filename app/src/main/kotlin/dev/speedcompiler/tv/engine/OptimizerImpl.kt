@@ -5,8 +5,6 @@ import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
 class OptimizerImpl(
@@ -20,8 +18,7 @@ class OptimizerImpl(
         if (!isValidPackageId(packageName)) {
             return finish(null, false, "Didn't finish: that is not a valid app name.", "optimize_failed")
         }
-        // Only one compile at a time, across every instance in the process.
-        return lock.withLock { compile(packageName) }
+        return compile(packageName)
     }
 
     /** The compiler filter the TV reports for [packageName], or null if it does not report one. */
@@ -62,9 +59,5 @@ class OptimizerImpl(
     private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false): OptimizeResult {
         events.insert(Event(timeMillis = clock.nowMillis(), packageName = pkg, kind = kind, message = detail))
         return OptimizeResult(ok, detail, connectionLost)
-    }
-
-    private companion object {
-        val lock = Mutex()
     }
 }

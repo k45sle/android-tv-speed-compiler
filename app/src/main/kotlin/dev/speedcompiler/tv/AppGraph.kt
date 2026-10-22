@@ -18,8 +18,6 @@ import dev.speedcompiler.tv.engine.GateConfigProvider
 import dev.speedcompiler.tv.engine.GateImpl
 import dev.speedcompiler.tv.engine.Optimizer
 import dev.speedcompiler.tv.engine.OptimizerImpl
-import dev.speedcompiler.tv.engine.PackageSource
-import dev.speedcompiler.tv.engine.PackageSourceImpl
 import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.Settings
 import dev.speedcompiler.tv.engine.SystemClock
@@ -50,7 +48,6 @@ class AppGraph(context: Context) {
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()
     var clock: Clock = SystemClock
     var packageSystem: PackageSystem = AndroidPackageSystem(app)
-    var packageSource: PackageSource = PackageSourceImpl(packageSystem)
     var optimizer: Optimizer = OptimizerImpl(libAdb, database.events(), clock)
     var gate: Gate = GateImpl(
         clock,

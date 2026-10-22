@@ -18,7 +18,6 @@ import dev.speedcompiler.tv.engine.GateWindow
 import dev.speedcompiler.tv.engine.InstalledPackage
 import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.PackageChanges
-import dev.speedcompiler.tv.engine.PackageSourceImpl
 import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.toGateConfig
@@ -77,7 +76,6 @@ class SchedulingTest {
             .allowMainThreadQueries().build()
         g.clock = FakeClock(1_000)
         g.packageSystem = system
-        g.packageSource = PackageSourceImpl(system)
         g.optimizer = optimizer
         g.gate = gate
         g.scheduler = WorkScheduler(ctx, g)

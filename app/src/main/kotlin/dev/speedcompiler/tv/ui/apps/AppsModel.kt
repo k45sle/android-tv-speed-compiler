@@ -112,7 +112,7 @@ fun rememberAppsDeps(): AppsDeps {
         val graph = (context as SpeedApp).graph
         val dao = graph.database.watchedApps()
         AppsDeps(
-            loadApps = { loadUserApps(context, graph.packageSource.installed().map { it.packageName }) },
+            loadApps = { loadUserApps(context, graph.packageSystem.installed().map { it.packageName }) },
             scheduler = graph.scheduler,
             watched = dao.all(),
             musicActive = { context.getSystemService(AudioManager::class.java).isMusicActive },

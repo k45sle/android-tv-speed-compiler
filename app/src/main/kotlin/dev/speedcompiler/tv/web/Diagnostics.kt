@@ -94,7 +94,7 @@ class DiagnosticsServer(
     private val json: String,
     private val session: PairingSession,
     private val onFinished: () -> Unit = {},
-) : NanoHTTPD(0), WebServer {
+) : NanoHTTPD(0) {
     private val served = AtomicBoolean(false)
     private val stopped = AtomicBoolean(false)
     private val timer = Timer("diagnostics-expiry", true)

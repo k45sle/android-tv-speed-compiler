@@ -31,7 +31,6 @@ class GateImpl(
             wakefulness = signals.wakefulness(),
             mode = config.mode,
             window = config.window,
-            manual = false,
             paused = config.paused && !ignorePause,
         )
         return when (decision) {

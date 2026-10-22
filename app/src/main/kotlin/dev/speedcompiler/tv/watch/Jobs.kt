@@ -56,7 +56,7 @@ private fun enqueueVerifyNow(context: Context) {
  * so a reinstall is picked up as a change.
  */
 suspend fun runDetect(g: AppGraph) {
-    val installed = g.packageSource.installed().map { it.packageName }.toSet()
+    val installed = g.packageSystem.installed().map { it.packageName }.toSet()
     for (item in g.database.queue().activeNow()) if (item.packageName !in installed) g.scheduler.cancel(item.id)
     val watched = g.database.watchedApps()
     ChangeDetector(g.packageSystem, g.database.syncState()) { watched.list().filter { it.autoOptimize } }
@@ -66,7 +66,7 @@ suspend fun runDetect(g: AppGraph) {
 
 /** Queues every auto-optimized app the TV no longer reports at `speed`. */
 suspend fun runVerify(g: AppGraph) {
-    val installed = g.packageSource.installed().map { it.packageName }.toSet()
+    val installed = g.packageSystem.installed().map { it.packageName }.toSet()
     for (app in g.database.watchedApps().list()) {
         if (!app.autoOptimize || app.packageName !in installed) continue
         when (g.optimizer.verify(app.packageName)) {
@@ -134,7 +134,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val dao = g.database.queue()
         val item = dao.get(id)?.takeIf { it.state.isActive } ?: return Result.success()
         val pkg = item.packageName
-        val fingerprint = g.packageSource.installed().firstOrNull { it.packageName == pkg }?.fingerprint
+        val fingerprint = g.packageSystem.installed().firstOrNull { it.packageName == pkg }?.fingerprint
         if (fingerprint == null) {
             dao.update(item.copy(state = QueueState.SKIPPED, finishedAt = g.clock.nowMillis(), failureReason = "Not installed"))
             return Result.success()

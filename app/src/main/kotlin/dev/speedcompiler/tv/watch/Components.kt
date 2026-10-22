@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import dev.speedcompiler.tv.web.localIp
 
 /** Starts the reconnect and change-detection jobs after boot. */
 class BootReceiver : BroadcastReceiver() {
@@ -41,7 +42,7 @@ class PairingService : Service() {
             val s = dev.speedcompiler.tv.web.PairingWebServer(
                 session = dev.speedcompiler.tv.web.PairingSession(graph.clock),
                 pairing = graph.pairing,
-                host = { d.host ?: localIp() },
+                host = { d.host ?: localIp() ?: "127.0.0.1" },
                 pairingPort = { d.port },
                 onFinished = { stopSelf() },
             )
@@ -49,7 +50,7 @@ class PairingService : Service() {
             d.start()
             discovery = d
             server = s
-            url.value = "http://${localIp()}:${s.port}/${s.token}"
+            url.value = "http://${localIp() ?: "127.0.0.1"}:${s.port}/${s.token}"
         }
         return START_NOT_STICKY
     }
@@ -61,10 +62,6 @@ class PairingService : Service() {
         server = null
         super.onDestroy()
     }
-
-    private fun localIp(): String = java.net.NetworkInterface.getNetworkInterfaces().toList()
-        .flatMap { it.inetAddresses.toList() }
-        .firstOrNull { it is java.net.Inet4Address && it.isSiteLocalAddress }?.hostAddress ?: "127.0.0.1"
 
     companion object {
         private const val CHANNEL = "pairing"

@@ -76,21 +76,3 @@ fun AppNavHost() {
         composable(Routes.Help) { HelpScreen(go, back) }
     }
 }
-
-/** Empty placeholder screen: a title and focusable buttons, so D-pad navigation can be exercised. */
-@Composable
-fun StubScreen(title: String, links: List<Pair<String, () -> Unit>>) {
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { first.requestFocus() }
-    Column(
-        Modifier.fillMaxSize().padding(48.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(title, style = MaterialTheme.typography.displaySmall)
-        links.forEachIndexed { i, (label, action) ->
-            Button(onClick = action, modifier = if (i == 0) Modifier.focusRequester(first) else Modifier) {
-                Text(label)
-            }
-        }
-    }
-}

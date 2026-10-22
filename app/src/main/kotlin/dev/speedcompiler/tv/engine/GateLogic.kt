@@ -24,8 +24,7 @@ sealed interface GateDecision {
 
 /**
  * Pure gate rule (plan 3.4). [wakefulness] null means the screen state could not be read (Unknown);
- * it behaves like NothingPlaying so an unreadable screen never blocks the gate. [manual] is "Optimize now",
- * which always runs.
+ * it behaves like NothingPlaying so an unreadable screen never blocks the gate.
  */
 fun decide(
     now: ZonedDateTime,
@@ -33,10 +32,8 @@ fun decide(
     wakefulness: Wakefulness?,
     mode: GateMode,
     window: GateWindow,
-    manual: Boolean,
     paused: Boolean,
 ): GateDecision {
-    if (manual) return GateDecision.Run
     if (paused) return GateDecision.Wait(WaitReason.Paused)
     if (mode == GateMode.Window && !inWindow(now, window)) {
         return GateDecision.Wait(WaitReason.OutsideWindow(nextWindowStart(now, window)))

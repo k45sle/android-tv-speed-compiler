@@ -9,8 +9,6 @@ import dev.speedcompiler.tv.engine.parseCompilerFilter
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -38,13 +36,11 @@ class OptimizerTest {
         val dexopt: String = "",
         val compileDelay: Long = 0,
     ) : AdbShell {
-        var running = 0
-        var maxRunning = 0
+        var compiles = 0
         override suspend fun run(command: String): ShellResult = when {
             command.startsWith("cmd package compile") -> {
-                running++
-                maxRunning = maxOf(maxRunning, running)
-                try { delay(compileDelay) } finally { running-- }
+                compiles++
+                delay(compileDelay)
                 ShellResult(0, compile)
             }
             command.startsWith("pm art dump") -> ShellResult(0, art)
@@ -81,7 +77,7 @@ class OptimizerTest {
         assertFalse(impl(Shell(dexopt = v1), ev).optimize("com.example.other").ok)
         val shell = Shell()
         assertFalse(impl(shell, ev).optimize("com.x; rm -rf /").ok)
-        assertEquals(0, shell.maxRunning)
+        assertEquals(0, shell.compiles)
         assertEquals(3, ev.rows.size)
         assertTrue(ev.rows.all { it.kind == "optimize_failed" })
     }
@@ -106,13 +102,5 @@ class OptimizerTest {
         assertTrue(r.detail.startsWith("Didn't finish"))
         assertEquals(100, testScheduler.currentTime)
         assertEquals("optimize_failed", ev.rows.single().kind)
-    }
-
-    @Test fun concurrentCallsRunOneAfterTheOther() = runTest {
-        val shell = Shell(art = art, compileDelay = 100)
-        val o = impl(shell, Events())
-        awaitAll(async { o.optimize("com.nuvio.tv") }, async { o.optimize("com.nuvio.tv") })
-        assertEquals(1, shell.maxRunning)
-        assertEquals(200, testScheduler.currentTime)
     }
 }

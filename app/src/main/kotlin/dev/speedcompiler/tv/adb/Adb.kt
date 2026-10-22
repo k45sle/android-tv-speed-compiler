@@ -30,10 +30,6 @@ class FakeAdbShell(private val responses: Map<String, ShellResult> = emptyMap())
     }
 }
 
-class FakePairing(var succeeds: Boolean = true) : Pairing {
-    override suspend fun pair(host: String, port: Int, code: String) = succeeds
-}
-
 class FakeConnectionMonitor(initial: ConnectionState = ConnectionState.Unpaired) : ConnectionMonitor {
     val flow = MutableStateFlow(initial)
     override val state: Flow<ConnectionState> = flow

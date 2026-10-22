@@ -16,7 +16,7 @@ class PairingWebServer(
     private val host: () -> String,
     private val pairingPort: () -> Int?,
     private val onFinished: () -> Unit = {},
-) : NanoHTTPD(0), WebServer {
+) : NanoHTTPD(0) {
     private val timer = Timer("pairing-expiry", true)
 
     val port get() = listeningPort

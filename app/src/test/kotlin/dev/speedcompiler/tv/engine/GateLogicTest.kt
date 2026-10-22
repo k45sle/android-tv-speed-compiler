@@ -22,9 +22,8 @@ class GateLogicTest {
         wake: Wakefulness? = Wakefulness.Awake,
         mode: GateMode,
         window: GateWindow = overnight,
-        manual: Boolean = false,
         paused: Boolean = false,
-    ) = decide(now, music, wake, mode, window, manual, paused)
+    ) = decide(now, music, wake, mode, window, paused)
 
     @Test
     fun idleRunsOnlyWhenNothingPlayingAndScreenNotAwake() {
@@ -82,17 +81,9 @@ class GateLogicTest {
     }
 
     @Test
-    fun pauseHoldsEveryAutomaticModeButManualStillRuns() {
+    fun pauseHoldsEveryAutomaticMode() {
         for (mode in GateMode.entries) {
             assertEquals("mode=$mode", paused, decideAt(now = at(23), mode = mode, paused = true))
-            assertEquals("mode=$mode", run, decideAt(now = at(23), music = true, mode = mode, paused = true, manual = true))
-        }
-    }
-
-    @Test
-    fun manualAlwaysRunsWhateverTheSignals() {
-        for (mode in GateMode.entries) for (music in listOf(false, true)) for (wake in listOf(Wakefulness.Awake, null)) {
-            assertEquals(run, decideAt(now = at(12), music = music, wake = wake, mode = mode, manual = true))
         }
     }
 

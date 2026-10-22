@@ -44,10 +44,6 @@ class AndroidPackageSystem(private val context: Context) : PackageSystem {
         pm.getChangedPackages(sequence)?.let { PackageChanges(it.sequenceNumber, it.packageNames) }
 }
 
-class PackageSourceImpl(private val system: PackageSystem) : PackageSource {
-    override suspend fun installed() = system.installed()
-}
-
 private const val KEY_BOOT_COUNT = "pkg_boot_count"
 private const val KEY_SEQUENCE = "pkg_sequence"
 

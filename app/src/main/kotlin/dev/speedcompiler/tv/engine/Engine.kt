@@ -9,10 +9,6 @@ data class OptimizeResult(val ok: Boolean, val detail: String = "", val connecti
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 
-interface PackageSource {
-    suspend fun installed(): List<InstalledPackage>
-}
-
 interface Optimizer {
     suspend fun optimize(packageName: String): OptimizeResult
 
@@ -33,15 +29,10 @@ sealed interface GateStatus {
 interface Gate {
     /** [ignorePause]: for jobs the user queued by hand, which wait for the window and device state but not the pause switch. */
     suspend fun status(ignorePause: Boolean = false): GateStatus
-    suspend fun isOpen(): Boolean = status() == GateStatus.Open
 }
 
 interface Clock {
     fun nowMillis(): Long
-}
-
-class FakePackageSource(var packages: List<InstalledPackage> = emptyList()) : PackageSource {
-    override suspend fun installed() = packages
 }
 
 class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimizer {
