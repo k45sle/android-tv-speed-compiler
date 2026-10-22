@@ -20,15 +20,17 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 const val LOGO_FRAMES = 36
+/** Sheet frame after the loop: the still banner (key frame logo, wordmark without the streak), as on the launcher banner. */
+const val LOGO_STILL = LOGO_FRAMES
 const val BANNER_W = 64
 const val BANNER_H = 36
 
-/** The animated logo and wordmark: the 36-frame 64x36 sheet (tools/pixel/logo/gen.py) at 12 fps, drawn at a whole-number scale. [stopped] shows the key frame (frame 0). */
+/** The animated logo and wordmark: the 36-frame 64x36 sheet (tools/pixel/logo/gen.py) at 12 fps, drawn at a whole-number scale. [stopped] shows the still banner [LOGO_STILL]. */
 @Composable
 fun PixelBanner(stopped: Boolean, modifier: Modifier = Modifier, size: Dp = 192.dp) {
     val sheet = ImageBitmap.imageResource(R.drawable.logo_banner)
     val frame by produceState(0, stopped) {
-        if (stopped) value = 0 else while (true) { delay(1000L / 12); value = (value + 1) % LOGO_FRAMES }
+        if (stopped) value = LOGO_STILL else while (true) { delay(1000L / 12); value = (value + 1) % LOGO_FRAMES }
     }
     Canvas(modifier.size(size, size * BANNER_H / BANNER_W)) {
         val k = maxOf(1, floor(min(this.size.width / BANNER_W, this.size.height / BANNER_H)).toInt())

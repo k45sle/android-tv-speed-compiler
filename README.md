@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/icon.png" width="108" height="108" alt="Speed Compile icon: a pixel-art cream arrow made of horizontal bars with a gold tip, on dark green">
+  <img src="docs/media/icon.png" width="108" height="108" alt="Speed Compile icon: a pixel-art gold chevron ship over streaming cream dashes, on dark green">
 </p>
 
 <h1 align="center">Speed Compile</h1>

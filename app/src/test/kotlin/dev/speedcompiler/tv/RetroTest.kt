@@ -2,6 +2,7 @@ package dev.speedcompiler.tv
 
 import dev.speedcompiler.tv.theme.Palette
 import dev.speedcompiler.tv.theme.LOGO_FRAMES
+import dev.speedcompiler.tv.theme.LOGO_STILL
 import dev.speedcompiler.tv.theme.Presets
 import dev.speedcompiler.tv.theme.Retro
 import dev.speedcompiler.tv.theme.RetroColors
@@ -65,12 +66,13 @@ class RetroTest {
         assertEquals(Retro.LOGO_BASE, xpm("banner.xpm").first['.'])
     }
 
-    @Test fun bannerSheetHoldsTheLoopAndFrameZeroMatchesTheStaticBanner() {
+    @Test fun bannerSheetHoldsTheLoopAndTheStillMatchesTheStaticBanner() {
         val sheet = BitmapFactory.decodeFile(File(pixelDir, "../../app/src/main/res/drawable-nodpi/logo_banner.png").path)
-        assertEquals(64 * LOGO_FRAMES to 36, sheet.width to sheet.height)
+        assertEquals(64 * (LOGO_FRAMES + 1) to 36, sheet.width to sheet.height)
         val (colors, rows) = xpm("banner.xpm")
-        // Frame 0 is the key frame; only the wordmark streak differs, so compare the logo half (x < 30) exactly.
-        for (y in rows.indices) for (x in 0 until 30)
-            assertEquals("pixel $x,$y", colors[rows[y][x]], sheet.getPixel(x, y))
+        for (y in rows.indices) for (x in 0 until 64)
+            assertEquals("pixel $x,$y", colors[rows[y][x]], sheet.getPixel(64 * LOGO_STILL + x, y))
+        // Frame 0's logo is the key frame too; only its wordmark carries the streak.
+        for (y in rows.indices) for (x in 0 until 30) assertEquals("frame 0 pixel $x,$y", sheet.getPixel(64 * LOGO_STILL + x, y), sheet.getPixel(x, y))
     }
 }

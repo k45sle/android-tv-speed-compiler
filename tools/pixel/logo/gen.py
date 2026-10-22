@@ -170,8 +170,9 @@ def xpm(path, rows):
 def main():
     fr = [banner(t) for t in range(LOOP)]
     still = banner(0, True)
-    # One 64x36 banner per frame, side by side (2304x36): the app draws frame t from x = 64 t.
-    image(["".join(fr[t][y] for t in range(LOOP)) for y in range(36)]).save(f"{ROOT}/app/src/main/res/drawable-nodpi/logo_banner.png")
+    # One 64x36 banner per frame, side by side (37 x 64 wide): the app draws frame t from x = 64 t; the extra last frame is the
+    # still (no streak) shown when stopped, the same image as banner.xpm.
+    image(["".join(f[y] for f in fr + [still]) for y in range(36)]).save(f"{ROOT}/app/src/main/res/drawable-nodpi/logo_banner.png")
     key = frames(*SIZE, 1)[0]
     xpm(f"{ROOT}/tools/pixel/icon.xpm", icon(key))
     xpm(f"{ROOT}/tools/pixel/banner.xpm", still)
