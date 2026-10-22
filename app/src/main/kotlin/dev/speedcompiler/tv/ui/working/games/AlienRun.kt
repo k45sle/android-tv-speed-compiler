@@ -36,6 +36,7 @@ class AlienRun(private val rng: Random = Random.Default) : Game {
     var dead = 0f; private set
     override var score = 0; private set
     override val over get() = lives <= 0
+    override val canRestart get() = over && dead > 0.25f
 
     override fun step(input: Input?) {
         t += DT

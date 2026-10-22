@@ -22,6 +22,8 @@ enum class Input { UP, DOWN, LEFT, RIGHT, SELECT }
 interface Game {
     val score: Int
     val over: Boolean
+    /** True once a finished run may be restarted with Select; games with a death animation wait for it. */
+    val canRestart: Boolean get() = over
     fun step(input: Input?)
 }
 

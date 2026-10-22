@@ -2,6 +2,7 @@ package dev.speedcompiler.tv.ui.working.games
 
 import androidx.compose.runtime.Composable
 import kotlin.random.Random
+import kotlin.math.min
 
 /** Flappy-style: gravity pulls down, Select or Up flaps. The bird stays put until the first flap. */
 class FlappyGame(private val rng: Random = Random.Default) : Game {
@@ -41,15 +42,20 @@ class FlappyGame(private val rng: Random = Random.Default) : Game {
 /** The old 50 ms tick is two 30 Hz ticks (a little slower). */
 object FlappyDef : GameDef("Flappy", "Flap through the gaps", ticksPerStep = 2) {
     override fun create(): Game = FlappyGame()
-    @Composable override fun renderer() = GameRenderer { s, g, _ ->
+    @Composable override fun renderer() = GameRenderer { s, g, best ->
         g as FlappyGame
         s.fill(GameColors.sky3)
-        val u = Surface.W / FlappyGame.W.toFloat()
-        s.rect(GameColors.gold, FlappyGame.BX * u, g.y * u, FlappyGame.SIZE * u, FlappyGame.SIZE * u)
+        // shortcut: placeholder field kept below the status line and HUD until Star Arrow replaces it (G2).
+        val top = s.hudY + 7f
+        val u = min(Surface.W / FlappyGame.W.toFloat(), (Surface.H - top) / FlappyGame.H)
+        val x0 = (Surface.W - u * FlappyGame.W) / 2f
+        s.rect(GameColors.outline, 0f, top - 1f, Surface.W.toFloat(), 1f)
+        s.rect(GameColors.gold, x0 + FlappyGame.BX * u, top + g.y * u, FlappyGame.SIZE * u, FlappyGame.SIZE * u)
         g.pipes.forEach {
-            s.rect(GameColors.green5, it.x * u, 0f, FlappyGame.PIPE_W * u, it.gapTop * u)
-            val bottom = (it.gapTop + FlappyGame.GAP) * u
-            s.rect(GameColors.green5, it.x * u, bottom, FlappyGame.PIPE_W * u, Surface.H - bottom)
+            s.rect(GameColors.green5, x0 + it.x * u, top, FlappyGame.PIPE_W * u, it.gapTop * u)
+            val bottom = top + (it.gapTop + FlappyGame.GAP) * u
+            s.rect(GameColors.green5, x0 + it.x * u, bottom, FlappyGame.PIPE_W * u, Surface.H - bottom)
         }
+        s.hud(g.score, best, dark = true)
     }
 }

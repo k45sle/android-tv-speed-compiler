@@ -56,7 +56,7 @@ private fun mapKey(key: Key): Input? = when (key) {
 /**
  * Plays [kind] full screen on a Canvas. [paused] freezes the loop, shows DONE and ignores input (the job ended).
  * [statusHeight] is the status line the caller draws over the top edge; the HUD sits below it.
- * Back calls [onExit]. [onBest] gets the score when a run ends.
+ * Back calls [onExit]. [onBest] gets the score when a run ends, on Back and when the job ends (it keeps the max).
  */
 @Composable
 fun GamePlayer(
@@ -73,7 +73,7 @@ fun GamePlayer(
     val top = with(LocalDensity.current) { statusHeight.toPx() }
     LaunchedEffect(kind, paused) { runCatching { focus.requestFocus() } }
     LaunchedEffect(kind, paused) {
-        if (paused) return@LaunchedEffect
+        if (paused) { onBest(game.score); return@LaunchedEffect }
         val clock = StepClock()
         var sub = 0
         var reported: Game? = null
@@ -95,10 +95,12 @@ fun GamePlayer(
             .onKeyEvent { e ->
                 // Only KeyDown is handled and consumed; KeyUp passes through.
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
-                if (e.key == Key.Back) { onExit(); return@onKeyEvent true }
+                if (e.key == Key.Back) { onBest(game.score); onExit(); return@onKeyEvent true }
                 val input = mapKey(e.key) ?: return@onKeyEvent false
                 if (!paused) {
-                    if (game.over && input == Input.SELECT) game = kind.def.create() else pending = input
+                    // A held jump key must not skip the death animation and restart at once.
+                    if (game.over) { if (game.canRestart && input == Input.SELECT && e.nativeKeyEvent.repeatCount == 0) game = kind.def.create() }
+                    else pending = input
                 }
                 true
             },
@@ -106,7 +108,7 @@ fun GamePlayer(
         frame
         drawRect(GameColors.sky3)
         surface.frame(this, top) {
-            renderer.draw(surface, game, best)
+            renderer.draw(surface, game, maxOf(best, game.score))
             if (paused) surface.banner("DONE", "PRESS BACK", -1, GameColors.green3)
         }
     }

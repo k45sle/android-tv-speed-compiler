@@ -26,16 +26,17 @@ import dev.speedcompiler.tv.ui.working.games.GameColors
 import kotlin.math.max
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -134,11 +135,10 @@ fun WorkingScreen(pkg: String, back: () -> Unit) {
     // Loaded in an effect, not from composition: the label must land after the first read of it, or it never shows.
     val context = LocalContext.current
     val look by produceState(AppLook(pkg), pkg) { value = withContext(Dispatchers.IO) { lookup(context, pkg) } }
-    val scope = rememberCoroutineScope()
     val bests = remember(graph) { graph.settings.values.map { it.bests } }
     WorkingHost(
         pkg, look, flows.first, flows.second, connection = connection, bests = bests,
-        saveBest = { game, score -> scope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } } },
+        saveBest = { game, score -> graph.appScope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } } },
         back = back,
     )
 }
@@ -251,7 +251,7 @@ private fun StatusLine(s: WorkingState) {
         Modifier.fillMaxWidth().height(30.dp).background(if (ok) GameColors.logo else GameColors.outline).padding(horizontal = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Speed Compiler", color = color, style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.app_name), color = color, style = MaterialTheme.typography.labelLarge)
         Text(text, color = color, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
         Text(elapsedText(s.elapsedMillis), color = color, style = MonoStyle)
         Text(if (s.job.finished) "Back to leave" else "Back to stop", color = GameColors.gold, style = MaterialTheme.typography.labelLarge)

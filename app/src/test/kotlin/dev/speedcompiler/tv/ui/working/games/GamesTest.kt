@@ -111,6 +111,15 @@ class GamesTest {
     }
 
     @Test
+    fun alienRunRestartWaitsForTheDeathAnimation() {
+        val g = AlienRun(lowest)
+        while (!g.over) g.step(null)
+        assertFalse(g.canRestart)
+        repeat(8) { g.step(null) } // 8 / 30 s > 0.25 s
+        assertTrue(g.canRestart)
+    }
+
+    @Test
     fun alienRunSpeedRampsWithScoreAndCaps() {
         val g = AlienRun(lowest)
         assertEquals(110f, g.speed, 0f)

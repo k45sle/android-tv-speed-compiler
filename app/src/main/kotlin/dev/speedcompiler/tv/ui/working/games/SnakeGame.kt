@@ -2,6 +2,7 @@ package dev.speedcompiler.tv.ui.working.games
 
 import androidx.compose.runtime.Composable
 import kotlin.random.Random
+import kotlin.math.min
 
 data class Pt(val x: Int, val y: Int)
 
@@ -51,11 +52,16 @@ class SnakeGame(val cols: Int = 16, val rows: Int = 9, private val rng: Random =
 /** One 150 ms move is five 30 Hz ticks. */
 object SnakeDef : GameDef("Snake", "Eat, grow, don't crash", ticksPerStep = 5) {
     override fun create(): Game = SnakeGame()
-    @Composable override fun renderer() = GameRenderer { s, g, _ ->
+    @Composable override fun renderer() = GameRenderer { s, g, best ->
         g as SnakeGame
         s.fill(GameColors.logo)
-        val c = Surface.W / g.cols.toFloat()
-        g.body.forEach { s.rect(GameColors.green3, it.x * c + 1, it.y * c + 1, c - 2, c - 2) }
-        s.rect(GameColors.red, g.food.x * c + 3, g.food.y * c + 3, c - 6, c - 6)
+        // shortcut: placeholder board kept below the status line and HUD until Cosmic Worm replaces it (G3).
+        val top = s.hudY + 7f
+        val c = min(Surface.W / g.cols.toFloat(), (Surface.H - top) / g.rows)
+        val x0 = (Surface.W - c * g.cols) / 2f
+        s.rect(GameColors.outline, 0f, top - 1f, Surface.W.toFloat(), 1f) // the top wall
+        g.body.forEach { s.rect(GameColors.green3, x0 + it.x * c + 1, top + it.y * c + 1, c - 2, c - 2) }
+        s.rect(GameColors.red, x0 + g.food.x * c + 3, top + g.food.y * c + 3, c - 6, c - 6)
+        s.hud(g.score, best, dark = false)
     }
 }
