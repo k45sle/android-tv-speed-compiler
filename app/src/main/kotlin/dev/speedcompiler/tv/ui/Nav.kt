@@ -1,15 +1,6 @@
 package dev.speedcompiler.tv.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,9 +9,6 @@ import dev.speedcompiler.tv.ui.home.rememberGraph
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import dev.speedcompiler.tv.theme.Button
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Text
 import dev.speedcompiler.tv.ui.apps.AppDetailScreen
 import dev.speedcompiler.tv.ui.apps.AppsScreen
 import dev.speedcompiler.tv.ui.help.DiagnosticsScreen
