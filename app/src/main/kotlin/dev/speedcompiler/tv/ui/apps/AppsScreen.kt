@@ -237,6 +237,7 @@ fun AppsContent(
         }
     }
 
+    LaunchedEffect(menu) { if (menu == null) swallowUp = false } // the dialog eats the key-up, so clear the flag on close
     menu?.let { app ->
         val focus = remember { FocusRequester() }
         LaunchedEffect(Unit) { focus.requestFocus() }

@@ -106,6 +106,26 @@ class AppsScreensTest : ComposeTestBase() {
         rule.waitUntil(5_000) { rule.onAllNodesWithText("A").fetchSemanticsNodes().isEmpty() } // the letter placeholder is gone
     }
 
+    private fun okKey(action: Int, repeat: Int = 0) {
+        rule.runOnUiThread { rule.activity.dispatchKeyEvent(android.view.KeyEvent(0, 0, action, android.view.KeyEvent.KEYCODE_DPAD_CENTER, repeat)) }
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun aRowClickWorksAfterALongPressMenuCloses() {
+        listScreen()
+        rule.onNodeWithText("Beta").requestFocus()
+        okKey(android.view.KeyEvent.ACTION_DOWN)
+        okKey(android.view.KeyEvent.ACTION_DOWN, repeat = 1) // holding OK: the first repeat is the long press
+        rule.onNodeWithText("Optimize now").assertIsDisplayed()
+        click("Add to queue") // closes the menu; the key-up went to the dialog, never to the row
+        rule.onNodeWithText("Optimize now").assertDoesNotExist()
+        rule.onNodeWithText("Gamma").requestFocus()
+        okKey(android.view.KeyEvent.ACTION_DOWN)
+        okKey(android.view.KeyEvent.ACTION_UP)
+        assertEquals(listOf("apps/detail/c.gamma"), gone)
+    }
+
     @Test
     fun searchFiltersTheList() {
         listScreen()

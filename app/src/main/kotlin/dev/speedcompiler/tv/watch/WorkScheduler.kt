@@ -54,7 +54,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         val existing = queueDao.activeFor(packageName)
         // shortcut: an update that lands during a running compile is not re-queued (REPLACE would kill the worker); the weekly verify catches it.
         if (existing != null && (existing.state == QueueState.RUNNING || existing.runNow)) return
-        schedule(existing ?: insert(packageName, source, runNow = false))
+        schedule(existing ?: insert(packageName, source, runNow = false), debounce = existing?.state != QueueState.WAITING_GATE)
     }
 
     override suspend fun optimizeNow(packageName: String) = lock.withLock { doOptimizeNow(packageName) }
@@ -92,12 +92,12 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     }
 
     /** REPLACE restarts the debounce for a waiting job. Never call it for a running one. */
-    private fun schedule(item: QueueItem) {
+    private fun schedule(item: QueueItem, debounce: Boolean = true) {
         val request = OneTimeWorkRequestBuilder<OptimizeWorker>()
             .setInputData(workDataOf(KEY_ITEM_ID to item.id))
             .setBackoffCriteria(BackoffPolicy.LINEAR, BACKOFF_MINUTES, TimeUnit.MINUTES)
         if (item.runNow) request.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-        else request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
+        else if (debounce) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
         work.enqueueUniqueWork(workName(item.packageName), ExistingWorkPolicy.REPLACE, request.build())
     }
 }

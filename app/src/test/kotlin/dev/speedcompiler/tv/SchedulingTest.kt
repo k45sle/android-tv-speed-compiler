@@ -141,6 +141,38 @@ class SchedulingTest {
         assertEquals(1, infos("a").size)
     }
 
+    @Test fun detectReschedulesAWaitingItemOnceTheGateOpens() = runBlocking {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("waiting") { state(1) == QueueState.WAITING_GATE }
+        await("backoff") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
+        runDetect(g)
+        val backedOff = infos("a").single()
+        assertEquals(1, backedOff.runAttemptCount) // gate still closed: left in its backoff
+        gate.status = GateStatus.Open
+        runDetect(g)
+        await("done") { state(1) == QueueState.DONE }
+        val fresh = infos("a").single() // REPLACE dropped the backed-off request
+        assertTrue(fresh.id != backedOff.id)
+        assertEquals(1, fresh.runAttemptCount) // its first run, not the backoff's second
+        assertEquals(0L, fresh.initialDelayMillis) // no second debounce
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
+    @Test fun detectLeavesARunningItemAlone() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        optimizer.before = { release.await() }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("running") { state(1) == QueueState.RUNNING }
+        runDetect(g)
+        assertEquals(listOf(WorkInfo.State.RUNNING), infos("a").map { it.state })
+        release.complete(Unit)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
     @Test fun weeklyVerifyRequeuesADowngradedApp() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         g.database.watchedApps().upsert(WatchedApp("b", "1"))

@@ -26,6 +26,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.toMutableStateList
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -72,12 +75,12 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     val env = deps.env
     val scope = rememberCoroutineScope()
     val first = if (mode == SetupMode.Repair) 4 else 1
-    var step by remember { mutableIntStateOf(first) }
+    var step by rememberSaveable { mutableIntStateOf(first) }
     var help by remember { mutableStateOf(false) }
     val failures = remember { mutableStateMapOf<Int, Int>() }
     val conn by deps.connection.collectAsState(ConnectionState.Unpaired)
     var apps by remember { mutableStateOf(emptyList<SetupApp>()) }
-    val picked = remember { mutableStateListOf<String>() }
+    val picked = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
 
     fun done(s: Int) = when (s) {
         2 -> env.developerOptionsOn()

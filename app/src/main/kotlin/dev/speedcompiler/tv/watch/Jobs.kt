@@ -57,7 +57,13 @@ private fun enqueueVerifyNow(context: Context) {
  */
 suspend fun runDetect(g: AppGraph) {
     val installed = g.packageSystem.installed().map { it.packageName }.toSet()
-    for (item in g.database.queue().activeNow()) if (item.packageName !in installed) g.scheduler.cancel(item.id)
+    for (item in g.database.queue().activeNow()) {
+        if (item.packageName !in installed) g.scheduler.cancel(item.id)
+        // A gate that opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.
+        else if (item.state == QueueState.WAITING_GATE && g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open) {
+            g.scheduler.enqueue(item.packageName, item.source)
+        }
+    }
     val watched = g.database.watchedApps()
     ChangeDetector(g.packageSystem, g.database.syncState()) { watched.list().filter { it.autoOptimize } }
         .detect().filter { it in installed }

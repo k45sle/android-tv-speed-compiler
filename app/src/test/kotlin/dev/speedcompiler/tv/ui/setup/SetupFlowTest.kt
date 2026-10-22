@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -30,6 +32,10 @@ class SetupFlowTest : ComposeTestBase() {
 
     private fun show(content: @Composable () -> Unit) {
         rule.setContent { SpeedTheme { content() } }
+        leaveTouchMode()
+    }
+
+    private fun leaveTouchMode() {
         // A TV has no touch mode, but a Robolectric window starts in it, where clickable rows cannot take focus.
         rule.runOnUiThread {
             val decor = rule.activity.window.decorView
@@ -94,6 +100,23 @@ class SetupFlowTest : ComposeTestBase() {
         enter() // Optimize now
         assertEquals(listOf("a.alpha", "c.gamma") to true, finished)
         assertEquals(1, backs)
+    }
+
+    @Test
+    fun keepsTheStepAndPicksAfterProcessDeath() {
+        env.developerOptions = true; env.wireless = true
+        monitor.flow.value = ConnectionState.Connected
+        val restorer = StateRestorationTester(rule)
+        restorer.setContent { SpeedTheme { SetupScreen({ backs++ }, deps = deps) } }
+        leaveTouchMode()
+        enter()
+        see("Pick apps to optimize."); tick()
+        enter() // picks Alpha, the focused row
+        rule.onNodeWithText("Continue").assertIsEnabled()
+        restorer.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        see("Pick apps to optimize.")
+        rule.onNodeWithText("Continue").assertIsEnabled()
     }
 
     @Test
