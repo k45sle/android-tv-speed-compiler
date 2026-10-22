@@ -43,6 +43,8 @@ android {
             // Absolute, since tests run in app/ and a relative ../ path broke before.
             it.systemProperty("pixelDir", rootProject.file("tools/pixel").absolutePath)
             it.inputs.dir(rootProject.file("tools/pixel"))
+            it.systemProperty("gameArtDir", file("src/main/res/drawable-nodpi").absolutePath)
+            it.inputs.dir(file("src/main/res/drawable-nodpi"))
         }
     }
     // NanoHTTPD and Conscrypt ship duplicate license files

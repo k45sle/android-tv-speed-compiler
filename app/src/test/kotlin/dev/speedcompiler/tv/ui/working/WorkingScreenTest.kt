@@ -7,7 +7,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.input.key.Key
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.SpeedTheme
@@ -22,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 class WorkingScreenTest : ComposeTestBase() {
     private val pkg = "a.alpha"
     private val base = 1_000_000L
@@ -57,6 +60,8 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("#1 in queue, about 1 min").assertIsDisplayed()
     }
 
+    private val GAME = "Alien Run game. Arrow keys move, Select to act or restart, Back to stop playing."
+
     private val queue = MutableStateFlow(listOf(QueueEntry(item(1, QueueState.RUNNING), 0, Eta.None)))
     private val history = MutableStateFlow(emptyList<QueueItem>())
     private var left = 0
@@ -81,22 +86,50 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("Usually about 2 min").assertIsDisplayed()
         rule.onNodeWithText("00:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Play Dino runner. Jump the cacti").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Flappy. Flap through the gaps").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running.png")
     }
 
     @Test
-    fun headerAndGameFitOnScreenWhilePlaying() {
+    fun gameFillsTheScreenWithAStatusLineOverTheTopEdge() {
         show()
-        rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").invokeClick()
+        rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").invokeClick()
         rule.mainClock.advanceTimeBy(1_000)
-        val title = rule.onNodeWithText("Optimizing Alpha").fetchSemanticsNode().boundsInRoot
-        val hint = rule.onNodeWithText("Arrows to move, Select to act, Back to stop playing").fetchSemanticsNode().boundsInRoot
         val root = rule.onRoot().fetchSemanticsNode().boundsInRoot
-        assertTrue("title top ${title.top}", title.top >= 0f)
-        assertTrue("hint bottom ${hint.bottom} of ${root.height}", hint.bottom <= root.height)
+        val game = rule.onNodeWithContentDescription(GAME).fetchSemanticsNode().boundsInRoot
+        assertEquals(root, game)
+        val status = rule.onNodeWithText("Optimizing Alpha").fetchSemanticsNode().boundsInRoot
+        assertTrue("status top ${status.top}", status.top >= 0f && status.bottom < root.height / 4)
+        rule.onNodeWithText("Back to stop").assertIsDisplayed()
+        rule.onNodeWithText("00:01").assertIsDisplayed()
+        rule.onNodeWithText("Play while you wait").assertDoesNotExist()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_playing.png")
+    }
+
+    @Test
+    fun backLeavesTheGameNotTheScreen() {
+        show()
+        rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").invokeClick()
+        rule.mainClock.advanceTimeBy(500)
+        rule.onNodeWithContentDescription(GAME).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
+        rule.mainClock.advanceTimeBy(100)
+        rule.onNodeWithText("Play while you wait").assertIsDisplayed()
+        assertEquals(0, left)
+    }
+
+    @Test
+    fun finishedRunSavesBestScoreForTheGame() {
+        val saved = mutableListOf<Pair<String, Int>>()
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            SpeedTheme { WorkingHost(pkg, AppLook("Alpha"), queue, history, { base + rule.mainClock.currentTime }, saveBest = { g, s -> saved += g to s }) { left++ } }
+        }
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").invokeClick()
+        rule.mainClock.advanceTimeBy(40_000) // never jumps: three hits end the run
+        assertEquals(1, saved.size)
+        assertEquals("AlienRun", saved[0].first)
     }
 
     @Test
@@ -117,13 +150,18 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.mainClock.advanceTimeBy(20_000)
         rule.onNodeWithText("00:20").assertIsDisplayed()
         rule.onNodeWithContentDescription("Snake game. Arrow keys move, Select to act or restart, Back to stop playing.").assertIsDisplayed()
+        rule.onNodeWithText("Back to stop").assertIsDisplayed()
 
         finish(item(1, QueueState.DONE).copy(finishedAt = base + 20_000))
         rule.mainClock.advanceTimeBy(2_000)
-        rule.onNodeWithText("Optimized. You can leave now.").assertIsDisplayed()
-        rule.onNodeWithText("Game paused. Press Done when you are ready.").assertIsDisplayed()
+        rule.onNodeWithText("Alpha optimized").assertIsDisplayed() // status line turns to the result; the game stays frozen behind DONE
+        rule.onNodeWithText("Back to leave").assertIsDisplayed()
         rule.onNodeWithText("00:20").assertIsDisplayed() // the clock stopped with the job
         assertEquals(0, left) // not auto-closed
+        rule.onNodeWithContentDescription(GAME.replace("Alien Run", "Snake")).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
+        rule.mainClock.autoAdvance = true // nothing else requests a frame once the game is frozen
+        rule.waitForIdle()
+        rule.mainClock.autoAdvance = false
         rule.onNodeWithContentDescription("Done, leave this screen").invokeClick()
         assertEquals(1, left)
     }

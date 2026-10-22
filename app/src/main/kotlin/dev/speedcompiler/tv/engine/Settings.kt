@@ -28,6 +28,8 @@ data class SettingsValues(
     val customHue: Float? = null,
     /** Set when the first-run Setup finishes. */
     val setupDone: Boolean = false,
+    /** Best score per game, keyed by the game's id. */
+    val bests: Map<String, Int> = emptyMap(),
 )
 
 interface Settings {
@@ -46,6 +48,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val accentPreset = intPreferencesKey("accent_preset")
     private val customHue = floatPreferencesKey("custom_hue")
     private val setupDone = booleanPreferencesKey("setup_done")
+    private val BEST = "best_"
 
     private fun read(p: Preferences): SettingsValues {
         val d = SettingsValues()
@@ -60,6 +63,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             accentPreset = p[accentPreset] ?: d.accentPreset,
             customHue = p[customHue],
             setupDone = p[setupDone] ?: d.setupDone,
+            bests = p.asMap().mapNotNull { (k, v) -> if (k.name.startsWith(BEST) && v is Int) k.name.removePrefix(BEST) to v else null }.toMap(),
         )
     }
 
@@ -78,6 +82,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset
             p[setupDone] = new.setupDone
+            new.bests.forEach { (game, score) -> p[intPreferencesKey(BEST + game)] = score }
             new.customHue?.let { p[customHue] = it } ?: p.remove(customHue)
         }
     }

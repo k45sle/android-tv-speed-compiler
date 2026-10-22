@@ -22,6 +22,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import dev.speedcompiler.tv.ui.working.games.GameColors
+import kotlin.math.max
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -115,6 +122,8 @@ class WorkingState(
     val label: String, val art: ImageBitmap?, val job: JobView, val elapsedMillis: Long, val avgMillis: Long,
     /** Null until the first reading, so a disconnected open never flashes the raw job state. */
     val connection: ConnectionState? = ConnectionState.Connected,
+    /** Best score per [GameKind] name. */
+    val bests: Map<String, Int> = emptyMap(),
 )
 
 @Composable
@@ -125,7 +134,13 @@ fun WorkingScreen(pkg: String, back: () -> Unit) {
     // Loaded in an effect, not from composition: the label must land after the first read of it, or it never shows.
     val context = LocalContext.current
     val look by produceState(AppLook(pkg), pkg) { value = withContext(Dispatchers.IO) { lookup(context, pkg) } }
-    WorkingHost(pkg, look, flows.first, flows.second, connection = connection, back = back)
+    val scope = rememberCoroutineScope()
+    val bests = remember(graph) { graph.settings.values.map { it.bests } }
+    WorkingHost(
+        pkg, look, flows.first, flows.second, connection = connection, bests = bests,
+        saveBest = { game, score -> scope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } } },
+        back = back,
+    )
 }
 
 /** Observes the job (it runs in WorkManager, so leaving never cancels it). Elapsed comes from timestamps, not counted ticks. */
@@ -133,8 +148,10 @@ fun WorkingScreen(pkg: String, back: () -> Unit) {
 fun WorkingHost(
     pkg: String, look: AppLook, queue: Flow<List<QueueEntry>>, history: Flow<List<QueueItem>>,
     clock: () -> Long = System::currentTimeMillis,
-    connection: Flow<ConnectionState> = flowOf(ConnectionState.Connected), back: () -> Unit,
+    connection: Flow<ConnectionState> = flowOf(ConnectionState.Connected),
+    bests: Flow<Map<String, Int>> = flowOf(emptyMap()), saveBest: (String, Int) -> Unit = { _, _ -> }, back: () -> Unit,
 ) {
+    val best by bests.collectAsState(emptyMap())
     val openedAt = rememberSaveable { clock() }
     val q by queue.collectAsState(emptyList())
     val h by history.collectAsState(emptyList())
@@ -148,16 +165,24 @@ fun WorkingHost(
     }
     val end = if (job.finished) run?.finishedAt ?: now else now
     val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
-    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn), back)
+    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best), back, saveBest)
 }
 
 @Composable
-fun WorkingContent(s: WorkingState, back: () -> Unit) {
+fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) -> Unit = { _, _ -> }) {
     var playing by remember { mutableStateOf<GameKind?>(null) }
     val done = remember { FocusRequester() }
     val first = remember { FocusRequester() }
     LaunchedEffect(s.job.finished, playing) {
-        if (s.job.finished) done.requestFocus() else if (playing == null) runCatching { first.requestFocus() }
+        // The header (and its buttons) is gone while a game fills the screen.
+        if (playing == null) runCatching { if (s.job.finished) done.requestFocus() else first.requestFocus() }
+    }
+    playing?.let { kind ->
+        Box(Modifier.fillMaxSize()) {
+            GamePlayer(kind, paused = s.job.finished, best = s.bests[kind.name] ?: 0, onBest = { saveBest(kind.name, it) }, onExit = { playing = null })
+            StatusLine(s)
+        }
+        return
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 27.dp),
@@ -198,27 +223,38 @@ fun WorkingContent(s: WorkingState, back: () -> Unit) {
                 }
             }
         }
-        val kind = playing
-        // Hidden while playing: header + title + game + hint would overflow 540dp and focus would scroll the header away.
-        if (kind == null) Text("Play while you wait", style = MaterialTheme.typography.titleMedium)
-        if (kind == null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                GameKind.entries.forEachIndexed { i, k ->
-                    Button(
-                        { playing = k },
-                        (if (i == 0) Modifier.focusRequester(first) else Modifier).semantics { contentDescription = "Play ${k.title}. ${k.hint}" },
-                    ) {
-                        Column { Text(k.title); Text(k.hint, style = MaterialTheme.typography.bodySmall) }
-                    }
+        Text("Play while you wait", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+            GameKind.entries.forEachIndexed { i, k ->
+                Button(
+                    { playing = k },
+                    (if (i == 0) Modifier.focusRequester(first) else Modifier).semantics { contentDescription = "Play ${k.title}. ${k.hint}" },
+                ) {
+                    Column { Text(k.title); Text(k.hint, style = MaterialTheme.typography.bodySmall) }
                 }
             }
-        } else {
-            GamePlayer(kind, paused = s.job.finished, onExit = { playing = null })
-            Text(
-                if (s.job.finished) "Game paused. Press Done when you are ready." else "Arrows to move, Select to act, Back to stop playing",
-                style = MaterialTheme.typography.bodyMedium,
-            )
         }
+    }
+}
+
+/** Slim bar over the top edge of the full-screen game: what is compiling, the clock, and how to leave. */
+@Composable
+private fun StatusLine(s: WorkingState) {
+    val ok = s.job is JobView.Done
+    val text = when (val j = s.job) {
+        is JobView.Done -> "${s.label} optimized"
+        is JobView.Failed, JobView.CouldntStart -> "${s.label} didn't finish"
+        else -> "Optimizing ${s.label}"
+    }
+    val color = if (ok) GameColors.green3 else GameColors.cream
+    Row(
+        Modifier.fillMaxWidth().height(30.dp).background(if (ok) GameColors.logo else GameColors.outline).padding(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Speed Compiler", color = color, style = MaterialTheme.typography.labelLarge)
+        Text(text, color = color, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        Text(elapsedText(s.elapsedMillis), color = color, style = MonoStyle)
+        Text(if (s.job.finished) "Back to leave" else "Back to stop", color = GameColors.gold, style = MaterialTheme.typography.labelLarge)
     }
 }
 

@@ -1,0 +1,8 @@
+Pixel Platformer (1.2), created and distributed by Kenney (www.kenney.nl)
+https://kenney.nl/assets/pixel-platformer
+
+License: Creative Commons Zero (CC0 1.0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+The Alien Run character and heart are redrawn from this pack (recolored to the game palette)
+by tools/pixel/games/. Credit is not required by the license; it is given anyway.
