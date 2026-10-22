@@ -93,8 +93,8 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         rule.mainClock.advanceTimeBy(600)
         val out = File("build/outputs/roborazzi/readme/$name.png")
         rule.onRoot().captureRoboImage(out.path)
-        // README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.
-        System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png").absoluteFile, overwrite = true) }
+        // Copies only when recording, else out is missing or stale. README_SHOTS_DIR must be absolute (tests run in app/); run with cleanTest so Gradle does not skip it.
+        if (System.getProperty("roborazzi.test.record") == "true") System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "$name.png").absoluteFile, overwrite = true) }
     }
 
     private fun optimized(pkg: String, agoMin: Long) =
