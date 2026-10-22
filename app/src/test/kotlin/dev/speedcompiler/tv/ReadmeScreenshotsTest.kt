@@ -148,7 +148,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
 
     @Test fun workingDark() = shoot(
         "working-dark", true,
-        act = { rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").performSemanticsAction(SemanticsActions.OnClick) },
+        act = { rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").performSemanticsAction(SemanticsActions.OnClick) },
     ) {
         WorkingContent(WorkingState("Retro Arcade", banner(demo[1]).asImageBitmap(), JobView.Running, 72_000, 120_000), {})
     }

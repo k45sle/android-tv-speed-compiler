@@ -30,13 +30,13 @@ import dev.speedcompiler.tv.ui.working.games.Game
 import dev.speedcompiler.tv.ui.working.games.GameColors
 import dev.speedcompiler.tv.ui.working.games.GameDef
 import dev.speedcompiler.tv.ui.working.games.Input
-import dev.speedcompiler.tv.ui.working.games.SnakeDef
+import dev.speedcompiler.tv.ui.working.games.CosmicWormDef
 import dev.speedcompiler.tv.ui.working.games.StepClock
 import dev.speedcompiler.tv.ui.working.games.Surface
 
 /** The games in picker order. Each entry's logic, art and tuning live in its own file under games/. */
 enum class GameKind(val def: GameDef) {
-    Snake(SnakeDef),
+    CosmicWorm(CosmicWormDef),
     AlienRun(AlienRunDef),
     Flappy(FlappyDef);
 

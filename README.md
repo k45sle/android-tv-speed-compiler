@@ -42,7 +42,7 @@
     <td><img src="docs/media/appdetail-dark.png" width="400" alt="App detail: an optimized app with Optimize now, Stop watching and an auto-optimize switch"></td>
   </tr>
   <tr>
-    <td><img src="docs/media/working-dark.png" width="400" alt="Working screen: an app being optimized, with a timer and a Snake game to play while waiting"></td>
+    <td><img src="docs/media/working-dark.png" width="400" alt="Working screen: an app being optimized, with a timer and a game to play while waiting"></td>
     <td><img src="docs/media/settings-dark.png" width="400" alt="Settings: when to optimize, pause, theme and accent colour"></td>
   </tr>
 </table>
@@ -62,7 +62,7 @@ The app was written with the Nuvio community in mind, but it works with any app 
 - Watches the apps you pick and queues a compile when one of them updates.
 - Waits until nothing is playing, or until a time window you set, so it does not slow down what you are watching.
 - Reconnects by itself after the TV restarts, as long as Wireless debugging stays on.
-- Lets you play Snake, a runner or a flappy game while a compile runs.
+- Lets you play Alien Run, a flappy game or Cosmic Worm while a compile runs.
 - Shows a history of each job, with the reason when one fails.
 - Has eight accent colours plus a custom one, and light and dark themes.
 

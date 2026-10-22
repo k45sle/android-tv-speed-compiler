@@ -85,7 +85,7 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("Optimizing Alpha").assertIsDisplayed()
         rule.onNodeWithText("Usually about 2 min").assertIsDisplayed()
         rule.onNodeWithText("00:00").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Flappy. Flap through the gaps").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running.png")
@@ -146,10 +146,10 @@ class WorkingScreenTest : ComposeTestBase() {
     @Test
     fun jobFinishingPausesTheGameAndShowsResult() {
         show()
-        rule.onNodeWithContentDescription("Play Snake. Eat, grow, don't crash").invokeClick()
+        rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").invokeClick()
         rule.mainClock.advanceTimeBy(20_000)
         rule.onNodeWithText("00:20").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Snake game. Arrow keys move, Select to act or restart, Back to stop playing.").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Cosmic Worm game. Arrow keys move, Select to act or restart, Back to stop playing.").assertIsDisplayed()
         rule.onNodeWithText("Back to stop").assertIsDisplayed()
 
         finish(item(1, QueueState.DONE).copy(finishedAt = base + 20_000))
@@ -158,7 +158,7 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("Back to leave").assertIsDisplayed()
         rule.onNodeWithText("00:20").assertIsDisplayed() // the clock stopped with the job
         assertEquals(0, left) // not auto-closed
-        rule.onNodeWithContentDescription(GAME.replace("Alien Run", "Snake")).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
+        rule.onNodeWithContentDescription(GAME.replace("Alien Run", "Cosmic Worm")).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
         rule.mainClock.autoAdvance = true // nothing else requests a frame once the game is frozen
         rule.waitForIdle()
         rule.mainClock.autoAdvance = false
