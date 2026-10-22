@@ -83,7 +83,7 @@ private fun DrawScope.artText(s: String, x: Int, y: Int, c: Color, u: Float) {
  * the others show a still frame. Select opens the game full screen through [play].
  */
 @Composable
-fun ArcadePicker(play: (GameKind) -> Unit, first: FocusRequester) {
+fun ArcadePicker(play: (GameKind) -> Unit, first: FocusRequester, firstKind: GameKind = GameKind.entries.first()) {
     var focused by remember { mutableIntStateOf(-1) }
     // Read only inside the draw lambdas, so the bulbs and the blink redraw without recomposing.
     var nanos by remember { mutableLongStateOf(0L) }
@@ -101,7 +101,7 @@ fun ArcadePicker(play: (GameKind) -> Unit, first: FocusRequester) {
         }
         GameKind.entries.forEachIndexed { i, kind ->
             Cabinet(
-                kind, CAB_X[i], CAB_ART[i], focused == i, if (i == 0) first else null,
+                kind, CAB_X[i], CAB_ART[i], focused == i, if (kind == firstKind) first else null,
                 { if (it) focused = i else if (focused == i) focused = -1 }, { play(kind) },
             )
         }

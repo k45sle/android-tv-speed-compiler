@@ -120,6 +120,7 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithContentDescription(GAME).performKeyInput { keyDown(Key.Back); keyUp(Key.Back) }
         rule.mainClock.advanceTimeBy(100)
         rule.onNodeWithContentDescription("Play while you wait").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsFocused()
         assertEquals(0, left)
     }
 

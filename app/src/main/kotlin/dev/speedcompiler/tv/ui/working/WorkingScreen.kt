@@ -172,6 +172,7 @@ fun WorkingHost(
 @Composable
 fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) -> Unit = { _, _ -> }) {
     var playing by remember { mutableStateOf<GameKind?>(null) }
+    var last by remember { mutableStateOf(GameKind.entries.first()) } // Back from a game lands on its cabinet
     val done = remember { FocusRequester() }
     val first = remember { FocusRequester() }
     LaunchedEffect(s.job.finished, playing) {
@@ -224,7 +225,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
                 }
             }
         }
-        ArcadePicker({ playing = it }, first)
+        ArcadePicker({ last = it; playing = it }, first, last)
     }
 }
 

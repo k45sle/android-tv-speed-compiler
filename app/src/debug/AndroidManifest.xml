@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: opens the arcade without a paired job. adb shell am start -n dev.speedcompiler.tv/.DebugWorkingActivity -->
+        <activity android:name=".DebugWorkingActivity" android:exported="true" />
+    </application>
+</manifest>
