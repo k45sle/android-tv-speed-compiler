@@ -130,7 +130,7 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         val P_WIDE = booleanArrayOf(true, true, true, true, false, false, false, false)
         val P_PAIR = intArrayOf(0, 0, 1, 1, 2, 2, 3, 3)
         val P_X = intArrayOf(14 + 4 * 20, 14 + 4 * 20, 14 + 10 * 20, 14 + 10 * 20, 0, 310, 0, 310)
-        val P_Y = intArrayOf(17, 168, 17, 168, 33 + 1 * 20, 33 + 1 * 20, 33 + 5 * 20, 33 + 5 * 20)
+        val P_Y = intArrayOf(18, 169, 18, 169, 34 + 1 * 20, 34 + 1 * 20, 34 + 5 * 20, 34 + 5 * 20)
     }
 }
 
@@ -177,10 +177,10 @@ private class WormRenderer(
         val pf = floor(g.t * 8f).toInt() % 4
         for (i in 0 until CosmicWorm.PORTALS) {
             val wide = CosmicWorm.P_WIDE[i]
-            val w = if (wide) 16 else 10; val h = if (wide) 14 else 17
+            val w = if (wide) 13 else 10; val h = if (wide) 12 else 13
             s.img(if (wide) portalW else portalN, (CosmicWorm.P_PAIR[i] * 4 + pf) * w, 0, w, h, CosmicWorm.P_X[i].toFloat(), CosmicWorm.P_Y[i].toFloat())
             val f = g.flash[i]
-            if (f >= 0f) s.img(sparkle, min(3, (f / 0.1f).toInt()) * 11, 0, 11, 11, (CosmicWorm.P_X[i] + if (wide) 2 else -1).toFloat(), (CosmicWorm.P_Y[i] + if (wide) 1 else 3).toFloat())
+            if (f >= 0f) s.img(sparkle, min(3, (f / 0.1f).toInt()) * 11, 0, 11, 11, (CosmicWorm.P_X[i] + if (wide) 1 else -1).toFloat(), (CosmicWorm.P_Y[i] + if (wide) 0 else 1).toFloat())
         }
         if (g.sparkle >= 0f) s.img(sparkle, min(3, (g.sparkle / 0.1f).toInt()) * 11, 0, 11, 11, (20 + 20 * g.sparkleX - 5).toFloat(), (40 + 20 * g.sparkleY - 12).toFloat())
         s.shake = 0

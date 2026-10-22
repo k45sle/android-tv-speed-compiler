@@ -226,7 +226,7 @@ PORTAL_COLORS = [("blue", "sky2", "white"), ("plum", "pink", "cream2"), ("brown"
 
 def portals():
     """Swirling portals for the force-field gates: 4 pair colors x 4 frames, wide (top/bottom gates) and narrow (side gates)."""
-    for name, (w, h) in (("cg_portal_w", (16, 14)), ("cg_portal_n", (10, 17))):
+    for name, (w, h) in (("cg_portal_w", (13, 12)), ("cg_portal_n", (10, 13))):  # odd span: centred in the 15 px gap between posts
         frames = []
         for cols in PORTAL_COLORS:
             for f in range(4):
