@@ -87,7 +87,7 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.onNodeWithText("00:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Play Flappy. Flap through the gaps").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Play Star Arrow. Fly through the rocks").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running.png")
     }
 

@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.withFrameNanos
 import dev.speedcompiler.tv.ui.working.games.AlienRunDef
-import dev.speedcompiler.tv.ui.working.games.FlappyDef
+import dev.speedcompiler.tv.ui.working.games.StarArrowDef
 import dev.speedcompiler.tv.ui.working.games.Game
 import dev.speedcompiler.tv.ui.working.games.GameColors
 import dev.speedcompiler.tv.ui.working.games.GameDef
@@ -38,7 +38,7 @@ import dev.speedcompiler.tv.ui.working.games.Surface
 enum class GameKind(val def: GameDef) {
     CosmicWorm(CosmicWormDef),
     AlienRun(AlienRunDef),
-    Flappy(FlappyDef);
+    StarArrow(StarArrowDef);
 
     val title get() = def.title
     val hint get() = def.hint

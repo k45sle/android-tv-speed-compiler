@@ -13,28 +13,6 @@ private val lowest = object : Random() {
 
 class GamesTest {
     @Test
-    fun flappyWaitsForFirstFlapThenFlapsAndFalls() {
-        val g = FlappyGame(lowest)
-        repeat(10) { g.step(null) }
-        assertEquals(FlappyGame.H / 2, g.y)
-        g.step(Input.SELECT)
-        assertEquals(FlappyGame.H / 2 - 3, g.y)
-        repeat(100) { g.step(null) }
-        assertTrue(g.over) // fell to the floor
-    }
-
-    @Test
-    fun flappyScoresWhenPassingPipesAndDiesOnTheNext() {
-        val g = FlappyGame(lowest) // every gap spans y 6..32
-        var steps = 0
-        while (g.score < 2 && steps++ < 400) g.step(if (g.y >= 22) Input.SELECT else null)
-        assertFalse(g.over)
-        assertEquals(2, g.score)
-        repeat(100) { g.step(null) } // stop flapping
-        assertTrue(g.over)
-    }
-
-    @Test
     fun alienRunJumpsAndLandsWithDust() {
         val g = AlienRun(lowest)
         g.step(Input.SELECT)
