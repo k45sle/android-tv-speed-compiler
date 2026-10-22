@@ -72,9 +72,17 @@ val QrWhite = Color.White
  * Shape and size change, so focus never relies on color alone. [onClick] null means not clickable.
  */
 @Composable
-fun Modifier.focusFx(scale: Float, radius: Dp, onClick: (() -> Unit)? = null): Modifier {
-    val src = remember { MutableInteractionSource() }
-    val focused by src.collectIsFocusedAsState()
+fun Modifier.focusFx(scale: Float, radius: Dp, onClick: (() -> Unit)? = null): Modifier = focusFx(scale, radius, remember { MutableInteractionSource() }, false, onClick)
+
+/** [focusFx] with the interaction source exposed (for pieces that restyle on focus) and [forceFocus] for the kit gallery. */
+@Composable
+fun Modifier.focusFx(
+    scale: Float, radius: Dp,
+    src: MutableInteractionSource, forceFocus: Boolean,
+    onClick: (() -> Unit)? = null,
+): Modifier {
+    val real by src.collectIsFocusedAsState()
+    val focused = real || forceFocus
     val s by animateFloatAsState(if (focused) scale else 1f, label = "focusScale")
     val accent = LocalSpeedColors.current.accent
     return this
@@ -95,51 +103,29 @@ fun Modifier.focusFx(scale: Float, radius: Dp, onClick: (() -> Unit)? = null): M
 
 enum class Tone { Ok, Warn, Error, Info, Neutral }
 
+/** Lamp plus a VT323 status word; Info blinks (it means waiting). */
 @Composable
 fun StatusPill(text: String, tone: Tone, modifier: Modifier = Modifier) {
-    val c = LocalSpeedColors.current
-    val color = when (tone) {
-        Tone.Ok -> c.ok
-        Tone.Warn -> c.warn
-        Tone.Error -> c.error
-        Tone.Info -> c.accent
-        Tone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Row(
-        modifier.height(20.dp).clip(RoundedCornerShape(RowRadius)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(6.dp).background(color))
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.labelSmall, color = color)
+    val color = toneColor(tone)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Lamp(color, waiting = tone == Tone.Info)
+        Spacer(Modifier.width(8.dp))
+        PixelText(text, color = color)
     }
 }
 
-/** Hairline-bordered card; focusable when [onClick] is given (1.05x on focus). */
+/** Arcade cabinet: [title] on the name strip, [trailing] in the screen bezel, [body] as the status word; focusable when [onClick] is given. */
 @Composable
 fun BannerCard(
     title: String,
     modifier: Modifier = Modifier,
     body: String? = null,
     onClick: (() -> Unit)? = null,
+    tone: Tone = Tone.Neutral,
     trailing: @Composable (() -> Unit)? = null,
-) {
-    val c = LocalSpeedColors.current
-    val shape = RoundedCornerShape(CardRadius)
-    Row(
-        modifier.focusFx(1.05f, CardRadius, onClick).clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant).border(2.dp, c.hairline, shape).padding(Space.x3),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1 / 2)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            if (body != null) Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (trailing != null) trailing()
-    }
-}
+) = CabinetCard(title, modifier, body, tone, onClick) { trailing?.invoke() }
 
-/** One list row: title, optional subtitle, optional trailing slot (1.025x on focus). */
+/** One list row: title, optional subtitle, optional trailing slot. */
 @Composable
 fun ListRow(
     title: String,
@@ -147,34 +133,24 @@ fun ListRow(
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
-) {
-    val shape = RoundedCornerShape(RowRadius)
-    Row(
-        modifier.fillMaxWidth().focusFx(1.025f, RowRadius, onClick).clip(shape)
-            .border(2.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (trailing != null) trailing()
-    }
-}
+) = SelectRow(title, modifier, subtitle, onClick, trailing = trailing)
 
-/** "Step 2 of 4" in mono above a heading. */
+/** "STEP 2 OF 4", the stage meter, then the heading. */
 @Composable
 fun StepHeader(step: Int, total: Int, title: String, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.x1 / 2)) {
-        Text("Step $step of $total", style = MonoStyle.copy(fontSize = 14.sp), color = LocalSpeedColors.current.accent)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+            PixelText("Step $step of $total", color = LocalSpeedColors.current.accent)
+            StageMeter(step, total)
+        }
         Text(title, style = MaterialTheme.typography.headlineMedium)
     }
 }
 
-/** White container for a QR code, in light and dark. */
+/** Cabinet screen around a QR code: line-colored bezel, hard shadow, and a white panel so scanners can read it. */
 @Composable
 fun QrCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.clip(RoundedCornerShape(CardRadius)).background(QrWhite).padding(Space.x2)) { content() }
+    Box(modifier.hardShadow(6.dp).background(QrWhite).border(6.dp, LocalSpeedColors.current.hairline).padding(Space.x2 + 6.dp)) { content() }
 }
 
 /** Hue picker for Custom: focus it and press D-pad left/right to move by 5 degrees. */
@@ -240,18 +216,16 @@ fun Modifier.remembersFocus(mem: FocusMemory, id: String): Modifier {
     return focusRequester(r).onFocusChanged { if (it.hasFocus) { mem.id.value = id; mem.pending = false; mem.touched.value = true } }
 }
 
-/** tv Button with the retro shape: near-square corners and a 2 dp border that turns accent on focus. */
+/** Arcade button; [secondary] uses the container color instead of the accent. Text content is set in VT323 (use ArcadeButton(label) for capitals). */
 @Composable
-fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    val c = LocalSpeedColors.current
-    val shape = RoundedCornerShape(RowRadius)
-    androidx.tv.material3.Button(
-        onClick, modifier, enabled = enabled,
-        shape = ButtonDefaults.shape(shape),
-        border = ButtonDefaults.border(
-            border = Border(BorderStroke(2.dp, c.hairline), shape = shape),
-            focusedBorder = Border(BorderStroke(2.dp, c.accent), shape = shape),
-        ),
-        content = content,
-    )
+fun Button(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    secondary: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    if (secondary) ArcadeButton(onClick, modifier, enabled, cs.primaryContainer, cs.onPrimaryContainer, content = content)
+    else ArcadeButton(onClick, modifier, enabled, content = content)
 }

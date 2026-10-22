@@ -59,7 +59,7 @@ class SetupFlowTest : ComposeTestBase() {
         rule.waitForIdle()
     }
 
-    private fun see(text: String) = rule.onNodeWithText(text).assertIsDisplayed()
+    private fun see(text: String) = rule.onNodeWithText(text, ignoreCase = true).assertIsDisplayed()
 
     private fun shot(name: String) = rule.onRoot().captureRoboImage("build/outputs/roborazzi/setup_$name.png")
 

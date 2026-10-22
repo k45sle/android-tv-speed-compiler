@@ -158,14 +158,14 @@ class AppsScreensTest : ComposeTestBase() {
         longPress("Beta"); click("Details")
         assertEquals(listOf("enqueue:a.alpha", "watch:b.beta", "optimizeNow:c.gamma"), scheduler.calls)
         assertEquals(listOf("working/c.gamma", "apps/detail/b.beta"), gone)
-        rule.onAllNodesWithText("Queued", substring = true).assertCountEquals(2) // Alpha and Gamma
+        rule.onAllNodesWithText("Queued", substring = true, ignoreCase = true).assertCountEquals(2) // Alpha and Gamma
     }
 
     @Test
     fun watchedAppOffersStopWatching() {
         watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1))
         listScreen()
-        rule.onNodeWithText("Optimized").assertIsDisplayed()
+        rule.onNodeWithText("Optimized", ignoreCase = true).assertIsDisplayed()
         longPress("Alpha"); click("Stop watching")
         assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
     }
