@@ -278,4 +278,86 @@ class SchedulingTest {
         assertTrue(g.database.queue().activeNow().isEmpty())
         assertEquals("verify_unknown", g.database.events().recent(5).first().first().kind)
     }
+
+    @Test fun lostConnectionIsRetriedFiveTimesThenFails() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "lost", connectionLost = true)
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        for (n in 1..4) {
+            await("try $n") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == n } }
+            assertEquals(QueueState.WAITING_GATE, state(1))
+            driver.setAllConstraintsMet(infos("a").single().id)
+        }
+        await("failed") { state(1) == QueueState.FAILED }
+        assertEquals(5, optimizer.optimized.size)
+        assertEquals("lost", g.database.queue().get(1)!!.failureReason)
+    }
+
+    @Test fun aFailedCompileQueuesOneRetrySixHoursLater() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        await("retry scheduled") { wm.getWorkInfosForUniqueWork("retry:a").get().isNotEmpty() }
+        val retry = wm.getWorkInfosForUniqueWork("retry:a").get().single()
+        assertEquals(WorkInfo.State.ENQUEUED, retry.state)
+        assertEquals(6 * 3_600_000L, retry.initialDelayMillis)
+        driver.setInitialDelayMet(retry.id)
+        await("queued again") { g.database.queue().activeNow().any { it.packageName == "a" } }
+        skipDelay("a")
+        await("failed again") { optimizer.optimized.size == 2 && g.database.queue().activeNow().isEmpty() }
+        assertTrue(wm.getWorkInfosForUniqueWork("retry:a").get().none { it.state == WorkInfo.State.ENQUEUED }) // only one retry
+    }
+
+    @Test fun aLaterSuccessCancelsThePendingRetry() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("retry scheduled") { wm.getWorkInfosForUniqueWork("retry:a").get().isNotEmpty() }
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true)
+        await("failed") { state(1) == QueueState.FAILED }
+        g.scheduler.retry(1)
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        await("retry cancelled") { wm.getWorkInfosForUniqueWork("retry:a").get().single().state == WorkInfo.State.CANCELLED }
+    }
+
+    @Test fun aFailureThatNeedsTheUserGetsNoDelayedRetry() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "pair again", terminal = true)
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        await("worker finished") { infos("a").single().state == WorkInfo.State.SUCCEEDED }
+        assertTrue(wm.getWorkInfosForUniqueWork("retry:a").get().isEmpty())
+    }
+
+    @Test fun aCancelGivesTheNextJobItsFullConnectionTries() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "lost", connectionLost = true)
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("one try counted") { g.database.syncState().get("lost:a") == "1" }
+        g.scheduler.cancel(1)
+        assertEquals("0", g.database.syncState().get("lost:a"))
+    }
+
+    @Test fun anExceptionInTheRunMarksTheRowFailed() = runBlocking {
+        g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("lost:a", "3"))
+        optimizer.before = { throw IllegalStateException("boom") }
+        g.scheduler.optimizeNow("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        assertTrue(g.database.queue().get(1)!!.failureReason!!.contains("IllegalStateException"))
+        assertEquals("0", g.database.syncState().get("lost:a"))
+    }
+
+    @Test fun recordingAResultKeepsAConcurrentAutoOptimizeToggle() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        optimizer.before = { g.database.watchedApps().setAutoOptimize("a", false) } // the user flips it mid-compile
+        g.scheduler.optimizeNow("a")
+        await("done") { state(1) == QueueState.DONE }
+        val app = g.database.watchedApps().get("a")!!
+        assertFalse(app.autoOptimize)
+        assertEquals(1_000L, app.lastOptimizedAt)
+        assertEquals("1", app.fingerprint)
+    }
 }

@@ -5,6 +5,8 @@ import dev.speedcompiler.tv.watch.SyncStateDao
 import dev.speedcompiler.tv.watch.WatchedApp
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private class FakeSystem : PackageSystem {
@@ -82,5 +84,25 @@ class ChangeDetectorTest {
         system.prints["other"] = "9:99"
         system.touched += "other"
         assertEquals(emptyList<String>(), detector.detect())
+    }
+
+    @Test fun positionAdvancesOnlyAfterTheCallbackReturns() = runTest {
+        system.prints["a"] = "2:10"
+        system.touched += "a"
+        system.seq = 7
+        val seen = mutableListOf<String>()
+        detector.detect { seen += it; assertNull(state.map["pkg_sequence"]) }
+        assertEquals(listOf("a"), seen)
+        assertEquals("7", state.map["pkg_sequence"])
+    }
+
+    @Test fun aFailedCallbackLeavesTheChangeToBeFoundAgain() = runTest {
+        detector.detect()
+        system.prints["a"] = "2:10"
+        system.touched += "a"
+        system.seq = 7
+        assertTrue(runCatching { detector.detect { error("crash while queueing") } }.isFailure)
+        assertEquals("0", state.map["pkg_sequence"])
+        assertEquals(listOf("a"), detector.detect())
     }
 }

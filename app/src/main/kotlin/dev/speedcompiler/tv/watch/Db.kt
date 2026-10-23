@@ -101,6 +101,10 @@ interface WatchedAppDao {
     @Query("UPDATE watched_app SET autoOptimize = :on WHERE packageName = :packageName")
     suspend fun setAutoOptimize(packageName: String, on: Boolean)
 
+    /** Writes only the result columns, so a concurrent [setAutoOptimize] survives. */
+    @Query("UPDATE watched_app SET fingerprint = :fingerprint, lastResult = :lastResult, lastOptimizedAt = :at WHERE packageName = :packageName")
+    suspend fun recordResult(packageName: String, fingerprint: String, lastResult: String, at: Long)
+
     @Query("DELETE FROM watched_app WHERE packageName = :packageName")
     suspend fun delete(packageName: String)
 }
