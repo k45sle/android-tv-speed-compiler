@@ -49,7 +49,10 @@ android {
         // Roborazzi plugin is not in the catalog; this property alone makes captureRoboImage write files.
         // Opt-in: ./gradlew test -Proborazzi.record. Without it captureRoboImage does nothing.
         unitTests.all {
-            it.maxHeapSize = "3g" // the README demo clip keeps ~450 frames in memory until it writes the GIF
+            // README shots and GIF recorders only run with -Pmedia; the demo clip keeps ~450 frames in memory until it writes the GIF.
+            val media = providers.gradleProperty("media").isPresent
+            it.maxHeapSize = if (media) "3g" else "1g"
+            if (media) it.systemProperty("media", "true")
             if (providers.gradleProperty("roborazzi.record").isPresent) it.systemProperty("roborazzi.test.record", "true")
             // Absolute, since tests run in app/ and a relative ../ path broke before.
             it.systemProperty("pixelDir", rootProject.file("tools/pixel").absolutePath)
