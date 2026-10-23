@@ -61,6 +61,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import dev.speedcompiler.tv.theme.Lamp
 import dev.speedcompiler.tv.theme.Marquee
 import dev.speedcompiler.tv.theme.PixelText
@@ -136,7 +138,7 @@ fun AppBanner(app: AppInfo, modifier: Modifier) {
 
 @Composable
 fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememberAppsDeps()) {
-    val apps by produceState(emptyList<AppInfo>(), deps) { value = deps.loadApps() }
+    val loaded by produceState<List<AppInfo>?>(null, deps) { value = runCatching { deps.loadApps() }.getOrDefault(emptyList()) }
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
@@ -144,12 +146,15 @@ fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememb
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
     AppsContent(
-        apps, queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, optimizedAtMap(watched, history), now, deps.zone,
+        loaded.orEmpty(), queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, optimizedAtMap(watched, history), now, deps.zone,
         onOpen = { go(Routes.appDetail(it)) },
         onOptimize = optimizeNow,
         onQueue = { pkg -> scope.launch { deps.scheduler.enqueue(pkg, QueueSource.MANUAL) } },
         onToggleWatch = { pkg, isWatched -> scope.launch { if (isWatched) deps.scheduler.unwatch(pkg) else deps.scheduler.watch(pkg) } },
+        onWatchSelected = { pkgs -> scope.launch { pkgs.filter { p -> watched.none { it.packageName == p } }.forEach { deps.scheduler.watch(it) } } },
+        onQueueSelected = { pkgs -> scope.launch { pkgs.forEach { deps.scheduler.enqueue(it, QueueSource.MANUAL) } } },
         onBack = onBack,
+        loading = loaded == null,
     )
 }
 
@@ -165,8 +170,15 @@ fun AppsContent(
     onOptimize: (String) -> Unit,
     onQueue: (String) -> Unit,
     onToggleWatch: (pkg: String, isWatched: Boolean) -> Unit,
+    onWatchSelected: (List<String>) -> Unit = {},
+    onQueueSelected: (List<String>) -> Unit = {},
     onBack: () -> Unit = {},
+    loading: Boolean = false,
+    startSelecting: Boolean = false,
+    startSelected: Set<String> = emptySet(),
 ) {
+    var selecting by remember { mutableStateOf(startSelecting) }
+    var selected by remember { mutableStateOf(startSelected) }
     var query by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(Sort.Recent) }
     var menu by remember { mutableStateOf<AppInfo?>(null) }
@@ -193,8 +205,11 @@ fun AppsContent(
     val keyboard = LocalSoftwareKeyboardController.current
     val mem = rememberFocusMemory("sort")
     LaunchedEffect(editing) { if (editing) { runCatching { field.requestFocus() }; keyboard?.show() } }
-    val shown = apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
-        .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
+    val shown = remember(apps, query, sort) {
+        apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
+            .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
+    }
+    fun finish(act: (List<String>) -> Unit) { act(selected.toList()); selected = emptySet(); selecting = false }
     val c = LocalSpeedColors.current
 
     RoomBackdrop {
@@ -247,13 +262,28 @@ fun AppsContent(
                     .background(if (sortFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                     .border(2.dp, c.hairline).padding(horizontal = Space.x2, vertical = Space.x1),
             ) { Selector("Sort: ${sort.label}", sortFocused) }
+            Button({ selecting = !selecting; selected = emptySet() }) { Text((if (selecting) "Done" else "Select").uppercase()) }
         }
+        if (selecting) Row(horizontalArrangement = Arrangement.spacedBy(Space.x1), verticalAlignment = Alignment.CenterVertically) {
+            val none = selected.isEmpty()
+            Button({ finish(onWatchSelected) }, enabled = !none) { Text("Watch selected".uppercase()) }
+            Button({ finish(onQueueSelected) }, enabled = !none) { Text("Optimize selected".uppercase()) }
+            Button({ selected = selected + apps.map { it.packageName }.filter { it in watched } }) { Text("Select all watched".uppercase()) }
+            PixelText("${selected.size} selected", color = c.accent)
+        } else PixelText("Hold OK on an app for more options", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (shown.isEmpty()) Text(
+            when { loading -> "Loading apps…"; apps.isEmpty() -> "No apps found."; else -> "No apps match your search." },
+            style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
-                val pill = pillFor(queue[app.packageName], optimizedAt[app.packageName], now, zone)
+                val pill = pillFor(queue[app.packageName], watched[app.packageName]?.lastResult, optimizedAt[app.packageName], now, zone)
                 SelectRow(
                     app.label,
-                    Modifier.remembersFocus(mem, app.packageName).semantics { onLongClick("Open menu") { menu = app; true } }
+                    Modifier.remembersFocus(mem, app.packageName).semantics {
+                        if (selecting) { role = Role.Checkbox; toggleableState = ToggleableState(app.packageName in selected) }
+                        onLongClick("Open menu") { menu = app; true }
+                    }
                         .onPreviewKeyEvent {
                             val enter = it.key == Key.Enter || it.key == Key.DirectionCenter || it.key == Key.NumPadEnter
                             // Holding OK: the first repeat is the long press.
@@ -265,9 +295,10 @@ fun AppsContent(
                             long || up
                         },
                     subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
-                    onClick = { onOpen(app.packageName) },
+                    onClick = { if (selecting) selected = if (app.packageName in selected) selected - app.packageName else selected + app.packageName else onOpen(app.packageName) },
                     leading = { Cartridge { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) } },
                     trailing = {
+                        if (selecting) PixelText(if (app.packageName in selected) "[x]" else "[ ]", color = c.accent)
                         if (pill != null) Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
                             Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
                             PixelText(pill.first, color = toneColor(pill.second))

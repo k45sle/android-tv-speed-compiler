@@ -22,7 +22,9 @@ import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.Scheduler
 import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.Instant
+import dev.speedcompiler.tv.ui.home.JobResult
 import dev.speedcompiler.tv.ui.home.etaText
+import dev.speedcompiler.tv.ui.home.jobResult
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
@@ -47,14 +49,20 @@ class AppsDeps(
     val setAutoOptimize: suspend (String, Boolean) -> Unit,
     val now: () -> Long = System::currentTimeMillis,
     val zone: ZoneId = ZoneId.systemDefault(),
+    /** One package, for the detail screen; falls back to scanning the list. */
+    val loadApp: suspend (String) -> AppInfo? = { p -> loadApps().firstOrNull { it.packageName == p } },
 )
 
-/** Row pill: Running, Queued (with ETA; gate-held jobs read Queued too), Optimized, or none. */
-fun pillFor(entry: QueueEntry?, optimizedAt: Long?, now: Long, zone: ZoneId): Pair<String, Tone>? = when {
-    entry?.state == QueueState.RUNNING -> "Running" to Tone.Info
-    entry != null -> ("Queued" + (etaText(entry.eta, Instant.ofEpochMilli(now), zone).let { if (it.isEmpty()) "" else " · $it" })) to Tone.Warn
-    optimizedAt != null -> "Optimized" to Tone.Ok
-    else -> null
+/** The app's status word: live queue state first, then the stored result; a finished job with no stored result counts as Compiled. */
+fun resultFor(entry: QueueEntry?, lastResult: String?, optimizedAt: Long?): JobResult? =
+    jobResult(lastResult, entry?.state) ?: if (optimizedAt != null) JobResult.Unverified else null
+
+/** Row pill: the [JobResult] word; Queued also carries the ETA (gate-held jobs read Queued too). */
+fun pillFor(entry: QueueEntry?, lastResult: String?, optimizedAt: Long?, now: Long, zone: ZoneId): Pair<String, Tone>? {
+    val r = resultFor(entry, lastResult, optimizedAt) ?: return null
+    if (r != JobResult.Queued) return r.label to r.tone
+    val eta = etaText(entry!!.eta, Instant.ofEpochMilli(now), zone)
+    return (r.label + if (eta.isEmpty()) "" else " · $eta") to Tone.Warn
 }
 
 /** Latest optimize time per package, from the watched row or the newest finished job (covers unwatched apps). */
@@ -95,6 +103,7 @@ fun rememberAppsDeps(): AppsDeps {
         val dao = graph.database.watchedApps()
         AppsDeps(
             loadApps = { loadUserApps(context, graph.packageSystem.installed().map { it.packageName }) },
+            loadApp = { p -> loadUserApps(context, listOf(p)).firstOrNull() },
             scheduler = graph.scheduler,
             watched = dao.all(),
             musicActive = { context.getSystemService(AudioManager::class.java).isMusicActive },

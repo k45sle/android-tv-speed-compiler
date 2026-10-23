@@ -88,14 +88,15 @@ class HomeActivityTest : ComposeTestBase() {
         val went = mutableListOf<String>()
         home(ConnectionState.Connected) { went += it }
         val screen = rule.onRoot().getBoundsInRoot()
-        listOf("Apps", "Activity", "Settings", "Setup").forEach {
+        listOf("Apps", "Activity", "Settings").forEach {
             val b = rule.onNodeWithText(it, ignoreCase = true)
             b.assertIsDisplayed()
             val r = b.getBoundsInRoot()
             assertTrue("$it clipped: $r", r.left >= 0.dp && r.top >= 0.dp && r.right <= screen.right && r.bottom <= screen.bottom)
             b.invokeClick()
         }
-        assertEquals(listOf(Routes.Apps, Routes.Activity, Routes.Settings, Routes.Setup), went)
+        rule.onNodeWithText("Setup", ignoreCase = true).assertDoesNotExist()
+        assertEquals(listOf(Routes.Apps, Routes.Activity, Routes.Settings), went)
     }
 
     @Test

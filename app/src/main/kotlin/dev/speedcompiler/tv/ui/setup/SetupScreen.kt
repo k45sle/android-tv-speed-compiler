@@ -341,7 +341,7 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
                         .semantics { role = Role.Checkbox; toggleableState = ToggleableState(on) },
                     subtitle = app.packageName,
                     onClick = { if (on) picked.remove(app.packageName) else picked.add(app.packageName) },
-                ) { if (on) StatusPill("Selected", Tone.Ok) }
+                ) { if (on) StatusPill("Selected", Tone.Ok) else StatusPill("Not selected", Tone.Neutral) }
             }
         }
         Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue (${picked.size} selected)".uppercase()) }

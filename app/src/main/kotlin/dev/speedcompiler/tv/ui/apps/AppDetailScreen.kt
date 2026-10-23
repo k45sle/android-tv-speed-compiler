@@ -14,8 +14,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.focusProperties
+import dev.speedcompiler.tv.ui.home.JobResult
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
@@ -49,7 +53,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememberAppsDeps()) {
-    val apps by produceState(emptyList<AppInfo>(), deps) { value = deps.loadApps() }
+    val loaded by produceState<AppInfo?>(null, deps, packageName) { value = deps.loadApp(packageName) }
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
@@ -58,7 +62,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val optimizeNow = rememberOptimizeNow(deps, go)
     val mine = watched.firstOrNull { it.packageName == packageName }
     AppDetailContent(
-        apps.firstOrNull { it.packageName == packageName } ?: AppInfo(packageName, packageName),
+        loaded ?: AppInfo(packageName, packageName),
         mine, optimizedAtMap(watched, history)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
@@ -83,11 +87,13 @@ fun AppDetailContent(
     runs: List<QueueItem> = emptyList(),
 ) {
     val mem = rememberFocusMemory("optimize")
-    val checkedAt = optimizedAt
+    val result = resultFor(entry, watched?.lastResult, optimizedAt)
     val state = when {
-        entry?.state == QueueState.RUNNING -> "Optimizing now"
-        entry != null -> etaText(entry.eta, Instant.ofEpochMilli(now), zone).ifEmpty { "Queued" }
-        checkedAt != null -> "Optimized for speed · checked ${agoText(checkedAt, now)}"
+        result == JobResult.Running -> "Optimizing now"
+        result == JobResult.Queued -> etaText(entry!!.eta, Instant.ofEpochMilli(now), zone).ifEmpty { "Queued" }
+        result == JobResult.Failed -> "Didn't finish"
+        result == JobResult.Verified -> "Optimized for speed · checked ${agoText(optimizedAt ?: now, now)}"
+        result != null -> "${result.label} · ${agoText(optimizedAt ?: now, now)}"
         else -> "Not optimized yet"
     }
     val rows = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
@@ -96,13 +102,14 @@ fun AppDetailContent(
             val ok = it.state == QueueState.DONE
             ScoreRow(agoText(it.finishedAt ?: it.enqueuedAt, now), if (it.source == QueueSource.AUTO) "Automatic" else "Manual", if (ok) "Done" else "Failed", if (ok) Tone.Ok else Tone.Error)
         }
-    val tone = when { entry?.state == QueueState.RUNNING -> Tone.Info; entry != null -> Tone.Warn; checkedAt != null -> Tone.Ok; else -> Tone.Neutral }
-    val word = when { entry?.state == QueueState.RUNNING -> "Running"; entry != null -> "Queued"; checkedAt != null -> "Optimized"; else -> "New" }
+    val tone = if (result == JobResult.Queued) Tone.Warn else result?.tone ?: Tone.Neutral // matches the Apps list pill
+    val word = result?.label ?: "New"
     RoomBackdrop {
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             Marquee(app.label, compact = true, onBack = onBack)
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
-                CabinetCard(app.label, Modifier.width(280.dp), word, tone, onClick = onOptimize, screenHeight = 140.dp) {
+                // Display only: the Optimize button beside it is the one control, so the card takes no focus.
+                CabinetCard(app.label, Modifier.width(280.dp).focusProperties { canFocus = false }.clearAndSetSemantics { contentDescription = "${app.label}, $word" }, word, tone, screenHeight = 140.dp) {
                     // The Apps list cartridge blown up whole: its frame is fixed dp, so a bigger banner alone would widen its shape.
                     Cartridge(Modifier.scale(1.6f)) { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) }
                 }
