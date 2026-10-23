@@ -209,6 +209,13 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     @Test
+    fun pairingStepRendersInLight() {
+        rule.setContent { SpeedTheme(dev.speedcompiler.tv.engine.ThemeChoice.Light) { SetupScreen({ backs++ }, SetupMode.Repair, deps) } }
+        url.value = pairUrl; tick()
+        see("Use your phone."); see("Scan me"); see(pairUrl); shot("4_pair_light")
+    }
+
+    @Test
     fun reconnectReachesConnectedInOneKeyPress() {
         monitor.flow.value = ConnectionState.Disconnected
         env.hook = {
