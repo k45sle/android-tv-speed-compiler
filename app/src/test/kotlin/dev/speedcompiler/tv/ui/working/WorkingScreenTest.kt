@@ -18,6 +18,7 @@ import androidx.compose.ui.input.key.Key
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.SpeedTheme
+import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.ui.home.AppLook
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.QueueEntry
@@ -87,13 +88,22 @@ class WorkingScreenTest : ComposeTestBase() {
     @Test
     fun runningShowsHonestProgressAndScreenshot() {
         show()
-        rule.onNodeWithText("Optimizing Alpha").assertIsDisplayed()
+        rule.onNodeWithText("Optimizing Alpha", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("Usually about 2 min").assertIsDisplayed()
         rule.onNodeWithText("00:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Star Arrow. Fly through the rocks").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running.png")
+    }
+
+    @Test
+    fun runningLightScreenshot() {
+        rule.mainClock.autoAdvance = false
+        rule.setContent { SpeedTheme(ThemeChoice.Light) { WorkingHost(pkg, AppLook("Alpha"), queue, history, { base + rule.mainClock.currentTime + 50_000 }) { left++ } } }
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText("Optimizing Alpha", ignoreCase = true).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_running_light.png")
     }
 
     @Test

@@ -38,7 +38,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import dev.speedcompiler.tv.R
-import dev.speedcompiler.tv.theme.Button
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.runtime.State
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.sp
+import dev.speedcompiler.tv.theme.ArcadeButton
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.ui.Alignment
@@ -186,46 +202,76 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
         }
         return
     }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 27.dp, end = 48.dp), // no bottom padding: header + 380 dp room must fit 540 dp
-        verticalArrangement = Arrangement.spacedBy(Space.x1),
+    RoomBackdrop {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 12.dp, end = 48.dp), // header 96 + gap 8 + room 380 + top 12 fits the 500 dp above the floor bar
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            WorkingHeader(s, back, done)
+            ArcadePicker({ last = it; playing = it }, first, last)
+        }
+    }
+}
+
+/** Compact marquee: dashed bulb border, logo, banner in a bezel, title, status, timer, usual-duration blocks and Leave. */
+@Composable
+private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequester) {
+    val cs = MaterialTheme.colorScheme
+    val c = LocalSpeedColors.current
+    val phase: State<Float> = rememberInfiniteTransition(label = "bulbs")
+        .animateFloat(0f, 1f, infiniteRepeatable(tween(600, easing = LinearEasing)), label = "phase") // read in draw only
+    val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyLarge, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    Row(
+        Modifier.fillMaxWidth().height(96.dp).background(cs.background).drawBehind {
+            val sw = 4.dp.toPx()
+            val period = 12.dp.toPx()
+            drawRect(
+                c.accent, Offset(sw, sw), Size(size.width - 2 * sw, size.height - 2 * sw),
+                style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(sw, period - sw), phase.value * period)),
+            )
+        }.padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.x3)) {
-            WorkingArt(s.art, s.job.finished)
-            Column(verticalArrangement = Arrangement.spacedBy(Space.x1)) {
-                Text(
-                    if (s.job.finished) s.label else "Optimizing ${s.label}",
-                    style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        PixelBanner(s.job.finished, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 56.dp)
+        val bezel = Modifier.size(112.dp, 63.dp).border(2.dp, c.hairline)
+        if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
+        Column(Modifier.weight(1f)) {
+            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 36.sp)
+            // Without a connection the worker loops running -> retry; say what it is really waiting on.
+            if (!s.job.finished && s.connection != ConnectionState.Connected) {
+                line(s.connection?.let(::waitingForConnectionText) ?: "Starting…", cs.onSurface)
+            } else when (val j = s.job) {
+                is JobView.Done -> line("Optimized. You can leave now.", c.ok)
+                is JobView.Failed -> line("Didn't finish: ${j.reason}", c.error)
+                is JobView.Waiting -> line(etaText(j.eta).ifEmpty { "Waiting for its turn" }, cs.onSurface)
+                JobView.CouldntStart -> line("Couldn't start. Try again from the app.", c.error)
+                JobView.Starting -> line("Starting…", cs.onSurface)
+                JobView.Running -> line("Optimizing. This continues if you leave.", cs.onSurface)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (s.job != JobView.CouldntStart) PixelText(
+                    elapsedText(s.elapsedMillis), color = cs.onSurface,
+                    modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
                 )
-                // Without a connection the worker loops running -> retry; say what it is really waiting on.
-                if (!s.job.finished && s.connection != ConnectionState.Connected) {
-                    Text(s.connection?.let(::waitingForConnectionText) ?: "Starting…", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                } else when (val j = s.job) {
-                    is JobView.Done -> Text("Optimized. You can leave now.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.ok, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    is JobView.Failed -> Text("Didn't finish: ${j.reason}", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    is JobView.Waiting -> Text(etaText(j.eta).ifEmpty { "Waiting for its turn" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    JobView.CouldntStart -> Text("Couldn't start. Try again from the app.", style = MaterialTheme.typography.titleLarge, color = LocalSpeedColors.current.error, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    JobView.Starting -> Text("Starting…", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    JobView.Running -> Text("Optimizing. This continues if you leave.", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-                    if (s.job != JobView.CouldntStart) Text(
-                        elapsedText(s.elapsedMillis), style = MonoStyle,
-                        modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
+                if (!s.job.finished) {
+                    val blocks = 10
+                    val filled = (s.elapsedMillis * blocks / s.avgMillis.coerceAtLeast(1)).coerceIn(0, blocks.toLong()).toInt()
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        repeat(blocks) { i ->
+                            Box(Modifier.size(18.dp, 12.dp).then(if (i < filled) Modifier.background(c.accent) else Modifier.border(2.dp, c.hairline)))
+                        }
+                    }
+                    Text(
+                        "Usually about ${usuallyMinutes(s.avgMillis)} min",
+                        style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1,
                     )
-                    if (!s.job.finished) {
-                        Text(
-                            "Usually about ${usuallyMinutes(s.avgMillis)} min",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Button(back, Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" }) {
-                        Text(if (s.job.finished) "Done" else "Leave")
-                    }
                 }
             }
         }
-        ArcadePicker({ last = it; playing = it }, first, last)
+        ArcadeButton(
+            if (s.job.finished) "Done" else "Leave", back,
+            Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" },
+        )
     }
 }
 
@@ -247,15 +293,5 @@ private fun StatusLine(s: WorkingState) {
         Text(text, color = color, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
         Text(elapsedText(s.elapsedMillis), color = color, style = MonoStyle)
         Text(if (s.job.finished) "Back to leave" else "Back to stop", color = GameColors.gold, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-/** The pixel logo animating next to the app's banner (or a plain tile while it loads off the main thread). */
-@Composable
-private fun WorkingArt(art: ImageBitmap?, stopped: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-        PixelBanner(stopped, Modifier.semantics { contentDescription = if (stopped) "Done" else "Working" })
-        val mod = Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(CardRadius))
-        if (art != null) Image(art, null, mod) else Box(mod.background(LocalSpeedColors.current.accent))
     }
 }
