@@ -151,7 +151,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         HomeButton("Settings", Cabinet.PLUM, mem, "settings") { go(Routes.Settings) }
-                        HomeButton("Setup", Cabinet.LOGO, mem, "setup") { go(Routes.Setup) }
+                        Spacer(Modifier.weight(1f))
                     }
                 }
             }

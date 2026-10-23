@@ -20,6 +20,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.isFocusable
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -165,7 +166,7 @@ class AppsScreensTest : ComposeTestBase() {
 
     @Test
     fun watchedAppOffersStopWatching() {
-        watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1))
+        watched.value = listOf(WatchedApp("a.alpha", "f", lastResult = "Optimized (checked)", lastOptimizedAt = 1))
         listScreen()
         rule.onNodeWithText("Optimized", ignoreCase = true).assertIsDisplayed()
         longPress("Alpha"); click("Stop watching")
@@ -181,7 +182,7 @@ class AppsScreensTest : ComposeTestBase() {
 
     @Test
     fun detailShowsStateAndWatchToggle() {
-        watched.value = listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 1_800_000_000_000 - 2 * 3_600_000))
+        watched.value = listOf(WatchedApp("a.alpha", "f", lastResult = "Optimized (checked)", lastOptimizedAt = 1_800_000_000_000 - 2 * 3_600_000))
         detailScreen()
         rule.onNodeWithText("a.alpha").assertIsDisplayed()
         rule.onNodeWithText("Optimized for speed · checked 2 h ago").assertIsDisplayed()
@@ -282,6 +283,81 @@ class AppsScreensTest : ComposeTestBase() {
         )
         assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done)))
         assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
+    }
+
+    private fun content(
+        list: List<AppInfo> = apps, loading: Boolean = false, selecting: Boolean = false, picked: Set<String> = emptySet(),
+        watchedNow: Map<String, WatchedApp> = emptyMap(), onWatch: (List<String>) -> Unit = {}, onQueue: (List<String>) -> Unit = {},
+    ) = show {
+        AppsContent(
+            list, emptyMap(), watchedNow, emptyMap(), 1_800_000_000_000, java.time.ZoneOffset.UTC, {}, {}, {}, { _, _ -> },
+            onWatch, onQueue, loading = loading, startSelecting = selecting, startSelected = picked,
+        )
+    }
+
+    @Test
+    fun selectingThreeAppsQueuesAllThree() {
+        val queued = mutableListOf<String>()
+        content(onQueue = { queued += it })
+        click("Select")
+        listOf("Alpha", "Beta", "Gamma").forEach { click(it) }
+        rule.onNodeWithText("3 selected", ignoreCase = true).assertIsDisplayed()
+        click("Optimize selected")
+        assertEquals(listOf("a.alpha", "b.beta", "c.gamma").sorted(), queued.sorted())
+        rule.onNodeWithText("Optimize selected", ignoreCase = true).assertDoesNotExist() // back to browsing
+    }
+
+    @Test
+    fun selectAllWatchedPicksOnlyWatchedApps() {
+        val watching = mutableListOf<String>()
+        content(selecting = true, watchedNow = mapOf("b.beta" to WatchedApp("b.beta", "f")), onWatch = { watching += it })
+        click("Select all watched")
+        click("Watch selected")
+        assertEquals(listOf("b.beta"), watching)
+    }
+
+    @Test
+    fun statusWordsComeFromTheResultEnum() {
+        val zone = java.time.ZoneOffset.UTC
+        assertEquals("Optimized" to dev.speedcompiler.tv.theme.Tone.Ok, pillFor(null, "Optimized (checked)", 1, 0, zone))
+        assertEquals("Compiled" to dev.speedcompiler.tv.theme.Tone.Warn, pillFor(null, "Optimized", 1, 0, zone))
+        assertEquals("Compiled", pillFor(null, null, 1, 0, zone)?.first) // finished job, no stored result
+        assertEquals("Didn't finish", pillFor(null, "Failed: x", null, 0, zone)?.first)
+        assertEquals(null, pillFor(null, null, null, 0, zone))
+        val run = dev.speedcompiler.tv.watch.QueueEntry(
+            dev.speedcompiler.tv.watch.QueueItem(1, "a", dev.speedcompiler.tv.watch.QueueSource.MANUAL, dev.speedcompiler.tv.watch.QueueState.RUNNING, enqueuedAt = 1),
+            0, dev.speedcompiler.tv.watch.Eta.None,
+        )
+        assertEquals("Running", pillFor(run, "Optimized (checked)", 1, 0, zone)?.first)
+    }
+
+    @Test
+    fun detailCardTakesNoFocus() {
+        detailScreen()
+        rule.onNodeWithContentDescription("Alpha, New").assertExists().assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Focused))
+        rule.onAllNodes(isFocusable()).assertCountEquals(3) // Back, Optimize now, Watch; not the card
+        rule.onAllNodesWithText("Optimize now", ignoreCase = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun loadingShot() {
+        content(emptyList(), loading = true)
+        rule.onNodeWithText("Loading apps", substring = true).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_loading.png")
+    }
+
+    @Test
+    fun emptyShot() {
+        content(emptyList())
+        rule.onNodeWithText("No apps found.").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_empty.png")
+    }
+
+    @Test
+    fun selectModeShot() {
+        content(selecting = true, picked = setOf("a.alpha", "c.gamma"))
+        rule.onNodeWithText("2 selected", ignoreCase = true).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/apps_select.png")
     }
 
     @Test
