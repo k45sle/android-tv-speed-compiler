@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -201,29 +202,43 @@ fun Lamp(color: Color, modifier: Modifier = Modifier, waiting: Boolean = false) 
     )
 }
 
-/** Game cartridge around [content] (an app's banner as the label): grey shell with the top-right corner cut, grip ridges under the label. Draw only, no state. */
+/**
+ * Handheld-style game cartridge around [content] (an app's banner as the label): grey shell with the top-right corner cut,
+ * a raised blank plate with grip ridges either side at the top, the label in a recess, an arrow under it. Draw only, no state.
+ */
 @Composable
 fun Cartridge(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     val shell = Color(Cabinet.GREY)
     val ink = Color(Cabinet.INK)
     Box(
         modifier.drawBehind {
-            val cut = 8.dp.toPx()
-            val d = 2.dp.toPx()
+            val u = 1.dp.toPx()
+            val w = size.width
+            val h = size.height
+            val cut = 8 * u
             fun outline(dx: Float) = Path().apply {
-                moveTo(dx, dx); lineTo(size.width - cut + dx, dx); lineTo(size.width + dx, cut + dx)
-                lineTo(size.width + dx, size.height + dx); lineTo(dx, size.height + dx); close()
+                moveTo(dx, dx); lineTo(w - cut + dx, dx); lineTo(w + dx, cut + dx); lineTo(w + dx, h + dx); lineTo(dx, h + dx); close()
             }
-            drawPath(outline(d), ShadowColor)
+            drawPath(outline(2 * u), ShadowColor)
             drawPath(outline(0f), shell)
-            drawRect(shell.darker(0.25f), Offset(0f, size.height - d), Size(size.width, d))
-            // Grip ridges in the strip under the label.
-            val ridge = 2.dp.toPx()
-            val top = size.height - 9.dp.toPx()
-            repeat(6) { k ->
-                drawRect(shell.darker(), Offset(size.width / 2 + (k - 2.5f) * 3 * ridge - ridge / 2, top), Size(ridge, 5.dp.toPx()))
+            drawRect(shell.darker(0.25f), Offset(0f, h - 2 * u), Size(w, 2 * u))
+            // Raised plate, then three grip ridges each side of it; the right ones stop short of the cut corner.
+            val plateL = w * 0.3f
+            val plateR = w * 0.7f
+            drawRoundRect(lerp(shell, Color.White, 0.3f), Offset(plateL, 4 * u), Size(plateR - plateL, 8 * u), CornerRadius(4 * u))
+            drawRoundRect(shell.darker(0.2f), Offset(plateL, 4 * u), Size(plateR - plateL, 8 * u), CornerRadius(4 * u), style = Stroke(u))
+            for (y in listOf(5 * u, 8 * u, 11 * u)) {
+                drawRect(shell.darker(), Offset(3 * u, y), Size(plateL - 6 * u, u))
+                val end = minOf(w - 3 * u, w - cut + y - 2 * u)
+                drawRect(shell.darker(), Offset(plateR + 3 * u, y), Size(end - plateR - 3 * u, u))
             }
-        }.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp),
+            // Label recess: a slightly darker sunken panel 2 dp around the label's ink frame.
+            drawRect(shell.darker(0.15f), Offset(4 * u, 14 * u), Size(w - 8 * u, h - 26 * u))
+            val tri = Path().apply {
+                moveTo(w / 2 - 4 * u, h - 10 * u); lineTo(w / 2 + 4 * u, h - 10 * u); lineTo(w / 2, h - 6 * u); close()
+            }
+            drawPath(tri, shell.darker())
+        }.padding(start = 6.dp, end = 6.dp, top = 16.dp, bottom = 14.dp),
     ) {
         // An ink backing, not a border: it frames the label without covering it and fills the banner's rounded corners.
         Box(Modifier.background(ink).padding(2.dp)) { content() }

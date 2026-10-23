@@ -266,7 +266,7 @@ fun AppsContent(
                         },
                     subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
                     onClick = { onOpen(app.packageName) },
-                    leading = { Cartridge { AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp)) } },
+                    leading = { Cartridge { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) } },
                     trailing = {
                         if (pill != null) Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
                             Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
