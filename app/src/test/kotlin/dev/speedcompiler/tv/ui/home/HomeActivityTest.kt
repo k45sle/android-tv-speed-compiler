@@ -45,7 +45,7 @@ class HomeActivityTest : ComposeTestBase() {
         QueueEntry(queued(2, "b.beta", QueueState.WAITING_GATE), 1, Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z"))),
     )
     private val watched = listOf(WatchedApp("a.alpha", "1"), WatchedApp("b.beta", "1", lastResult = "Optimized (checked)"))
-    private val events = listOf(Event(1, 5_000, "a.alpha", "optimize_failed", "Didn't finish: the TV still reports this app as \"verify\"."))
+    private val events = listOf(Event(1, 5_000, "a.alpha", "optimize_failed", "Didn't finish: base.apk (arm64) is verify, not speed."))
 
     private fun show(content: @Composable () -> Unit) {
         rule.setContent { SpeedTheme { content() } }

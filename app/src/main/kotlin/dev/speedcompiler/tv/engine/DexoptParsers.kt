@@ -1,7 +1,8 @@
 package dev.speedcompiler.tv.engine
 
 private val PACKAGE_ID = Regex("[A-Za-z0-9_.]+")
-private val HEADER = Regex("\\[([A-Za-z_][A-Za-z0-9_.]+)]")
+// Whole line only: "used by other apps: [pkg]" inside another app's section is not a header.
+private val HEADER = Regex("\\s*\\[([A-Za-z_][A-Za-z0-9_.]+)]\\s*")
 private val FILTER = Regex("(?:compiler[-_ ]filter|filter|status)\\s*[=:]\\s*([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
 private val RC = Regex("__rc=(\\d+)")
 
@@ -38,7 +39,7 @@ fun parseCompilerFilter(text: String, pkg: String): String? {
     var inPackage = false
     val lines = mutableListOf<String>()
     for (line in text.lines()) {
-        val header = HEADER.find(line)
+        val header = HEADER.matchEntire(line)
         if (header != null) {
             if (inPackage && lines.isNotEmpty()) break
             inPackage = header.groupValues[1] == pkg
@@ -52,6 +53,7 @@ fun parseCompilerFilter(text: String, pkg: String): String? {
     for (raw in lines) {
         val line = raw.trim()
         if (line.startsWith("path:")) { file = line.substringAfter(":").trim().substringAfterLast('/'); continue }
+        if (line.startsWith("known secondary dex files")) break // Android 13 lists them last in the section
         if (line.startsWith("[location is") || "secondary-dex" in line) continue
         val isStatus = "status=" in line.lowercase() || "filter=" in line.lowercase()
         val filter = FILTER.find(line)?.groupValues?.get(1)?.lowercase()

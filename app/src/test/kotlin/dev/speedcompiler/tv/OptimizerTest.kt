@@ -127,6 +127,38 @@ class OptimizerTest {
         assertEquals("not fully compiled: base.apk (arm64) is run-from-apk", parseCompilerFilter(incremental, "dev.speedcompiler.tv"))
         val r = impl(Shell(dexopt = incremental), Events(), sdk = 33).optimize("dev.speedcompiler.tv")
         assertFalse(r.ok)
+        assertEquals("Didn't finish: base.apk (arm64) is run-from-apk, not speed.", r.detail)
+    }
+
+    // Shapes from the Android 13 emulator dump: a one-app "used by other apps" list and a secondary dex list.
+    private val v1Extras = """
+        Dexopt state:
+          [a.tethering]
+            path: /apex/a/T.apk
+              arm64: [status=speed] [reason=cmdline]
+              used by other apps: [b.stack]
+          [b.stack]
+            path: /data/app/b.stack/base.apk
+              arm64: [status=verify] [reason=first-boot]
+          [c.store]
+            path: /data/app/c.store/base.apk
+              arm64: [status=speed] [reason=cmdline]
+              arm: [status=speed-profile] [reason=install-dm]
+          [d.gms]
+            path: /data/app/d.gms/base.apk
+              arm64: [status=speed] [reason=cmdline]
+              known secondary dex files:
+                /data/user/0/d.gms/app_dg_cache/the.apk
+                  class loader context: PCL[]
+                  arm64: [status=verify] [reason=unknown]
+    """.trimIndent()
+
+    @Test fun sectionsDoNotLeakAndEveryIsaCountsButSecondaryDexDoesNot() {
+        assertEquals("speed", parseCompilerFilter(v1Extras, "a.tethering"))
+        assertEquals("not fully compiled: base.apk (arm64) is verify", parseCompilerFilter(v1Extras, "b.stack"))
+        assertEquals("not fully compiled: base.apk (arm) is speed-profile", parseCompilerFilter(v1Extras, "c.store"))
+        assertEquals("speed", parseCompilerFilter(v1Extras, "d.gms"))
+        assertEquals("speed", parseCompilerFilter(artSplitProfile, "com.google.android.youtube.tv"))
     }
 
     @Test fun rejectsBadIdInCommand() {
