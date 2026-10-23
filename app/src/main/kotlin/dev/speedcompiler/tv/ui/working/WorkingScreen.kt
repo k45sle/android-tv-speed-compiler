@@ -66,6 +66,8 @@ import dev.speedcompiler.tv.theme.PixelBanner
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.AppLook
+import dev.speedcompiler.tv.ui.home.JobResult
+import dev.speedcompiler.tv.ui.home.jobResult
 import dev.speedcompiler.tv.ui.home.etaText
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.ui.home.lookup
@@ -144,7 +146,12 @@ class WorkingState(
     val connection: ConnectionState? = ConnectionState.Connected,
     /** Best score per [GameKind] name. */
     val bests: Map<String, Int> = emptyMap(),
+    /** The TV reported the result as fully compiled; without it a finished run is only "compiled". */
+    val verified: Boolean = false,
 )
+
+/** Running for real: a running job without a connection is only waiting to retry. */
+private val WorkingState.running get() = job == JobView.Running && connection == ConnectionState.Connected
 
 @Composable
 fun WorkingScreen(pkg: String, back: () -> Unit) {
@@ -155,8 +162,10 @@ fun WorkingScreen(pkg: String, back: () -> Unit) {
     val context = LocalContext.current
     val look by produceState(AppLook(pkg), pkg) { value = withContext(Dispatchers.IO) { lookup(context, pkg) } }
     val bests = remember(graph) { graph.settings.values.map { it.bests } }
+    // The run's own event, not watched_app: a manual run on an unwatched app has no row there.
+    val verified = remember(graph, pkg) { graph.database.events().recent(50).map { l -> jobResult(l.firstOrNull { it.packageName == pkg && it.kind.startsWith("optimize_") }?.message, null) == JobResult.Verified } }
     WorkingHost(
-        pkg, look, flows.first, flows.second, connection = connection, bests = bests,
+        pkg, look, flows.first, flows.second, connection = connection, bests = bests, verified = verified,
         saveBest = { game, score -> graph.appScope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } } },
         back = back,
     )
@@ -168,9 +177,10 @@ fun WorkingHost(
     pkg: String, look: AppLook, queue: Flow<List<QueueEntry>>, history: Flow<List<QueueItem>>,
     clock: () -> Long = System::currentTimeMillis,
     connection: Flow<ConnectionState> = flowOf(ConnectionState.Connected),
-    bests: Flow<Map<String, Int>> = flowOf(emptyMap()), saveBest: (String, Int) -> Unit = { _, _ -> }, back: () -> Unit,
+    bests: Flow<Map<String, Int>> = flowOf(emptyMap()), verified: Flow<Boolean> = flowOf(false), saveBest: (String, Int) -> Unit = { _, _ -> }, back: () -> Unit,
 ) {
     val best by bests.collectAsState(emptyMap())
+    val checked by verified.collectAsState(false)
     val openedAt = rememberSaveable { clock() }
     val q by queue.collectAsState(emptyList())
     val h by history.collectAsState(emptyList())
@@ -184,7 +194,7 @@ fun WorkingHost(
     }
     val end = if (job.finished) run?.finishedAt ?: now else now
     val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
-    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best), back, saveBest)
+    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best, checked), back, saveBest)
 }
 
 @Composable
@@ -240,12 +250,13 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
         if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
         Column(Modifier.weight(1f)) {
-            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 28.sp, overflow = TextOverflow.Ellipsis)
+            val running = s.running
+            PixelText(if (s.job.finished) s.label else if (running) "Optimizing ${s.label}" else "Waiting to optimize ${s.label}", color = c.accent, size = 28.sp, overflow = TextOverflow.Ellipsis)
             // Without a connection the worker loops running -> retry; say what it is really waiting on.
             if (!s.job.finished && s.connection != ConnectionState.Connected) {
                 line(s.connection?.let(::waitingForConnectionText) ?: "Starting…", cs.onSurface)
             } else when (val j = s.job) {
-                is JobView.Done -> line("Optimized. You can leave now.", c.ok)
+                is JobView.Done -> line(if (s.verified) "Optimized. You can leave now." else "Compiled. You can leave now.", c.ok)
                 is JobView.Failed -> line("Didn't finish: ${j.reason}", c.error)
                 is JobView.Waiting -> line(etaText(j.eta).ifEmpty { "Waiting for its turn" }, cs.onSurface)
                 JobView.CouldntStart -> line("Couldn't start. Try again from the app.", c.error)
@@ -259,14 +270,14 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
                 )
                 if (!s.job.finished) {
                     val blocks = 10
-                    val filled = (s.elapsedMillis * blocks / s.avgMillis.coerceAtLeast(1)).coerceIn(0, blocks.toLong()).toInt()
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    val filled = (if (running) s.elapsedMillis * blocks / s.avgMillis.coerceAtLeast(1) else 0).coerceIn(0, blocks.toLong()).toInt()
+                    Row(Modifier.semantics { contentDescription = "Time estimate, $filled of $blocks blocks" }, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         repeat(blocks) { i ->
                             Box(Modifier.size(18.dp, 12.dp).then(if (i < filled) Modifier.background(c.accent) else Modifier.border(2.dp, c.hairline)))
                         }
                     }
                     Text(
-                        "Usually about ${usuallyMinutes(s.avgMillis)} min",
+                        "Estimate: usually about ${usuallyMinutes(s.avgMillis)} min",
                         style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1,
                     )
                 }
@@ -284,9 +295,9 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
 private fun StatusLine(s: WorkingState) {
     val ok = s.job is JobView.Done
     val text = when (val j = s.job) {
-        is JobView.Done -> "${s.label} optimized"
+        is JobView.Done -> "${s.label} ${if (s.verified) "optimized" else "compiled"}"
         is JobView.Failed, JobView.CouldntStart -> "${s.label} didn't finish"
-        else -> "Optimizing ${s.label}"
+        else -> if (s.running) "Optimizing ${s.label}" else "Waiting to optimize ${s.label}"
     }
     val color = if (ok) GameColors.green3 else GameColors.cream
     Row(
