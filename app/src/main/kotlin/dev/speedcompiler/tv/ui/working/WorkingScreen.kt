@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +47,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
-import androidx.compose.runtime.State
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -220,8 +220,10 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
 private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequester, picker: FocusRequester) {
     val cs = MaterialTheme.colorScheme
     val c = LocalSpeedColors.current
-    val phase: State<Float> = rememberInfiniteTransition(label = "bulbs")
-        .animateFloat(0f, 1f, infiniteRepeatable(tween(600, easing = LinearEasing)), label = "phase") // read in draw only
+    // The dashes chase in 4 steps per 664 ms, on the picker's tick budget; still on low-RAM devices. Read in draw only.
+    var chase by remember { mutableIntStateOf(0) }
+    val still = rememberLowRam()
+    LaunchedEffect(still) { if (!still) while (true) { delay(166); chase = (chase + 1) % 4 } }
     val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 104.dp).background(cs.background).drawBehind {
@@ -229,7 +231,7 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
             val period = 12.dp.toPx()
             drawRect(
                 c.accent, Offset(sw, sw), Size(size.width - 2 * sw, size.height - 2 * sw),
-                style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(sw, period - sw), phase.value * period)),
+                style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(sw, period - sw), chase / 4f * period)),
             )
         }.padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,

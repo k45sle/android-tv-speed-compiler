@@ -19,11 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
+import dev.speedcompiler.tv.ui.working.games.StepClock
+import android.app.ActivityManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -46,9 +49,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.ui.working.games.GameColors
-import dev.speedcompiler.tv.ui.working.games.StepClock
 import dev.speedcompiler.tv.ui.working.games.Surface
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 private const val CAB_Y = 32
@@ -78,30 +79,39 @@ private fun DrawScope.artText(s: String, x: Int, y: Int, c: Color, u: Float) {
     }
 }
 
+/** True on devices Android flags as low-RAM; the animated screens hold still there. */
+@Composable
+fun rememberLowRam(): Boolean = LocalContext.current.getSystemService(ActivityManager::class.java).isLowRamDevice
+
 /**
  * The arcade room: three cabinets at 2 dp per art pixel. The focused one is lit and plays its game in the screen on its own;
  * the others show a still frame. Select opens the game full screen through [play].
  */
 @Composable
-fun ArcadePicker(play: (GameKind) -> Unit, first: FocusRequester, firstKind: GameKind = GameKind.entries.first()) {
+fun ArcadePicker(
+    play: (GameKind) -> Unit, first: FocusRequester, firstKind: GameKind = GameKind.entries.first(),
+    // Low-RAM devices get a still frame; overridable so a test can force that path. probe is a test hook told "tick", "frame" and "step".
+    still: Boolean = rememberLowRam(),
+    probe: (String) -> Unit = {},
+) {
     var focused by remember { mutableIntStateOf(-1) }
     // Read only inside the draw lambdas, so the bulbs and the blink redraw without recomposing.
-    var nanos by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        val t0 = withFrameNanos { it }
-        while (true) withFrameNanos { nanos = it - t0 }
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(still) {
+        if (still) return@LaunchedEffect
+        while (true) { delay(166); tick++; probe("tick") }
     }
     Box(Modifier.size(864.dp, 380.dp)) {
         Image(ImageBitmap.imageResource(R.drawable.game_arcade_room), "Play while you wait", Modifier.size(864.dp, 380.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
         Canvas(Modifier.size(864.dp, 380.dp)) {
             val u = size.width / 432f
             for (x in CAB_X) art(GameColors.outline, x - 2, CAB_Y + 149, 108, 3, u)
-            val step = floor(nanos / 1e9 * 6).toInt()
+            val step = tick
             BULBS.forEachIndexed { i, (bx, by) -> art(if ((i + step) % 3 == 0) GameColors.cream2 else GameColors.gold, bx, by, 2, 2, u) }
         }
         GameKind.entries.forEachIndexed { i, kind ->
             Cabinet(
-                kind, CAB_X[i], CAB_ART[i], focused == i, if (kind == firstKind) first else null,
+                kind, CAB_X[i], CAB_ART[i], focused == i, still, probe, if (kind == firstKind) first else null,
                 { if (it) focused = i else if (focused == i) focused = -1 }, { play(kind) },
             )
         }
@@ -112,28 +122,30 @@ fun ArcadePicker(play: (GameKind) -> Unit, first: FocusRequester, firstKind: Gam
             val x = CAB_X[i]
             art(GameColors.gold, x - 3, CAB_Y - 3, 108, 2, u); art(GameColors.gold, x - 3, CAB_Y + 151, 108, 2, u)
             art(GameColors.gold, x - 3, CAB_Y - 3, 2, 156, u); art(GameColors.gold, x + 103, CAB_Y - 3, 2, 156, u)
-            if (floor(nanos / 1e9 * 2).toInt() % 2 == 0) artText("PRESS SELECT", x + 48 - (12 * 4 - 1) / 2, CAB_Y + 102, GameColors.yellow, u)
+            if (tick / 3 % 2 == 0) artText("PRESS SELECT", x + 48 - (12 * 4 - 1) / 2, CAB_Y + 102, GameColors.yellow, u)
         }
     }
 }
 
 @Composable
-private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, requester: FocusRequester?, onFocus: (Boolean) -> Unit, onPlay: () -> Unit) {
+private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, still: Boolean, probe: (String) -> Unit, requester: FocusRequester?, onFocus: (Boolean) -> Unit, onPlay: () -> Unit) {
     val sheet = ImageBitmap.imageResource(artRes)
     val renderer = kind.def.renderer()
     val surface = remember { Surface() }
     var game by remember(kind, lit) { mutableStateOf(kind.def.create().also { it.step(null); it.step(null) }) }
     var frame by remember { mutableIntStateOf(0) }
-    LaunchedEffect(kind, lit) {
-        if (!lit) return@LaunchedEffect
+    LaunchedEffect(kind, lit, still) {
+        if (!lit || still) return@LaunchedEffect
         val clock = StepClock()
         var sub = 0
-        while (true) withFrameNanos { now ->
-            val due = clock.due(now)
-            if (due == 0) return@withFrameNanos
-            repeat(due) { if (++sub >= kind.def.ticksPerStep) { sub = 0; game.step(null) } }
-            if (game.over && game.canRestart) game = kind.def.create()
-            frame++
+        // Wake every 4th vsync (15 fps); the clock steps by elapsed time so the game still runs at 30 steps/s.
+        while (true) {
+            delay(50)
+            withFrameNanos { now ->
+                repeat(clock.due(now)) { if (++sub >= kind.def.ticksPerStep) { sub = 0; game.step(null); probe("step") } }
+                if (game.over && game.canRestart) game = kind.def.create()
+                frame++; probe("frame")
+            }
         }
     }
     Box(
