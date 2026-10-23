@@ -142,11 +142,12 @@ fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememb
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
+    val resets by remember(deps) { deps.resets }.collectAsState(emptyList())
     val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
     AppsContent(
-        loaded.orEmpty(), queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, optimizedAtMap(watched, history), now, deps.zone,
+        loaded.orEmpty(), queue.associateBy { it.item.packageName }, watched.associateBy { it.packageName }, optimizedAtMap(watched, history, resets), now, deps.zone,
         onOpen = { go(Routes.appDetail(it)) },
         onOptimize = optimizeNow,
         onQueue = { pkg -> scope.launch { deps.scheduler.enqueue(pkg, QueueSource.MANUAL) } },

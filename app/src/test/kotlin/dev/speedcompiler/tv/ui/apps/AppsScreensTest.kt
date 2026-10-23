@@ -193,6 +193,23 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun resetRunsAndUnwatches() {
+        val reset = mutableListOf<String>()
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        detailScreen(d = AppsDeps(
+            loadApps = { apps }, scheduler = scheduler, watched = watched, musicActive = { music },
+            setAutoOptimize = { _, _ -> }, now = { 1_800_000_000_000 },
+            reset = { reset += it; dev.speedcompiler.tv.engine.OptimizeResult(true, "Reset done.") },
+        ))
+        rule.onNodeWithText("Reset", ignoreCase = true).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail_reset.png")
+        click("Reset")
+        assertEquals(listOf("a.alpha"), reset)
+        assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
+        rule.onNodeWithText("Reset done.").assertIsDisplayed()
+    }
+
+    @Test
     fun unwatchedDetailOffersWatch() {
         detailScreen()
         rule.onNodeWithText("Auto-optimize this app").assertDoesNotExist()
@@ -285,6 +302,17 @@ class AppsScreensTest : ComposeTestBase() {
         assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
     }
 
+    @Test
+    fun aLaterResetClearsCompiled() {
+        val done = dev.speedcompiler.tv.watch.QueueItem(
+            1, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.MANUAL,
+            dev.speedcompiler.tv.watch.QueueState.DONE, enqueuedAt = 1, finishedAt = 50,
+        )
+        fun reset(at: Long) = dev.speedcompiler.tv.watch.Event(timeMillis = at, packageName = "a.alpha", kind = "reset_done", message = "")
+        assertEquals(emptyMap<String, Long>(), optimizedAtMap(emptyList(), listOf(done), listOf(reset(60))))
+        assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done), listOf(reset(40)))) // optimized again after the reset
+    }
+
     private fun content(
         list: List<AppInfo> = apps, loading: Boolean = false, selecting: Boolean = false, picked: Set<String> = emptySet(),
         watchedNow: Map<String, WatchedApp> = emptyMap(), onWatch: (List<String>) -> Unit = {}, onQueue: (List<String>) -> Unit = {},
@@ -345,7 +373,7 @@ class AppsScreensTest : ComposeTestBase() {
     fun detailCardTakesNoFocus() {
         detailScreen()
         rule.onNodeWithContentDescription("Alpha, New").assertExists().assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Focused))
-        rule.onAllNodes(isFocusable()).assertCountEquals(3) // Back, Optimize now, Watch; not the card
+        rule.onAllNodes(isFocusable()).assertCountEquals(4) // Back, Optimize now, Watch, Reset; not the card
         rule.onAllNodesWithText("Optimize now", ignoreCase = true).assertCountEquals(1)
     }
 

@@ -17,6 +17,9 @@ interface Optimizer {
 
     /** The compiler filter the TV reports for [packageName], or null when unknown. */
     suspend fun verify(packageName: String): String? = null
+
+    /** Puts [packageName] back to the TV's own compile state. */
+    suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, "Didn't reset: not supported here.")
 }
 
 /** Why the gate is open or closed. Only [OpensAt] carries a clock time, taken from the user's set hours. */

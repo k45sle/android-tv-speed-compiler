@@ -43,6 +43,8 @@ val helpEntries = listOf(
     HelpEntry("The TV did not answer", "Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.", Fix.Retry),
     HelpEntry("Optimizing did not finish", "The TV stopped or refused the job. Try again when the TV is idle."),
     HelpEntry("Optimized, but not checked", "This TV does not report the result. The app may still start faster."),
+    HelpEntry("What speed compile changes", "It uses more storage. The first launch after an app update is slower again until the app is optimized again. Results vary by app and TV."),
+    HelpEntry("How to undo it", "Open the app in Apps and choose Reset. Uninstalling Speed Compile does not undo it."),
     HelpEntry("The pairing code did not work", "Pairing codes expire. Get a new code on the TV and type all 6 digits."),
 )
 

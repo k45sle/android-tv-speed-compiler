@@ -32,6 +32,13 @@ class HelpScreenTest : ComposeTestBase() {
         rule.onNodeWithText("Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.").assertIsDisplayed()
     }
 
+    @Test fun explainsWhatSpeedCompileChangesAndHowToUndoIt() {
+        rule.setContent { SpeedTheme { HelpContent(go = {}) } }
+        rule.onNodeWithText("What speed compile changes").assertIsDisplayed()
+        rule.onNodeWithText("How to undo it").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/help_speed_compile.png")
+    }
+
     @Test fun everyFixRoutesToItsDestination() {
         assertEquals(Routes.QuickRepair, fixRoute(Fix.QuickRepair))
         listOf(Fix.TurnOnWirelessDebugging, Fix.AllowPrompt, Fix.Retry).forEach { assertEquals(Routes.Reconnect, fixRoute(it)) }
