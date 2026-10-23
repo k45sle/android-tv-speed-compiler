@@ -15,7 +15,10 @@ android {
         // The release workflow passes the tag (v2.1.3 -> 2.1.3); versionCode 2.1.3 -> 20103 so each release installs over the last.
         val ver = providers.gradleProperty("appVersion").orNull ?: "0.1.0"
         versionName = ver
-        versionCode = ver.substringBefore('-').split('.').map(String::toInt).let { (a, b, c) -> a * 10000 + b * 100 + c }
+        val m = Regex("""^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.]+)?$""").matchEntire(ver)
+        require(m != null && m.groupValues.subList(1, 4).all { it.length <= 2 }) { "appVersion must look like 1.2.3 or 1.2.3-rc1 with each number under 100, got '$ver'" }
+        versionCode = m.groupValues.subList(1, 4).map(String::toInt).let { (a, b, c) -> a * 10000 + b * 100 + c }
+        ndk { abiFilters += setOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Release key lives outside the repo (~/.gradle/gradle.properties); without it, release builds stay unsigned.
@@ -29,7 +32,12 @@ android {
         }
     }
     buildTypes {
-        release { signingConfig = signingConfigs.findByName("release") }
+        release {
+            signingConfig = signingConfigs.findByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -51,7 +59,7 @@ android {
         }
     }
     // NanoHTTPD and Conscrypt ship duplicate license files
-    packaging { resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1") }
+    packaging { resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/AL2.0", "META-INF/LGPL2.1", "org/bouncycastle/pqc/**") }
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
