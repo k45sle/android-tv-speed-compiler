@@ -9,10 +9,15 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
+import dev.speedcompiler.tv.engine.GateCache
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -29,8 +34,10 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private val queueDao get() = graph.database.queue()
     private val work get() = WorkManager.getInstance(context)
 
-    override val queue: Flow<List<QueueEntry>> get() = queueDao.active().map { items ->
-        val gate = graph.gate.status()
+    /** ETAs read this cache, so a slow or disconnected TV never stalls the queue flow. */
+    private val gateCache by lazy { GateCache(graph.clock, CoroutineScope(SupervisorJob() + Dispatchers.Default)) { graph.gate.status() } }
+
+    override val queue: Flow<List<QueueEntry>> get() = combine(queueDao.active().onEach { gateCache.refreshIfStale() }, gateCache.status) { items, gate ->
         items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i)) }
     }
 
