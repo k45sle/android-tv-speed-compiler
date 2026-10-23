@@ -43,6 +43,7 @@ import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.ListRow
+import dev.speedcompiler.tv.ui.apps.SimpleDialog
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.watch.Event
@@ -85,6 +86,8 @@ fun ActivityContent(
     onBack: () -> Unit = {},
 ) {
     var open by remember { mutableStateOf<Long?>(null) }
+    // The ids shown when the dialog opened, so a job added meanwhile is not cancelled unasked.
+    var confirmAll by remember { mutableStateOf<List<Long>?>(null) }
     val queueHeader = remember { FocusRequester() }
     val historyHeader = remember { FocusRequester() }
     var refocus by remember { mutableStateOf<FocusRequester?>(null) }
@@ -96,6 +99,18 @@ fun ActivityContent(
     LaunchedEffect(Unit) { runCatching { queueHeader.requestFocus() } }
     val cs = MaterialTheme.colorScheme
     val sc = LocalSpeedColors.current
+    confirmAll?.let { ids ->
+        val keep = remember { FocusRequester() }
+        LaunchedEffect(Unit) { keep.requestFocus() }
+        SimpleDialog({ confirmAll = null }) {
+            Text(if (ids.size == 1) "Cancel the 1 app in the queue?" else "Cancel all ${ids.size} apps in the queue?")
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
+                // Focus starts on the safe choice.
+                Button({ confirmAll = null }, Modifier.focusRequester(keep)) { Text("Keep".uppercase()) }
+                Button({ confirmAll = null; refocus = queueHeader; ids.forEach(onCancel) }) { Text("Cancel all".uppercase()) }
+            }
+        }
+    }
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp).padding(top = 12.dp, bottom = 12.dp)) {
         Marquee("Activity", compact = true, onBack = onBack)
@@ -106,6 +121,8 @@ fun ActivityContent(
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {
         item { PixelText("Queue", Modifier.focusRequester(queueHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
+        aggregateLine(batchDone(queue, history), queue)?.let { line -> item { Text(line, color = cs.onSurfaceVariant) } }
+        if (queue.isNotEmpty()) item { Button({ confirmAll = queue.map { it.item.id } }) { Text("Cancel all".uppercase()) } }
         if (queue.isEmpty()) item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)

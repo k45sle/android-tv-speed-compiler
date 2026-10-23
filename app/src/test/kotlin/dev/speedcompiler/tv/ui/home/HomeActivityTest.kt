@@ -7,6 +7,8 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.semantics.SemanticsActions
@@ -77,7 +79,7 @@ class HomeActivityTest : ComposeTestBase() {
         home(ConnectionState.Connected)
         rule.onNodeWithText("Auto-optimize is on", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("Connected", ignoreCase = true).assertIsDisplayed()
-        rule.onNodeWithText("1 waiting · next: Starts at 02:00").assertIsDisplayed()
+        rule.onNodeWithText("1 waiting · next: Starts at 02:00 · 0 of 2").assertIsDisplayed()
         rule.onNodeWithText("Recent activity", ignoreCase = true).assertIsDisplayed()
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_connected.png")
@@ -211,7 +213,7 @@ class HomeActivityTest : ComposeTestBase() {
         rule.onNodeWithContentDescription("Retry Alpha").performScrollTo().invokeClick()
         assertEquals(listOf(7L), retried)
         rule.onNodeWithText("Failed: Connection lost").invokeClick()
-        rule.onNodeWithText("Didn't finish", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("Didn't finish", substring = true).performScrollTo().assertIsDisplayed()
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/activity.png")
     }
@@ -225,5 +227,34 @@ class HomeActivityTest : ComposeTestBase() {
         rule.setContent { SpeedTheme(dev.speedcompiler.tv.engine.ThemeChoice.Light) { ActivityContent(queue, history, events, look, {}, {}, now, utc) } }
         rule.waitForIdle()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/activity_light.png")
+    }
+
+    private fun inQueue(vararg etas: Eta) = etas.mapIndexed { i, e -> QueueEntry(queued(i + 1L, "p.$i"), i, e) }
+
+    @Test
+    fun aggregateLineCases() {
+        val three = inQueue(Eta.None, Eta.InQueue(1, 120_000), Eta.InQueue(2, 240_000))
+        assertEquals("0 of 3, about 6 min left", aggregateLine(0, three))
+        assertEquals("1 of 3, about 4 min left", aggregateLine(1, three.drop(1)))
+        assertEquals(null, aggregateLine(3, emptyList()))
+        assertEquals("1 of 3", aggregateLine(1, inQueue(Eta.None, Eta.WaitingForIdle)))
+        assertEquals(null, aggregateLine(0, three.take(1)))
+        assertEquals(null, aggregateLine(0, emptyList()))
+        val done = listOf(queued(9, "x").copy(state = QueueState.DONE, finishedAt = 2_000), queued(8, "y").copy(state = QueueState.DONE, finishedAt = 500))
+        assertEquals(1, batchDone(three, done))
+        assertEquals(0, batchDone(three, done.map { it.copy(state = QueueState.SKIPPED) }))
+    }
+
+    @Test
+    fun cancelAllAsksFirstThenCancelsEveryItem() {
+        val cancelled = mutableListOf<Long>()
+        show { ActivityContent(queue, emptyList(), events, look, { cancelled += it }, {}, now, utc) }
+        rule.onNodeWithText("CANCEL ALL").invokeClick()
+        rule.onNodeWithText("KEEP").invokeClick() // dismiss
+        assertEquals(emptyList<Long>(), cancelled)
+        rule.onNodeWithText("CANCEL ALL").invokeClick()
+        rule.onAllNodesWithText("CANCEL ALL").assertCountEquals(2)
+        rule.onAllNodesWithText("CANCEL ALL")[1].invokeClick()
+        assertEquals(listOf(1L, 2L), cancelled)
     }
 }

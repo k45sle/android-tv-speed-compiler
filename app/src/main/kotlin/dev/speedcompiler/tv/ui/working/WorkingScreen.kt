@@ -68,6 +68,8 @@ import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.AppLook
 import dev.speedcompiler.tv.ui.home.JobResult
 import dev.speedcompiler.tv.ui.home.jobResult
+import dev.speedcompiler.tv.ui.home.aggregateLine
+import dev.speedcompiler.tv.ui.home.batchDone
 import dev.speedcompiler.tv.ui.home.etaText
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.ui.home.lookup
@@ -148,6 +150,8 @@ class WorkingState(
     val bests: Map<String, Int> = emptyMap(),
     /** The TV reported the result as fully compiled; without it a finished run is only "compiled". */
     val verified: Boolean = false,
+    /** "k of N, about M min left" while several apps are being optimized. */
+    val batch: String? = null,
 )
 
 /** Running for real: a running job without a connection is only waiting to retry. */
@@ -194,7 +198,7 @@ fun WorkingHost(
     }
     val end = if (job.finished) run?.finishedAt ?: now else now
     val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
-    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best, checked), back, saveBest)
+    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best, checked, aggregateLine(batchDone(q, h), q)), back, saveBest)
 }
 
 @Composable
@@ -263,6 +267,7 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
                 JobView.Starting -> line("Starting…", cs.onSurface)
                 JobView.Running -> line("Optimizing. This continues if you leave.", cs.onSurface)
             }
+            if (s.batch != null) Text(s.batch, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (s.job != JobView.CouldntStart) PixelText(
                     elapsedText(s.elapsedMillis), color = cs.onSurface,
