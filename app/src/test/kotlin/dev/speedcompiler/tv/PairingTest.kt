@@ -9,6 +9,9 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.Socket
 import java.net.URL
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -89,16 +92,15 @@ class PairingTest {
 
     @Test fun serverServesPageAndPairs() {
         val rec = Recorder()
-        var finished = false
-        val s = start(rec) { finished = true }
+        val finished = CountDownLatch(1)
+        val s = start(rec) { finished.countDown() }
         val (code, html) = http(s, "/${s.token}")
         assertEquals(200, code)
         assertTrue(html.contains("one-time-code"))
         val (c2, _) = http(s, "/${s.token}", "POST", "code=123+456")
         assertEquals(200, c2)
         assertEquals(listOf(Triple("<tv-ip>", 4242, "123456")), rec.calls)
-        Thread.sleep(1000)
-        assertTrue(finished)
+        assertTrue(finished.await(5, TimeUnit.SECONDS)) // the server finishes on a 500 ms timer
     }
 
     @Test fun manualPortOverridesDiscovery() {
@@ -157,15 +159,22 @@ class PairingTest {
         assertTrue(rec.calls.isEmpty())
     }
 
+    private fun eventually(cond: () -> Boolean) {
+        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (!cond()) { assertTrue("timed out", System.nanoTime() < end); LockSupport.parkNanos(10_000_000) }
+    }
+
     // QA R-02
     @Test fun handlerThreadsAreBounded() {
         val s = start(Recorder()); val before = handlerThreads()
         val idle = List(200) { runCatching { Socket("127.0.0.1", s.port) }.getOrNull() } // extras may be refused
-        Thread.sleep(500)
-        assertTrue("handler threads capped", handlerThreads() - before <= 8)
+        eventually { handlerThreads() - before >= 8 }
+        repeat(20) { // the cap must hold while the rest of the 200 connections are accepted
+            assertTrue("handler threads capped", handlerThreads() - before <= 8)
+            LockSupport.parkNanos(10_000_000)
+        }
         idle.forEach { it?.close() }
-        Thread.sleep(500)
-        assertEquals(200, http(s, "/${s.token}").first)
+        eventually { runCatching { http(s, "/${s.token}").first == 200 }.getOrDefault(false) }
     }
 
     // QA R-06, D-06

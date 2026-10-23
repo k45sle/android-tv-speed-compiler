@@ -5,6 +5,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import org.junit.Assume.assumeNotNull
+import org.junit.Assume.assumeTrue
+import org.junit.BeforeClass
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
+import java.util.concurrent.atomic.AtomicInteger
 import dev.speedcompiler.tv.ui.working.WorkingHost
 import dev.speedcompiler.tv.ui.Routes
 import com.github.takahirom.roborazzi.recordRoboVideo
@@ -77,9 +81,10 @@ import org.robolectric.annotation.Config
 
 /**
  * README screenshots from made-up demo data at 1920x1080. They go to build/outputs/roborazzi/readme, and to the
- * directory in env README_SHOTS_DIR (docs/media) when it is set. Recording is opt-in, so a normal test run writes nothing:
- * README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests ReadmeScreenshotsTest -Proborazzi.record
+ * directory in env README_SHOTS_DIR (docs/media) when it is set. Skipped without -Pmedia, and recording is opt-in, so a normal run writes nothing:
+ * README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests ReadmeScreenshotsTest -Pmedia -Proborazzi.record
  */
+@OptIn(ExperimentalRoborazziApi::class)
 @Config(qualifiers = "w960dp-h540dp-xhdpi")
 class ReadmeScreenshotsTest : ComposeTestBase() {
     private val utc = ZoneId.of("UTC")
@@ -119,7 +124,13 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         return bmp
     }
 
-    private fun banner(d: Demo) = art(d, 320, 180)
+    // Banners decode on Dispatchers.IO, which runs on real time, not the paused clock; shoot() waits until each started one finished.
+    private val bannersStarted = AtomicInteger()
+    private val bannersDone = AtomicInteger()
+    private fun banner(d: Demo): Bitmap {
+        bannersStarted.incrementAndGet()
+        try { return art(d, 320, 180) } finally { bannersDone.incrementAndGet() }
+    }
 
     private fun look(pkg: String) = demo.firstOrNull { it.pkg == pkg }
         ?.let { AppLook(it.label, art(it, 96, 96).asImageBitmap(), banner(it).asImageBitmap()) } ?: AppLook(pkg)
@@ -128,7 +139,14 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         rule.mainClock.autoAdvance = false
         rule.setContent { SpeedTheme(if (dark) ThemeChoice.Dark else ThemeChoice.Light, seed) { content() } }
         rule.mainClock.advanceTimeBy(500)
-        Thread.sleep(500) // the Apps screens decode banners on Dispatchers.IO, which runs on real time, not the paused clock
+        // shortcut: done once every started banner finished and none started for 50 ms; use a test dispatcher if shots still flake.
+        var quietSince = System.nanoTime()
+        var seen = -1
+        while (System.nanoTime() - quietSince < 50_000_000) {
+            val started = bannersStarted.get()
+            if (started != seen || started != bannersDone.get()) { seen = started; quietSince = System.nanoTime() }
+            Thread.yield()
+        }
         act()
         // A game opens a few frames after its click; 1100 ms in, the 100 ms logo loop is on frame 3 (whole logo).
         rule.mainClock.advanceTimeBy(600)
@@ -353,5 +371,8 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         } finally { CosmicWormDef.seed = null; AlienRunDef.seed = null; StarArrowDef.seed = null }
     }
 
-    private companion object { const val NUVIO = "com.nuvio.tv" }
+    private companion object {
+        const val NUVIO = "com.nuvio.tv"
+        @JvmStatic @BeforeClass fun mediaOnly() = assumeTrue(System.getProperty("media") != null)
+    }
 }

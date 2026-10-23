@@ -35,7 +35,7 @@ jobs:
           ORG_GRADLE_PROJECT_releaseStoreFile: ${{ runner.temp }}/release.jks
           ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.RELEASE_STORE_PASSWORD }}
           ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.RELEASE_KEY_ALIAS }}
-        run: ./gradlew lint test assembleRelease "-PappVersion=${GITHUB_REF_NAME#v}"
+        run: ./gradlew lint testDebugUnitTest assembleRelease "-PappVersion=${GITHUB_REF_NAME#v}"
       - name: Verify signature
         run: |
           apk="speed-compile-${GITHUB_REF_NAME}.apk"
