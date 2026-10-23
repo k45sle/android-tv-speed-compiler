@@ -21,7 +21,7 @@ data class SettingsValues(
     val windowEndMinute: Int = 360,
     val gateMode: GateMode = GateMode.Idle,
     val paused: Boolean = false,
-    val keepTrusting: Boolean = true,
+    val keepTrusting: Boolean = false,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
     val accentPreset: Int = 0,
