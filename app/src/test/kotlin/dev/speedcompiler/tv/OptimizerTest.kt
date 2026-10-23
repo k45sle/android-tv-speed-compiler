@@ -169,7 +169,7 @@ class OptimizerTest {
     }
 
     @Test fun resetCommandIsValidatedLikeCompile() {
-        assertEquals("cmd package compile --reset com.a_b", resetCommand("com.a_b"))
+        assertEquals("cmd package compile -r install -f com.a_b", resetCommand("com.a_b"))
         listOf("a b", "", "a;b", "a\nb", "a\$(x)", "a/b", "a-b").forEach {
             assertTrue(it, runCatching { compileCommand(it) }.isFailure)
             assertTrue(it, runCatching { resetCommand(it) }.isFailure)

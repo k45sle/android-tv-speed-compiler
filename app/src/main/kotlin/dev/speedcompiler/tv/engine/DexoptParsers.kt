@@ -17,7 +17,8 @@ fun compileCommand(pkg: String): String {
 /** Undoes [compileCommand]: the TV goes back to its own compile choice for the app. Throws on an invalid id. */
 fun resetCommand(pkg: String): String {
     require(isValidPackageId(pkg)) { "invalid package id" }
-    return "cmd package compile --reset $pkg"
+    // --reset needs the system uid before Android 14; recompiling for the install reason works from shell on 30 to 34
+    return "cmd package compile -r install -f $pkg"
 }
 
 fun artDumpCommand(pkg: String): String {
