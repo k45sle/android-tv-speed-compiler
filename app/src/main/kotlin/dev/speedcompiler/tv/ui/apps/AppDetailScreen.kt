@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,16 +62,31 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
+    val resets by remember(deps) { deps.resets }.collectAsState(emptyList())
     val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
+    var resetNote by remember(packageName) { mutableStateOf<String?>(null) }
     val mine = watched.firstOrNull { it.packageName == packageName }
     AppDetailContent(
         loaded ?: AppInfo(packageName, packageName),
-        mine, optimizedAtMap(watched, history)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
+        mine, optimizedAtMap(watched, history, resets)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
+        onReset = {
+            if (resetNote != RESETTING) scope.launch {
+                resetNote = RESETTING
+                // Unwatch first so a queued compile cannot redo speed after the reset; NonCancellable so Back does not stop it halfway.
+                resetNote = try {
+                    withContext(NonCancellable) { deps.scheduler.unwatch(packageName); deps.reset(packageName) }.detail
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    "Didn't reset: ${e.message ?: "unexpected error"}."
+                }
+            }
+        },
+        resetNote = resetNote,
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
     )
@@ -85,6 +105,8 @@ fun AppDetailContent(
     onAuto: (Boolean) -> Unit,
     onBack: () -> Unit = {},
     runs: List<QueueItem> = emptyList(),
+    onReset: () -> Unit = {},
+    resetNote: String? = null,
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
@@ -125,7 +147,9 @@ fun AppDetailContent(
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton("Optimize now", onOptimize, Modifier.remembersFocus(mem, "optimize"))
                         ArcadeButton(if (watched != null) "Stop watching" else "Watch", onToggleWatch, Modifier.remembersFocus(mem, "watch"))
+                        ArcadeButton("Reset", onReset, Modifier.remembersFocus(mem, "reset"))
                     }
+                    if (resetNote != null) Text(resetNote, style = MaterialTheme.typography.bodyMedium)
                     if (watched != null) {
                         OperatorRow(
                             "Auto-optimize this app", onClick = { onAuto(!watched.autoOptimize) },
@@ -142,3 +166,5 @@ fun AppDetailContent(
         }
     }
 }
+
+private const val RESETTING = "Resetting..."

@@ -7,6 +7,7 @@ import dev.speedcompiler.tv.engine.FakeClock
 import dev.speedcompiler.tv.engine.OptimizerImpl
 import dev.speedcompiler.tv.engine.compileCommand
 import dev.speedcompiler.tv.engine.parseCompilerFilter
+import dev.speedcompiler.tv.engine.resetCommand
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
 import kotlinx.coroutines.CompletableDeferred
@@ -35,6 +36,7 @@ class OptimizerTest {
     private class Events : EventDao {
         val rows = mutableListOf<Event>()
         override fun recent(limit: Int): Flow<List<Event>> = emptyFlow()
+        override fun resets(): Flow<List<Event>> = emptyFlow()
         override suspend fun insert(event: Event) { rows += event }
         override suspend fun pruneBefore(before: Long) { rows.removeAll { it.timeMillis < before } }
     }
@@ -165,6 +167,36 @@ class OptimizerTest {
     @Test fun rejectsBadIdInCommand() {
         assertEquals("cmd package compile -m speed -f com.a_b", compileCommand("com.a_b"))
         assertTrue(runCatching { compileCommand("a b") }.isFailure)
+    }
+
+    @Test fun resetCommandIsValidatedLikeCompile() {
+        assertEquals("cmd package compile -r install -f com.a_b", resetCommand("com.a_b"))
+        listOf("a b", "", "a;b", "a\nb", "a\$(x)", "a/b", "a-b").forEach {
+            assertTrue(it, runCatching { compileCommand(it) }.isFailure)
+            assertTrue(it, runCatching { resetCommand(it) }.isFailure)
+        }
+    }
+
+    @Test fun resetRunsTheCommandAndReportsTheOutcome() = runTest {
+        val shell = Shell()
+        val ev = Events()
+        val r = impl(shell, ev).reset("dev.speedcompiler.tv")
+        assertTrue(r.ok)
+        assertEquals(1, shell.compiles)
+        assertEquals("reset_done", ev.rows.single().kind)
+        val bad = impl(Shell(compile = "Failure\n__rc=1\n"), Events()).reset("dev.speedcompiler.tv")
+        assertFalse(bad.ok)
+        assertTrue(bad.detail.startsWith("Didn't reset"))
+        assertFalse(impl(shell, Events()).reset("a b").ok)
+        assertEquals(1, shell.compiles)
+    }
+
+    @Test fun resetTimesOutAsAFailure() = runTest {
+        val ev = Events()
+        val r = impl(Shell(compileDelay = 1_000), ev, timeout = 100).reset("dev.speedcompiler.tv")
+        assertFalse(r.ok)
+        assertTrue(r.detail.startsWith("Didn't reset"))
+        assertEquals("reset_failed", ev.rows.single().kind)
     }
 
     @Test fun timesOut() = runTest {

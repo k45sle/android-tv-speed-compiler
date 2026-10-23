@@ -121,6 +121,9 @@ interface EventDao {
     @Query("SELECT * FROM event ORDER BY timeMillis DESC LIMIT :limit")
     fun recent(limit: Int): Flow<List<Event>>
 
+    @Query("SELECT * FROM event WHERE kind = 'reset_done'")
+    fun resets(): Flow<List<Event>>
+
     @Insert
     suspend fun insert(event: Event)
 
