@@ -308,6 +308,16 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun optimizeSelectedEnqueuesEachAppOnTheScheduler() {
+        listScreen()
+        click("Select")
+        listOf("Alpha", "Beta", "Gamma").forEach { click(it) }
+        click("Optimize selected")
+        rule.waitForIdle()
+        assertEquals(listOf("enqueue:a.alpha", "enqueue:b.beta", "enqueue:c.gamma"), scheduler.calls.sorted())
+    }
+
+    @Test
     fun selectAllWatchedPicksOnlyWatchedApps() {
         val watching = mutableListOf<String>()
         content(selecting = true, watchedNow = mapOf("b.beta" to WatchedApp("b.beta", "f")), onWatch = { watching += it })

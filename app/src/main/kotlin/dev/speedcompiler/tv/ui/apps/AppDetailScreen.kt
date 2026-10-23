@@ -102,7 +102,7 @@ fun AppDetailContent(
             val ok = it.state == QueueState.DONE
             ScoreRow(agoText(it.finishedAt ?: it.enqueuedAt, now), if (it.source == QueueSource.AUTO) "Automatic" else "Manual", if (ok) "Done" else "Failed", if (ok) Tone.Ok else Tone.Error)
         }
-    val tone = result?.tone ?: Tone.Neutral
+    val tone = if (result == JobResult.Queued) Tone.Warn else result?.tone ?: Tone.Neutral // matches the Apps list pill
     val word = result?.label ?: "New"
     RoomBackdrop {
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {

@@ -138,7 +138,7 @@ fun AppBanner(app: AppInfo, modifier: Modifier) {
 
 @Composable
 fun AppsScreen(go: (String) -> Unit, onBack: () -> Unit, deps: AppsDeps = rememberAppsDeps()) {
-    val loaded by produceState<List<AppInfo>?>(null, deps) { value = deps.loadApps() }
+    val loaded by produceState<List<AppInfo>?>(null, deps) { value = runCatching { deps.loadApps() }.getOrDefault(emptyList()) }
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
