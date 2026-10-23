@@ -200,10 +200,12 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
         deps.connection.first { it == ConnectionState.Connected }
         onBack()
     }
-    Page(null, "Reconnect") {
-        Body("Turn Wireless debugging back on and this app reconnects by itself.")
-        if (waiting) StatusPill("Connecting", Tone.Info)
-        else PrimaryButton("Open Developer options") { env.openDeveloperOptions() }
+    CompositionLocalProvider(LocalPageBack provides onBack) {
+        Page(null, "Reconnect") {
+            Body("Turn Wireless debugging back on and this app reconnects by itself.")
+            if (waiting) StatusPill("Connecting", Tone.Info)
+            else PrimaryButton("Open Developer options") { env.openDeveloperOptions() }
+        }
     }
 }
 
@@ -365,7 +367,10 @@ private fun Waiting() {
 }
 
 @Composable
-private fun ShowMeHow(onClick: () -> Unit) = PrimaryButton("Show me how", Color(Cabinet.BLUE), Color(Cabinet.CREAM), onClick)
+// Secondary: no focus grab, so the step's main action keeps initial focus.
+private fun ShowMeHow(onClick: () -> Unit) = ArcadeButton(onClick, fill = Color(Cabinet.BLUE), contentColor = Color(Cabinet.CREAM)) {
+    Text("Show me how".uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString("Show me how") })
+}
 
 @Composable
 private fun PrimaryButton(label: String, fill: Color = Color.Unspecified, ink: Color = Color.Unspecified, onClick: () -> Unit) {

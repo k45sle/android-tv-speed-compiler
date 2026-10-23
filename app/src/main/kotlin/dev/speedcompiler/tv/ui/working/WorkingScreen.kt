@@ -27,6 +27,7 @@ import kotlin.math.max
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -223,21 +224,21 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         .animateFloat(0f, 1f, infiniteRepeatable(tween(600, easing = LinearEasing)), label = "phase") // read in draw only
     val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     Row(
-        Modifier.fillMaxWidth().height(104.dp).background(cs.background).drawBehind {
+        Modifier.fillMaxWidth().heightIn(min = 104.dp).background(cs.background).drawBehind {
             val sw = 4.dp.toPx()
             val period = 12.dp.toPx()
             drawRect(
                 c.accent, Offset(sw, sw), Size(size.width - 2 * sw, size.height - 2 * sw),
                 style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(sw, period - sw), phase.value * period)),
             )
-        }.padding(horizontal = 20.dp, vertical = 8.dp),
+        }.padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         PixelBanner(s.job.finished, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 64.dp)
         val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
         if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
         Column(Modifier.weight(1f)) {
-            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 30.sp, overflow = TextOverflow.Ellipsis)
+            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 28.sp, overflow = TextOverflow.Ellipsis)
             // Without a connection the worker loops running -> retry; say what it is really waiting on.
             if (!s.job.finished && s.connection != ConnectionState.Connected) {
                 line(s.connection?.let(::waitingForConnectionText) ?: "Starting…", cs.onSurface)
