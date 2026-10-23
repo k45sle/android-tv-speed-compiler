@@ -63,6 +63,10 @@ class DiagnosticsTest {
         )!!
         for (secret in listOf("AA-BB", "aa:bb", "HomeNet", "codename", "5555", "7777")) assertFalse("leaked $secret in $out", out.contains(secret))
         assertTrue(out, out.contains("12:30:45") && out.contains("9:05") && out.contains("com.example.app"))
+        assertEquals("addr [removed] end", scrub("addr ::ffff:abcd:1234 end"))
+        assertEquals("addr [removed]%wlan0", scrub("addr fe80::1%wlan0"))
+        assertEquals("a b : c", scrub("a b : c"))
+        assertEquals("x 0 12:30", scrub("x \u00010\u0001 12:30")) // a sentinel-shaped input cannot crash the export
     }
 
     @Test fun cappedJsonTrimsOldEventsAndSaysSo() {

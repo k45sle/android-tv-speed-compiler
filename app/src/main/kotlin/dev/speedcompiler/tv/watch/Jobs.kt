@@ -177,10 +177,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         runItem(g, id)
     } catch (e: CancellationException) {
         // Android stopped the worker mid-compile: WorkManager reruns it later, so the row must not claim RUNNING meanwhile.
-        withContext(NonCancellable) {
-            val dao = g.database.queue()
-            dao.get(id)?.takeIf { it.state == QueueState.RUNNING }?.let { dao.update(it.copy(state = QueueState.QUEUED, startedAt = null)) }
-        }
+        withContext(NonCancellable) { g.database.queue().requeueIfRunning(id) } // atomic, so a concurrent cancel's SKIPPED wins
         throw e
     } catch (e: Exception) {
         val dao = g.database.queue()

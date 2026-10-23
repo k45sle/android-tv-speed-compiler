@@ -21,6 +21,7 @@ import dev.speedcompiler.tv.engine.PackageChanges
 import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.toGateConfig
+import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -230,6 +231,13 @@ class SchedulingTest {
         wm.cancelUniqueWork(workName("a")).result.get() // what Android does when constraints are lost
         await("reset") { state(1) == QueueState.QUEUED }
         assertEquals(null, g.database.queue().get(1)!!.startedAt)
+    }
+
+    @Test fun requeueLeavesARowThatWasCancelledMeanwhile() = runBlocking {
+        val dao = g.database.queue()
+        val id = dao.insert(QueueItem(packageName = "a", source = QueueSource.MANUAL, state = QueueState.SKIPPED, enqueuedAt = 1, finishedAt = 2))
+        dao.requeueIfRunning(id)
+        assertEquals(QueueState.SKIPPED, dao.get(id)!!.state)
     }
 
     @Test fun weeklyVerifyRequeuesADowngradedApp() = runBlocking {

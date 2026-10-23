@@ -77,6 +77,9 @@ interface QueueDao {
     @Query("DELETE FROM queue_item WHERE state IN ('DONE', 'FAILED', 'SKIPPED') AND finishedAt < :before")
     suspend fun pruneFinished(before: Long)
 
+    @Query("UPDATE queue_item SET state = 'QUEUED', startedAt = NULL WHERE id = :id AND state = 'RUNNING'")
+    suspend fun requeueIfRunning(id: Long)
+
     @Query("SELECT * FROM queue_item WHERE id = :id")
     suspend fun get(id: Long): QueueItem?
 

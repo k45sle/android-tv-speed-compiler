@@ -34,7 +34,7 @@ private val SECRET_PATTERNS = listOf(
     Regex("\\b[0-9A-Fa-f]{2}([:-])([0-9A-Fa-f]{2}\\1){4}[0-9A-Fa-f]{2}\\b"), // MAC with colons or dashes
     Regex("\\S+@\\S+"), // adb public key tail (user@host)
     Regex("\\b\\d{1,3}(\\.\\d{1,3}){3}(:\\d{1,5})?\\b"), // IPv4 with optional port
-    Regex("(?<![\\w:])([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?<![\\w:])([0-9A-Fa-f]{1,4}:){0,6}:([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4}"), // IPv6: eight groups or a "::"
+    Regex("(?<![\\w:])([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?<![\\w:])([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,6})?::([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,6})?"), // IPv6: eight groups or a "::"
     Regex("\\b[\\w-]+\\.local\\b"), // mDNS host
     Regex("\\bemulator-\\d+"),
     Regex("(?i)\\bport\\s*:?\\s*\\d{1,5}\\b"),
@@ -51,7 +51,7 @@ private val SECRET_PATTERNS = listOf(
 fun scrub(text: String?, known: List<String> = emptyList()): String? = text?.let {
     // Clock times are set aside first: the port pattern would otherwise eat ":30" from "12:30:45".
     val times = mutableListOf<String>()
-    val masked = TIME.replace(known.filter(String::isNotBlank).fold(it) { s, k -> s.replace(k, "[removed]") }) { m ->
+    val masked = TIME.replace(known.filter(String::isNotBlank).fold(it.replace("\u0001", "")) { s, k -> s.replace(k, "[removed]") }) { m ->
         times += m.value
         "\u0001${times.size - 1}\u0001"
     }
