@@ -9,6 +9,10 @@ import androidx.compose.ui.test.performSemanticsAction
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.ui.Routes
 import org.junit.Assert.assertEquals
+import com.github.takahirom.roborazzi.captureRoboImage
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.onRoot
 import org.junit.Test
 import org.robolectric.annotation.Config
 
@@ -16,12 +20,22 @@ import org.robolectric.annotation.Config
 class HelpScreenTest : ComposeTestBase() {
     @Test fun showsEntriesAndFixButtonsNavigate() {
         val went = mutableListOf<String>()
-        rule.setContent { SpeedTheme { HelpContent { went += it } } }
+        rule.setContent { SpeedTheme { HelpContent(go = { went += it }) } }
         rule.onNodeWithText("The TV forgot this app").assertIsDisplayed()
         rule.onNodeWithText("The pairing code did not work").assertIsDisplayed()
         rule.onNodeWithText("Repair").performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Routes.QuickRepair), went)
         rule.onNode(hasContentDescription("Repair")).assertIsDisplayed()
         rule.onNodeWithText("Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.").assertIsDisplayed()
+    }
+
+    @Test fun shots() {
+        var light by androidx.compose.runtime.mutableStateOf(false)
+        rule.setContent { SpeedTheme(if (light) dev.speedcompiler.tv.engine.ThemeChoice.Light else dev.speedcompiler.tv.engine.ThemeChoice.Dark) { HelpContent(go = {}) } }
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/help_dark.png")
+        light = true
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/help_light.png")
     }
 }

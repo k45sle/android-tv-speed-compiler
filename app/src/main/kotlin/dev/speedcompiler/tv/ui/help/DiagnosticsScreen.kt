@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +24,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import dev.speedcompiler.tv.theme.Button
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import dev.speedcompiler.tv.theme.ArcadeButton
+import dev.speedcompiler.tv.theme.LocalSpeedColors
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.AppGraph
@@ -72,13 +84,22 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     DisposableEffect(Unit) { onDispose { server?.stop() } }
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
 
-    Column(Modifier.fillMaxSize().padding(Space.x4), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
-        Text("Diagnostics", style = MaterialTheme.typography.headlineMedium)
+    RoomBackdrop {
+      Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
+        Marquee("Diagnostics", compact = true, onBack = onBack)
+        Spacer(Modifier.height(12.dp))
+        Column(
+            Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline)
+                .verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(Space.x2),
+        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
         Text(
             "Settings, queue and recent events. It has no keys, codes or addresses.",
             style = MaterialTheme.typography.bodyMedium,
         )
-        Button(
+        ArcadeButton(
             onClick = {
                 note = "Preparing…"
                 scope.launch {
@@ -97,8 +118,8 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 }
             },
             modifier = Modifier.semantics { contentDescription = "Share diagnostics" },
-        ) { Text("Share") }
-        Button(
+        ) { Text("Share".uppercase()) }
+        ArcadeButton(
             onClick = {
                 scope.launch {
                     val old = server
@@ -125,11 +146,17 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 }
             },
             modifier = Modifier.semantics { contentDescription = "Show QR code to download on a phone" },
-        ) { Text("Download on phone") }
+        ) { Text("Download on phone".uppercase()) }
         note?.let { Text(it) }
-        url?.let {
-            Text("Scan with your phone on the same Wi-Fi. Works once, for 10 minutes.")
-            QrCard { Image(remember(it) { qrImageBitmap(it) }, "QR code to download diagnostics", Modifier.size(240.dp)) }
         }
+        url?.let {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
+                Text("Scan with your phone on the same Wi-Fi. Works once, for 10 minutes.")
+                QrCard { Image(remember(it) { qrImageBitmap(it) }, "QR code to download diagnostics", Modifier.size(200.dp)) }
+            }
+        }
+        }
+        }
+      }
     }
 }

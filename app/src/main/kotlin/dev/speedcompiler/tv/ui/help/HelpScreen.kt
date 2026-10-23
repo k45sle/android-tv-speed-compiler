@@ -3,7 +3,17 @@ package dev.speedcompiler.tv.ui.help
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import dev.speedcompiler.tv.theme.LocalSpeedColors
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.RoomBackdrop
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -35,18 +45,21 @@ val helpEntries = listOf(
 @Composable
 fun HelpScreen(go: (String) -> Unit, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    HelpContent(go)
+    HelpContent(go, onBack)
 }
 
 @Composable
-fun HelpContent(go: (String) -> Unit) {
+fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
     val mem = rememberFocusMemory(helpEntries.first { it.route != null }.title)
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(Space.x4),
-        verticalArrangement = Arrangement.spacedBy(Space.x1),
-    ) {
-        item { Text("Help", style = MaterialTheme.typography.headlineMedium) }
+    RoomBackdrop {
+      Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
+        Marquee("Help", compact = true, onBack = onBack)
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(Space.x1),
+        ) {
         items(helpEntries) { e ->
             ListRow(e.title, Modifier.semantics { contentDescription = "${e.title}. ${e.body}" }, e.body) {
                 if (e.route != null && e.action != null) {
@@ -54,5 +67,7 @@ fun HelpContent(go: (String) -> Unit) {
                 }
             }
         }
+        }
+      }
     }
 }

@@ -162,6 +162,17 @@ class HomeActivityTest : ComposeTestBase() {
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/activity.png")
     }
 
+    @Test
+    fun activityLightShot() {
+        val history = listOf(
+            QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 6_000, failureReason = "Connection lost"),
+            QueueItem(8, "b.beta", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 2_000, finishedAt = 7_000),
+        )
+        rule.setContent { SpeedTheme(dev.speedcompiler.tv.engine.ThemeChoice.Light) { ActivityContent(queue, history, events, look, {}, {}, now, utc) } }
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/activity_light.png")
+    }
+
     private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.onAllNodesWithTextCancel(index: Int) =
         onAllNodes(androidx.compose.ui.test.hasText("Cancel"))[index]
 }

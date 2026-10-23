@@ -5,8 +5,16 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
+import dev.speedcompiler.tv.theme.Tone
+import dev.speedcompiler.tv.theme.toneColor
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.focusFx
@@ -61,6 +69,7 @@ fun ActivityScreen(onBack: () -> Unit) {
         queue, history, events, rememberLook(),
         onCancel = { id -> graph.appScope.launch { graph.scheduler.cancel(id) } },
         onRetry = { id -> graph.appScope.launch { graph.scheduler.retry(id) } },
+        onBack = onBack,
     )
 }
 
@@ -74,6 +83,7 @@ fun ActivityContent(
     onRetry: (Long) -> Unit,
     now: Instant = Instant.now(),
     zone: ZoneId = ZoneId.systemDefault(),
+    onBack: () -> Unit = {},
 ) {
     var open by remember { mutableStateOf<Long?>(null) }
     val queueHeader = remember { FocusRequester() }
@@ -83,11 +93,18 @@ fun ActivityContent(
     LaunchedEffect(queue, history) {
         refocus?.let { r -> runCatching { r.requestFocus() }.onFailure { runCatching { queueHeader.requestFocus() } }; refocus = null }
     }
-    LazyColumn(
-        Modifier.padding(horizontal = 48.dp, vertical = 27.dp),
-        verticalArrangement = Arrangement.spacedBy(Space.x1),
-    ) {
-        item { Text("Queue", Modifier.focusRequester(queueHeader).focusable(), style = MaterialTheme.typography.headlineMedium) }
+    val cs = MaterialTheme.colorScheme
+    val sc = LocalSpeedColors.current
+    RoomBackdrop {
+      Column(Modifier.padding(horizontal = 48.dp).padding(top = 12.dp, bottom = 12.dp)) {
+        Marquee("Activity", compact = true, onBack = onBack)
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth().background(cs.background).border(2.dp, sc.hairline),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(Space.x1),
+        ) {
+        item { PixelText("Queue", Modifier.focusRequester(queueHeader).focusable(), sc.accent, 36.sp) }
         if (queue.isEmpty()) item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)
@@ -104,26 +121,31 @@ fun ActivityContent(
                 },
             )
         }
-        item { Text("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusable(), style = MaterialTheme.typography.headlineMedium) }
+        item { PixelText("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusable(), sc.accent, 36.sp) }
         if (history.isEmpty()) item { Text("Nothing has run yet", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(history, key = { "h${it.id}" }) { h ->
             val l = look(h.packageName)
             val reason = h.failureReason?.takeIf { h.state == QueueState.FAILED || h.state == QueueState.SKIPPED }
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
             Column {
-                val shape = RoundedCornerShape(RowRadius)
                 Row(
-                    Modifier.fillMaxWidth().focusFx(1.025f, RowRadius) { open = if (open == h.id) null else h.id }.clip(shape)
-                        .border(2.dp, LocalSpeedColors.current.hairline, shape).padding(horizontal = Space.x2, vertical = Space.x1 + 4.dp),
+                    Modifier.fillMaxWidth().focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
+                        .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.x2),
                 ) {
-                    Text(time, style = MonoStyle.copy(fontSize = 14.sp))
+                    PixelText(time, Modifier.width(80.dp), sc.accent)
                     Icon(l)
                     Column(Modifier.weight(1f)) {
                         Text(l.label, style = MaterialTheme.typography.titleMedium)
-                        Text(listOfNotNull(stateText(h.state), reason).joinToString(": "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (reason != null) Text("${stateText(h.state)}: $reason", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
+                    PixelText(stateText(h.state).uppercase(), color = toneColor(when (h.state) {
+                        QueueState.DONE -> Tone.Ok
+                        QueueState.FAILED -> Tone.Error
+                        QueueState.SKIPPED -> Tone.Warn
+                        else -> Tone.Neutral
+                    }))
                     if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = "Retry ${l.label}" }) { Text("Retry") }
                 }
                 if (open == h.id) {
@@ -135,6 +157,8 @@ fun ActivityContent(
                 }
             }
         }
+        }
+      }
     }
 }
 
