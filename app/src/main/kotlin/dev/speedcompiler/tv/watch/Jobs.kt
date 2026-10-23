@@ -120,6 +120,9 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 }
 
+/** Gives the app's next job its full set of connection tries again. */
+suspend fun resetConnectionTries(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState("lost:$packageName", "0"))
+
 /** One later try for a failed app. Its own work name, so it never touches the optimize worker's REPLACE. */
 private fun enqueueRetryLater(context: Context, packageName: String) {
     val request = OneTimeWorkRequestBuilder<RetryWorker>()
@@ -171,6 +174,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
     } catch (e: Exception) {
         val dao = g.database.queue()
         dao.get(id)?.takeIf { it.state.isActive }?.let {
+            resetConnectionTries(g, it.packageName)
             dao.update(it.copy(state = QueueState.FAILED, finishedAt = g.clock.nowMillis(), failureReason = "Didn't finish: unexpected error (${e.javaClass.simpleName})."))
         }
         Result.success()
@@ -182,6 +186,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val pkg = item.packageName
         val fingerprint = g.packageSystem.installed().firstOrNull { it.packageName == pkg }?.fingerprint
         if (fingerprint == null) {
+            resetConnectionTries(g, pkg)
             dao.update(item.copy(state = QueueState.SKIPPED, finishedAt = g.clock.nowMillis(), failureReason = "Not installed"))
             return Result.success()
         }
@@ -206,7 +211,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 return Result.retry()
             }
         }
-        sync.put(SyncState(lostKey, "0"))
+        resetConnectionTries(g, pkg)
         val now = g.clock.nowMillis()
         // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
         // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.
@@ -225,7 +230,8 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val retriedKey = "retried:$pkg"
         if (result.ok) {
             sync.put(SyncState(retriedKey, ""))
-        } else if (sync.get(retriedKey) != fingerprint) {
+            WorkManager.getInstance(applicationContext).cancelUniqueWork("$RETRY_WORK:$pkg") // an app at speed needs no later try
+        } else if (!result.terminal && sync.get(retriedKey) != fingerprint) {
             sync.put(SyncState(retriedKey, fingerprint))
             enqueueRetryLater(applicationContext, pkg)
         }

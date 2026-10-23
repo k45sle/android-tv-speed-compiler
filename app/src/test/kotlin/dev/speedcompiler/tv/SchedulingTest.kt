@@ -310,11 +310,44 @@ class SchedulingTest {
         assertTrue(wm.getWorkInfosForUniqueWork("retry:a").get().none { it.state == WorkInfo.State.ENQUEUED }) // only one retry
     }
 
+    @Test fun aLaterSuccessCancelsThePendingRetry() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("retry scheduled") { wm.getWorkInfosForUniqueWork("retry:a").get().isNotEmpty() }
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true)
+        await("failed") { state(1) == QueueState.FAILED }
+        g.scheduler.retry(1)
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        await("retry cancelled") { wm.getWorkInfosForUniqueWork("retry:a").get().single().state == WorkInfo.State.CANCELLED }
+    }
+
+    @Test fun aFailureThatNeedsTheUserGetsNoDelayedRetry() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "pair again", terminal = true)
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        skipDelay("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        await("worker finished") { infos("a").single().state == WorkInfo.State.SUCCEEDED }
+        assertTrue(wm.getWorkInfosForUniqueWork("retry:a").get().isEmpty())
+    }
+
+    @Test fun aCancelGivesTheNextJobItsFullConnectionTries() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "lost", connectionLost = true)
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("one try counted") { g.database.syncState().get("lost:a") == "1" }
+        g.scheduler.cancel(1)
+        assertEquals("0", g.database.syncState().get("lost:a"))
+    }
+
     @Test fun anExceptionInTheRunMarksTheRowFailed() = runBlocking {
+        g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("lost:a", "3"))
         optimizer.before = { throw IllegalStateException("boom") }
         g.scheduler.optimizeNow("a")
         await("failed") { state(1) == QueueState.FAILED }
         assertTrue(g.database.queue().get(1)!!.failureReason!!.contains("IllegalStateException"))
+        assertEquals("0", g.database.syncState().get("lost:a"))
     }
 
     @Test fun recordingAResultKeepsAConcurrentAutoOptimizeToggle() = runBlocking {

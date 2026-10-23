@@ -4,8 +4,11 @@ import java.time.Instant
 
 data class InstalledPackage(val packageName: String, val fingerprint: String)
 
-/** [connectionLost]: the compile failed because the ADB link dropped, so the job should retry after a reconnect. */
-data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false)
+/**
+ * [connectionLost]: the compile failed because the ADB link dropped, so the job should retry after a reconnect.
+ * [terminal]: the failure needs the user to act, so a later automatic retry would only fail again.
+ */
+data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false, val terminal: Boolean = false)
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 

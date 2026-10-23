@@ -47,6 +47,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
 
     override suspend fun unwatch(packageName: String): Unit = lock.withLock {
         graph.database.watchedApps().delete(packageName)
+        resetConnectionTries(graph, packageName)
         queueDao.activeFor(packageName)?.let { doCancel(it.id) } ?: Unit
     }
 
@@ -54,6 +55,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
 
     private suspend fun doEnqueue(packageName: String, source: QueueSource) {
         val existing = queueDao.activeFor(packageName)
+        if (existing == null) resetConnectionTries(graph, packageName) // a new job starts with its full tries
         // shortcut: an update that lands during a running compile is not re-queued (REPLACE would kill the worker); the weekly verify catches it.
         if (existing != null && (existing.state == QueueState.RUNNING || existing.runNow)) return
         // The row says RUNNING only once the worker holds runLock; REPLACE on a started worker could cancel its compile.
@@ -66,6 +68,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private suspend fun doOptimizeNow(packageName: String) {
         val existing = queueDao.activeFor(packageName)
         if (existing?.state == QueueState.RUNNING) return
+        resetConnectionTries(graph, packageName)
         val item = if (existing == null) insert(packageName, QueueSource.MANUAL, runNow = true)
         else existing.copy(runNow = true, state = QueueState.QUEUED, failureReason = null).also { queueDao.update(it) }
         schedule(item)
@@ -76,6 +79,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private suspend fun doCancel(id: Long) {
         val item = queueDao.get(id)?.takeIf { it.state.isActive } ?: return
         work.cancelUniqueWork(workName(item.packageName))
+        resetConnectionTries(graph, item.packageName)
         queueDao.update(item.copy(state = QueueState.SKIPPED, finishedAt = graph.clock.nowMillis()))
     }
 
@@ -85,6 +89,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         val item = queueDao.get(id) ?: return
         if (item.state != QueueState.FAILED && item.state != QueueState.SKIPPED) return
         if (queueDao.activeFor(item.packageName) != null) return
+        resetConnectionTries(graph, item.packageName)
         val queued = item.copy(state = QueueState.QUEUED, finishedAt = null, failureReason = null)
         queueDao.update(queued)
         schedule(queued)

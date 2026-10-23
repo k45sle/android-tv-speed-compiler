@@ -9,10 +9,13 @@ import dev.speedcompiler.tv.engine.compileCommand
 import dev.speedcompiler.tv.engine.parseCompilerFilter
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,8 +41,11 @@ class OptimizerTest {
         val dexopt: String = "",
         val compileDelay: Long = 0,
         val compileFails: Throwable? = null,
+        /** Answers the first dexopt dump, letting a test finish a compile while that read is in flight. */
+        val firstDexopt: CompletableDeferred<String>? = null,
     ) : AdbShell {
         var compiles = 0
+        var artDumps = 0
         var dexoptDumps = 0
         override suspend fun run(command: String): ShellResult = when {
             command.startsWith("cmd package compile") -> {
@@ -48,15 +54,19 @@ class OptimizerTest {
                 delay(compileDelay)
                 ShellResult(0, compile)
             }
-            command.startsWith("pm art dump") -> ShellResult(0, art)
+            command.startsWith("pm art dump") -> {
+                artDumps++
+                ShellResult(0, art)
+            }
             else -> {
                 dexoptDumps++
-                ShellResult(0, dexopt)
+                ShellResult(0, if (dexoptDumps == 1 && firstDexopt != null) firstDexopt.await() else dexopt)
             }
         }
     }
 
-    private fun impl(shell: AdbShell, ev: Events, timeout: Long = 600_000) = OptimizerImpl(shell, ev, FakeClock(5), timeout)
+    private fun impl(shell: AdbShell, ev: Events, timeout: Long = 600_000, sdk: Int = 34) =
+        OptimizerImpl(shell, ev, FakeClock(5), timeout, sdk)
 
     @Test fun verifiedViaArtDump() = runTest {
         val ev = Events()
@@ -117,6 +127,7 @@ class OptimizerTest {
             val r = impl(Shell(compileFails = failure), Events()).optimize("com.nuvio.tv")
             assertFalse(r.ok)
             assertFalse(r.connectionLost)
+            assertTrue(r.terminal)
             assertTrue(r.detail, fix in r.detail)
         }
     }
@@ -127,6 +138,7 @@ class OptimizerTest {
             val r = impl(Shell(compileFails = failure), ev).optimize("com.nuvio.tv")
             assertFalse(r.ok)
             assertTrue(failure.toString(), r.connectionLost)
+            assertFalse(r.terminal)
             assertEquals("optimize_failed", ev.rows.single().kind)
         }
     }
@@ -149,5 +161,31 @@ class OptimizerTest {
         assertEquals(1, shell.dexoptDumps)
         optimizer.optimize("com.example.stream") // the compile makes the cached dump stale
         assertEquals(2, shell.dexoptDumps)
+    }
+
+    @Test fun aDumpReadBeforeACompileIsNotCachedAfterIt() = runTest {
+        val first = CompletableDeferred<String>()
+        val shell = Shell(dexopt = v1, firstDexopt = first)
+        val optimizer = impl(shell, Events())
+        val early = async { optimizer.verify("com.example.stream") } // blocks inside its dexopt read
+        runCurrent()
+        assertEquals("Optimized (checked)", optimizer.optimize("com.example.stream").detail)
+        first.complete("nothing") // the pre-compile answer arrives late
+        assertNull(early.await())
+        assertEquals("speed", optimizer.verify("com.example.stream"))
+        assertEquals(2, shell.dexoptDumps)
+    }
+
+    @Test fun beforeAndroid14VerifyNeverAsksForAnArtDump() = runTest {
+        val old = Shell(art = art, dexopt = v1)
+        val oldImpl = impl(old, Events(), sdk = 33)
+        assertEquals("speed", oldImpl.verify("com.example.stream"))
+        oldImpl.verify("com.example.other")
+        assertEquals(0, old.artDumps)
+        assertEquals(1, old.dexoptDumps)
+        val new = Shell(art = art)
+        assertEquals("speed", impl(new, Events(), sdk = 34).verify("com.nuvio.tv"))
+        assertEquals(1, new.artDumps)
+        assertEquals(0, new.dexoptDumps)
     }
 }
