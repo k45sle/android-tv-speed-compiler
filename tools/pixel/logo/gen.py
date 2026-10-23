@@ -8,7 +8,7 @@ from PIL import Image
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 
-# Subset of the game palette (games/gen.py PAL); bg is the logo base.
+# Subset of the game palette (games/lib.py PAL); bg is the logo base.
 PAL = {"bg": "153C29", "c": "F2E6C4", "g": "E8A33A", "b": "C98E45", "r": "9C6330", "y": "F2C14E", "k": "0B2017",
        "-": "F2E6C4", "~": "9DBFA9"}
 UNDER = {"g": "b", "b": "r", "y": "b"}  # belly tones while the roll shows the underside

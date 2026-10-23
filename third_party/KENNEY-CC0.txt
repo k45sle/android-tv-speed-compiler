@@ -5,4 +5,5 @@ License: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
 The Alien Run character and heart are redrawn from this pack (recolored to the game palette)
-by tools/pixel/games/. Credit is not required by the license; it is given anyway.
+by tools/pixel/games/. Its packed tile sheet (tilemap_packed.png)
+is committed at tools/pixel/games/kenney/. Credit is not required by the license; it is given anyway.

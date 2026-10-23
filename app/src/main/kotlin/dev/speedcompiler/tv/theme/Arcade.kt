@@ -467,3 +467,14 @@ fun ScoreTable(title: String, rows: List<ScoreRow>, modifier: Modifier = Modifie
         }
     }
 }
+
+/** Arcade hardware colors, identical in every preset and mode. Cream is large-text only (3:1) on the four bodies; ink is text on grey. */
+object Cabinet {
+    const val BLUE = 0xFF3B6FA8.toInt()
+    const val ORANGE = 0xFFB5543A.toInt()
+    const val PLUM = 0xFF5A4A7A.toInt()
+    const val LOGO = Retro.LOGO_BASE
+    const val CREAM = Retro.CREAM
+    const val GREY = 0xFFC7CCD1.toInt()
+    const val INK = 0xFF0B2017.toInt()
+}
