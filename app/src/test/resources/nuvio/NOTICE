@@ -6,6 +6,6 @@ https://github.com/NuvioMedia/NuvioTV at commit 92a14e9dea4d:
 They are licensed under the GNU General Public License v3.0 (GPL-3.0), like the
 rest of NuvioTV: https://github.com/NuvioMedia/NuvioTV/blob/92a14e9dea4d/LICENSE
 
-The Nuvio name and logo belong to the Nuvio project and are used here with its
-developers' blessing. These files are used only by ReadmeScreenshotsTest to draw
-the README screenshots and demo. They are not part of the Speed Compile app.
+The Nuvio name and logo belong to the Nuvio project. These files are used only by
+ReadmeScreenshotsTest to draw the README screenshots and demo, under GPL-3.0 as
+above. They are not part of the Speed Compile app.

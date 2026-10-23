@@ -80,7 +80,7 @@
   </tr>
 </table>
 
-<p align="center"><sub>The Nuvio name and logo belong to the Nuvio project (GPL-3.0, <a href="https://github.com/NuvioMedia/NuvioTV">github.com/NuvioMedia/NuvioTV</a>) and are used with its developers' blessing. Other apps in the screenshots are made up.</sub></p>
+<p align="center"><sub>The Nuvio name and logo belong to the Nuvio project (GPL-3.0, <a href="https://github.com/NuvioMedia/NuvioTV">github.com/NuvioMedia/NuvioTV</a>) and the art is used only by the screenshot tests. Other apps in the screenshots are made up.</sub></p>
 
 ## About this app
 
@@ -105,6 +105,7 @@ The app was written with the Nuvio community in mind, but it works with any app 
 - The app connects only to the TV it runs on, and to your phone on the same network when you pair or download diagnostics. Nothing is sent anywhere else unless you share a diagnostics file yourself.
 - The debugging key is created on the TV and stays in the app's private storage.
 - A diagnostics export holds settings, the queue, recent events and the package names of the apps involved. Addresses, codes, serial numbers and device names are removed before it is written.
+- The phone pairing page uses plain HTTP on your local network, so someone on the same Wi-Fi could in theory read the 6-digit code while you type it. The code works only for a short time. Pair on a network you trust.
 
 ## Install
 
@@ -144,14 +145,33 @@ Only the debugging connection can ask Android to compile another app. Speed Comp
 **Is it safe?**
 It runs Android's own compiler through the standard `cmd package compile` command, only for the apps you pick. You can stop it at any time by switching off Wireless debugging (it stays off until the TV restarts) or uninstalling the app. Wireless debugging and the trust setting stay as they are after an uninstall; switch them off in Developer options if you no longer want them.
 
+**How do I undo it?**
+Open the app in Apps and choose Reset. Uninstalling Speed Compile does not undo it.
+
 ## Build from source
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-The APK lands in `app/build/outputs/apk/debug/`. You need JDK 17 and the Android SDK.
+The debug APK lands in `app/build/outputs/apk/debug/`. You need JDK 17, the Android SDK and network access on the first build, because one dependency (libadb-android) comes from JitPack.
+
+To run the same checks as CI on every pull request (lint, the unit tests and the debug build):
+
+```bash
+./gradlew lint testDebugUnitTest assembleDebug
+```
+
+Release builds are signed only when `releaseStoreFile`, `releaseStorePassword` and `releaseKeyAlias` are set in `~/.gradle/gradle.properties`. Without them the release APK is unsigned.
+
+The README screenshots and demo clip are Robolectric tests that run only with `-Pmedia`. To record the screenshots again:
+
+```bash
+README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests '*ReadmeScreenshotsTest' -Pmedia -Proborazzi.record
+```
+
+`tools/demo.sh` builds the demo clip outside the repo. See the script for how to attach `demo.mp4` to a release.
 
 ## License
 
-[MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0). The Nuvio art in the screenshots is used only by the screenshot tests and is not part of the app (see [its notice](app/src/test/resources/nuvio/NOTICE)).
+[MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0). The Nuvio art in the screenshots is Nuvio's own, under GPL-3.0 ([its notice](app/src/test/resources/nuvio/NOTICE)). Only the screenshot tests use it, and it is not part of the app.
