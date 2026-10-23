@@ -381,4 +381,60 @@ class SetupFlowTest : ComposeTestBase() {
         press(Key.DirectionRight); enter() // Pair again
         see("Use your phone.")
     }
+
+    @Test
+    fun r11_connectingDuringFailedAttemptsOnAFreshInstallDoesNotSkipPairing() {
+        env.developerOptions = true
+        monitor.flow.value = ConnectionState.Disconnected
+        val fresh = SetupDeps(env, monitor.state, url, holdsPairing = { false })
+        show { SetupScreen({ backs++ }, deps = fresh) }
+        enter()
+        see("Turn on Wireless debugging.")
+        monitor.flow.value = ConnectionState.Connecting; tick()
+        monitor.flow.value = ConnectionState.Disconnected; tick()
+        env.wireless = true; tick()
+        see("Use your phone.")
+        rule.onNodeWithText("Allow this app.").assertDoesNotExist()
+    }
+
+    @Test
+    fun r10_firstPairingStartWaitsForTheAppToBeInFront() {
+        val owner = Owner().also { it.registry.currentState = Lifecycle.State.CREATED }
+        showInLifecycle(owner)
+        tick(3000)
+        assertEquals(0, env.calls.count { it == "startPairing" })
+        setLifecycle(owner, Lifecycle.State.RESUMED)
+        assertEquals(1, env.calls.count { it == "startPairing" })
+    }
+
+    @Test
+    fun b14_timeoutsCountOnlyWhileTheAppIsInFront() {
+        val owner = Owner()
+        show { CompositionLocalProvider(LocalLifecycleOwner provides owner) { SetupScreen({}, deps = deps) } }
+        enter()
+        see("Turn on Developer options.")
+        setLifecycle(owner, Lifecycle.State.CREATED) // user is in Settings
+        tick(100_000)
+        setLifecycle(owner, Lifecycle.State.RESUMED)
+        rule.onNodeWithText("Show me how").assertDoesNotExist()
+    }
+
+    @Test
+    fun b16_allowStepTreatsConnectingThenUnpairedAsDenied() {
+        allowStep(MutableStateFlow("The TV does not trust this app yet."))
+        monitor.flow.value = ConnectionState.Connecting; tick()
+        monitor.flow.value = ConnectionState.Unpaired; tick()
+        see("The TV does not trust this app yet."); see("Retry")
+    }
+
+    @Test
+    fun b02_aLateConnectAfterTheTimeoutStillLeaves() {
+        monitor.flow.value = ConnectionState.Disconnected
+        val d = SetupDeps(env, monitor.state, url)
+        show { ReconnectScreen({ backs++ }, d) }
+        tick(31_000)
+        see("Try again")
+        env.wireless = true; monitor.flow.value = ConnectionState.Connected; tick()
+        assertEquals(1, backs)
+    }
 }

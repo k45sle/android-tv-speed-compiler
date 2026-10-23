@@ -257,7 +257,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     }
     @Test fun setupAppsDark() = shoot("setup-apps-dark", true, act = ::pickApps) { SetupScreen({}, deps = setupDeps(true)) }
     @Test fun setupDoneDark() = shoot("setup-done-dark", true, act = {
-        pickApps(); rule.onNodeWithText("Continue", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
+        pickApps(); rule.onNodeWithText("Continue (2 selected)", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
     }) { SetupScreen({}, deps = setupDeps(true)) }
 
     private enum class Step { Home, Apps, Detail, Working, HomeDone }

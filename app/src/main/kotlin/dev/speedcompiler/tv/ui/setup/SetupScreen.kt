@@ -76,6 +76,7 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
@@ -115,13 +116,11 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     var apps by remember { mutableStateOf(emptyList<SetupApp>()) }
     val picked = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
 
-    LaunchedEffect(conn) { if (conn == ConnectionState.Connected) deps.markPaired() }
-
-    // Disconnected only counts as paired when this app once connected; on a fresh install it is just "not on yet".
+    // Connecting/Disconnected also happen on a fresh install (the TLS handshake fails when unpaired), so they count only once this app holds a pairing.
     fun done(s: Int) = when (s) {
         2 -> env.developerOptionsOn()
         3 -> env.wirelessDebuggingOn()
-        4 -> conn == ConnectionState.Connecting || conn == ConnectionState.Connected || (conn == ConnectionState.Disconnected && deps.holdsPairing())
+        4 -> conn == ConnectionState.Connected || (conn != ConnectionState.Unpaired && deps.holdsPairing())
         5 -> conn == ConnectionState.Connected
         else -> false
     }
@@ -172,10 +171,11 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             var attempt by remember { mutableIntStateOf(0) }
             val reason by deps.reason.collectAsState(null)
             LaunchedEffect(conn) {
-                if (conn == ConnectionState.Connecting) sawConnecting = true
-                else if (conn == ConnectionState.Disconnected && sawConnecting) { sawConnecting = false; denied = true; fail() }
+                if (conn == ConnectionState.Connecting) { sawConnecting = true; stalled = false }
+                else if ((conn == ConnectionState.Disconnected || conn == ConnectionState.Unpaired) && sawConnecting) { sawConnecting = false; denied = true; fail() }
             }
-            LaunchedEffect(attempt) { delay(NoProgressMs); stalled = true; fail() }
+            val lifecycle = LocalLifecycleOwner.current.lifecycle
+            LaunchedEffect(attempt) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(NoProgressMs); stalled = true; fail() } }
             val problem = if (denied) reason ?: "The TV did not allow this app." else if (stalled) "No answer from the TV yet." else null
             Page(5, "Allow this app.") {
                 Body("Your TV will ask to allow debugging. Choose Always allow from this computer.")
@@ -227,15 +227,18 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     var repair by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     val reason by deps.reason.collectAsState(null)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(attempt) {
+        while (!env.wirelessDebuggingOn()) delay(PollMs)
+        waiting = true
+        if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
+        deps.connection.first { it == ConnectionState.Connected }
+        onBack() // also after "stuck": a late connect still finishes
+    }
+    // Only time spent in front counts; the user may be in Settings.
     LaunchedEffect(attempt) {
         stuck = false
-        val ok = withTimeoutOrNull(ReconnectMs) {
-            while (!env.wirelessDebuggingOn()) delay(PollMs)
-            waiting = true
-            if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
-            deps.connection.first { it == ConnectionState.Connected }
-        }
-        if (ok != null) onBack() else { waiting = false; stuck = true }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(ReconnectMs); stuck = true }
     }
     if (repair) return QuickRepairScreen(onBack, deps)
     if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3) { help = false } }
@@ -265,10 +268,9 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val paired by rememberUpdatedState(onPaired)
     val failed by rememberUpdatedState(onFail)
-    DisposableEffect(Unit) {
-        deps.env.startPairing()
-        onDispose { deps.env.stopPairing() }
-    }
+    // The step can open while the app is stopped (user in Settings); a background app may not start the service.
+    LaunchedEffect(Unit) { lifecycle.awaitStarted(); deps.env.startPairing() }
+    DisposableEffect(Unit) { onDispose { deps.env.stopPairing() } }
     LaunchedEffect(url) {
         if (url != null) { seen = true; start = deps.connection.first(); return@LaunchedEffect }
         if (!seen) return@LaunchedEffect
@@ -414,7 +416,9 @@ private fun Body(text: String) =
 @Composable
 private fun FailWhenStuck(onFail: () -> Unit) {
     val fail by rememberUpdatedState(onFail)
-    LaunchedEffect(Unit) { while (true) { delay(NoProgressMs); fail() } }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Only time in front counts: the user may be in Settings doing the right thing.
+    LaunchedEffect(Unit) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { delay(NoProgressMs); fail() } } }
 }
 
 /** Ignores presses within [DebounceMs] of the last one, so an impatient double press opens Settings once. */

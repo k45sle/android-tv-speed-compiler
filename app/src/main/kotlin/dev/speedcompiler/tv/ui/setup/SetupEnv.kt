@@ -46,8 +46,6 @@ class SetupDeps(
     val reason: Flow<String?> = flowOf(null),
     /** Whether this app already holds a pairing the TV trusts; a fresh install does not. */
     val holdsPairing: () -> Boolean = { true },
-    /** Called once the app is connected, so [holdsPairing] turns true. */
-    val markPaired: () -> Unit = {},
     /** Called when the user finishes: saves the picks and starts the run. */
     val onFinish: suspend (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
 )
@@ -109,9 +107,7 @@ fun rememberSetupDeps(): SetupDeps {
             graph.connectionMonitor.state,
             PairingService.url,
             graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(f.reason) } },
-            // The TV keeps the trust, so the only local trace is that we once connected.
-            holdsPairing = { prefs.getBoolean("paired", false) },
-            markPaired = { prefs.edit().putBoolean("paired", true).apply() },
+            holdsPairing = { prefs.getBoolean("paired", false) }, // kept by AppGraph
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
                 graph.settings.update { it.copy(setupDone = true) } // awaited, so Home never sees the old value
