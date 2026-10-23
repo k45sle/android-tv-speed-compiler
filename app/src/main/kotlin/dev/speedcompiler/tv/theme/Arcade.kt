@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
@@ -198,6 +199,35 @@ fun Lamp(color: Color, modifier: Modifier = Modifier, waiting: Boolean = false) 
             drawRect(Color.Black.copy(alpha = 0.4f), Offset(0f, size.height - e), Size(size.width, e))
         },
     )
+}
+
+/** Game cartridge around [content] (an app's banner as the label): grey shell with the top-right corner cut, grip ridges under the label. Draw only, no state. */
+@Composable
+fun Cartridge(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    val shell = Color(Cabinet.GREY)
+    val ink = Color(Cabinet.INK)
+    Box(
+        modifier.drawBehind {
+            val cut = 8.dp.toPx()
+            val d = 2.dp.toPx()
+            fun outline(dx: Float) = Path().apply {
+                moveTo(dx, dx); lineTo(size.width - cut + dx, dx); lineTo(size.width + dx, cut + dx)
+                lineTo(size.width + dx, size.height + dx); lineTo(dx, size.height + dx); close()
+            }
+            drawPath(outline(d), ShadowColor)
+            drawPath(outline(0f), shell)
+            drawRect(shell.darker(0.25f), Offset(0f, size.height - d), Size(size.width, d))
+            // Grip ridges in the strip under the label.
+            val ridge = 2.dp.toPx()
+            val top = size.height - 9.dp.toPx()
+            repeat(6) { k ->
+                drawRect(shell.darker(), Offset(size.width / 2 + (k - 2.5f) * 3 * ridge - ridge / 2, top), Size(ridge, 5.dp.toPx()))
+            }
+        }.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp),
+    ) {
+        // An ink backing, not a border: it frames the label without covering it and fills the banner's rounded corners.
+        Box(Modifier.background(ink).padding(2.dp)) { content() }
+    }
 }
 
 /**

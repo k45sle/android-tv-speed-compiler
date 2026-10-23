@@ -49,6 +49,7 @@ import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.CardRadius
+import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.RowRadius
 import dev.speedcompiler.tv.theme.Space
@@ -265,7 +266,7 @@ fun AppsContent(
                         },
                     subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
                     onClick = { onOpen(app.packageName) },
-                    leading = { AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp)) },
+                    leading = { Cartridge { AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp)) } },
                     trailing = {
                         if (pill != null) Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
                             Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
