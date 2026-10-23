@@ -18,7 +18,6 @@ android {
         val m = Regex("""^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.]+)?$""").matchEntire(ver)
         require(m != null && m.groupValues.subList(1, 4).all { it.length <= 2 }) { "appVersion must look like 1.2.3 or 1.2.3-rc1 with each number under 100, got '$ver'" }
         versionCode = m.groupValues.subList(1, 4).map(String::toInt).let { (a, b, c) -> a * 10000 + b * 100 + c }
-        ndk { abiFilters += setOf("arm64-v8a", "armeabi-v7a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Release key lives outside the repo (~/.gradle/gradle.properties); without it, release builds stay unsigned.
@@ -36,6 +35,7 @@ android {
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
+            ndk { abiFilters += setOf("arm64-v8a", "armeabi-v7a") }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

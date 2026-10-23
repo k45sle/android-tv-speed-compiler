@@ -21,7 +21,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check tag
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.]+)?$ ]] && (( BASH_REMATCH[1] < 100 && BASH_REMATCH[2] < 100 && BASH_REMATCH[3] < 100 )) \
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}(-[0-9A-Za-z.]+)?$ ]] \
             || { echo "Tag must look like v1.2.3 or v1.2.3-rc1 with each number under 100, got $GITHUB_REF_NAME"; exit 1; }
       - name: Restore signing key
         env:
