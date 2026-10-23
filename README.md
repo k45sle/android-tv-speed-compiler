@@ -123,7 +123,7 @@ If setup gets stuck, these are the usual causes.
 | The phone can't open the pairing page | Keep the phone on the same Wi-Fi as the TV. If the QR code will not scan, type the short address shown on the TV into the phone's browser. |
 | The TV asks to allow debugging | Choose Always allow from this computer, then OK. Android can ask again after a while; turn on Keep this TV trusting the app in Settings to stop that. |
 | Wireless debugging is off | It can switch off after a network change. Turn it on again in Developer options and the app reconnects by itself. The app only turns it on itself after a TV restart, so switching it off stays off until then. |
-| The TV forgot this app | Open the app and choose Pair again. |
+| The TV forgot this app | Open the app and choose Fix connection. |
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
 

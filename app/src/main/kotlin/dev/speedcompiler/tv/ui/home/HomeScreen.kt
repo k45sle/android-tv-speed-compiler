@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.theme.ArcadeButton
@@ -66,20 +67,8 @@ class HomeState(
     val loaded: Boolean = true,
 )
 
-private fun dotTone(app: WatchedApp, queue: List<QueueEntry>) = when {
-    queue.any { it.item.packageName == app.packageName } -> Tone.Info
-    app.lastResult == null -> Tone.Neutral
-    app.lastResult.startsWith("Optimized") -> Tone.Ok
-    else -> Tone.Warn
-}
-
-private fun dotLabel(tone: Tone) = when (tone) {
-    Tone.Info -> "In the queue"
-    Tone.Ok -> "Optimized"
-    Tone.Warn -> "Needs a look"
-    Tone.Error -> "Failed"
-    Tone.Neutral -> "Not optimized yet"
-}
+private fun appResult(app: WatchedApp, queue: List<QueueEntry>) =
+    jobResult(app.lastResult, queue.firstOrNull { it.item.packageName == app.packageName }?.state)
 
 @Composable
 fun HomeScreen(go: (String) -> Unit) {
@@ -115,15 +104,14 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
         else -> onOff to queueLine
     }
     val action = if (!s.loaded) null else if (!s.setupDone) "Set up" else when (s.connection) {
-        ConnectionState.Disconnected -> "Reconnect"
-        ConnectionState.Unpaired -> "Approve"
+        ConnectionState.Disconnected, ConnectionState.Unpaired -> FIX_LABEL
         else -> null
     }
     RoomBackdrop {
         Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Marquee(title, subtitle = subtitle, trailing = {
                 if (action != null) Button(
-                    { go(if (!s.setupDone) Routes.Setup else if (s.connection == ConnectionState.Unpaired) Routes.QuickRepair else Routes.Reconnect) },
+                    { go(if (!s.setupDone) Routes.Setup else fixRoute(if (s.connection == ConnectionState.Unpaired) Fix.QuickRepair else Fix.Retry)) },
                     Modifier.remembersFocus(mem, "status"),
                 ) { Text(action.uppercase()) }
                 else if (s.loaded && online) {
@@ -137,8 +125,8 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
             ) {
                 items(s.watched, key = { it.packageName }) { app ->
                     val look = s.look(app.packageName)
-                    val tone = dotTone(app, s.queue)
-                    BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }, tone) {
+                    val result = appResult(app, s.queue)
+                    BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), result?.label ?: "Not optimized yet", { go(Routes.appDetail(app.packageName)) }, result?.tone ?: Tone.Neutral) {
                         look.banner?.let { Cartridge { Image(it, null, Modifier.size(64.dp, 36.dp)) } }
                     }
                 }

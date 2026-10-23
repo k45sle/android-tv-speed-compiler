@@ -61,7 +61,7 @@ class OptimizerImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: AdbFailure.NotPaired) { // retrying cannot help: the user has to act
-            return finish(pkg, false, "Didn't finish: the TV no longer trusts this app. Pair again in Settings.", "optimize_failed", terminal = true)
+            return finish(pkg, false, "Didn't finish: the TV no longer trusts this app. Choose Fix connection in Settings.", "optimize_failed", terminal = true)
         } catch (e: AdbFailure.NotAuthorized) {
             return finish(pkg, false, "Didn't finish: the TV has not allowed this app. Accept the debugging prompt on the TV.", "optimize_failed", terminal = true)
         } catch (e: Exception) {

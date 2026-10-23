@@ -176,7 +176,7 @@ class OptimizerTest {
     }
 
     @Test fun notPairedAndNotAuthorizedAreTerminalWithTheFix() = runTest {
-        for ((failure, fix) in listOf(AdbFailure.NotPaired() to "Pair again", AdbFailure.NotAuthorized() to "Accept the debugging prompt")) {
+        for ((failure, fix) in listOf(AdbFailure.NotPaired() to "Fix connection", AdbFailure.NotAuthorized() to "Accept the debugging prompt")) {
             val r = impl(Shell(compileFails = failure), Events()).optimize("dev.speedcompiler.tv")
             assertFalse(r.ok)
             assertFalse(r.connectionLost)

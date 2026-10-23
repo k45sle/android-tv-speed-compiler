@@ -123,11 +123,56 @@ class HomeActivityTest : ComposeTestBase() {
         home(ConnectionState.Disconnected) { went = it }
         rule.onNodeWithText("Disconnected", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("1 waiting").assertIsDisplayed()
-        rule.onNodeWithText("Reconnect", ignoreCase = true).invokeClick()
+        rule.onNodeWithText("Fix connection", ignoreCase = true).invokeClick()
         assertEquals("reconnect", went)
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_disconnected.png")
     }
+
+    @Test
+    fun homeUnpairedFixConnectionGoesToRepair() {
+        var went: String? = null
+        home(ConnectionState.Unpaired) { went = it }
+        rule.onNodeWithText("Fix connection", ignoreCase = true).invokeClick()
+        assertEquals(Routes.QuickRepair, went)
+    }
+
+    @Test
+    fun jobResultMapsEveryCase() {
+        assertEquals(JobResult.Verified, jobResult("Optimized (checked)", null))
+        assertEquals(JobResult.Unverified, jobResult("Optimized (this TV doesn't report the result)", null))
+        assertEquals(JobResult.Failed, jobResult("Didn't finish: base.apk (arm64) is verify, not speed.", QueueState.FAILED))
+        assertEquals(JobResult.Running, jobResult("Optimized (checked)", QueueState.RUNNING))
+        assertEquals(JobResult.Queued, jobResult(null, QueueState.QUEUED))
+        assertEquals(JobResult.Queued, jobResult(null, QueueState.WAITING_GATE))
+        assertEquals(null, jobResult(null, null))
+        assertEquals(JobResult.entries.size, JobResult.entries.map { it.label }.toSet().size)
+    }
+
+    private fun cards(shot: String, vararg expected: String, apps: List<WatchedApp>, q: List<QueueEntry> = emptyList()) {
+        show { HomeContent(HomeState(ConnectionState.Connected, true, apps, q, emptyList(), look), {}, now, utc) }
+        expected.forEach { rule.onNodeWithText(it, ignoreCase = true).assertIsDisplayed() }
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/$shot.png")
+    }
+
+    @Test
+    fun homeCardsShowLiveResultLabels() = cards(
+        "home_results_live", "Running", "Queued", "Compiled",
+        apps = listOf(
+            WatchedApp("a.alpha", "1"), WatchedApp("b.beta", "1", lastResult = "Optimized (checked)"),
+            WatchedApp("c.gamma", "1", lastResult = "Optimized (this TV doesn't report the result)"),
+        ),
+        q = listOf(QueueEntry(queued(1, "a.alpha", QueueState.RUNNING), 0, Eta.None), QueueEntry(queued(2, "b.beta"), 1, Eta.None)),
+    )
+
+    @Test
+    fun homeCardsShowFinishedResultLabels() = cards(
+        "home_results_done", "Optimized", "Didn't finish", "Not optimized yet",
+        apps = listOf(
+            WatchedApp("b.beta", "1", lastResult = "Optimized (checked)"),
+            WatchedApp("d.delta", "1", lastResult = "Didn't finish: base.apk (arm64) is verify, not speed."), WatchedApp("a.alpha", "1"),
+        ),
+    )
 
     @Test
     fun homeDisconnectedWithEmptyQueueSaysNothingWaiting() {

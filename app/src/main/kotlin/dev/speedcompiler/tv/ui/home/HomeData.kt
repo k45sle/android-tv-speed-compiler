@@ -13,6 +13,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.drawable.toBitmap
 import dev.speedcompiler.tv.AppGraph
 import dev.speedcompiler.tv.SpeedApp
+import dev.speedcompiler.tv.adb.Fix
+import dev.speedcompiler.tv.theme.Tone
+import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.QueueState
 import java.time.Instant
@@ -83,4 +86,37 @@ fun stateText(state: QueueState) = when (state) {
     QueueState.DONE -> "Done"
     QueueState.FAILED -> "Failed"
     QueueState.SKIPPED -> "Skipped"
+}
+
+/** The one label for every repair button (B-12). */
+const val FIX_LABEL = "Fix connection"
+
+/** Where "Fix connection" goes for each [Fix]; only a forgotten pairing needs the repair flow. */
+fun fixRoute(fix: Fix) = if (fix == Fix.QuickRepair) Routes.QuickRepair else Routes.Reconnect
+
+/** What the user should do, shown next to a failed connection (B-09). */
+fun fixText(fix: Fix) = when (fix) {
+    Fix.QuickRepair -> "The TV forgot this app. Approve it again on the TV."
+    Fix.TurnOnWirelessDebugging -> "Turn on Wireless debugging in Developer options on the TV."
+    Fix.AllowPrompt -> "Press Allow on the prompt on the TV."
+    Fix.Retry -> "The TV did not answer. Try again."
+}
+
+/** What happened to an app's latest job (B-22). */
+enum class JobResult(val label: String, val tone: Tone) {
+    Verified("Optimized", Tone.Ok),
+    Unverified("Compiled", Tone.Warn),
+    Failed("Didn't finish", Tone.Error),
+    Running("Running", Tone.Info),
+    Queued("Queued", Tone.Neutral),
+}
+
+/** Live queue state wins; otherwise the stored result text. Null when the app has never been optimized. */
+fun jobResult(lastResult: String?, queueState: QueueState?): JobResult? = when {
+    queueState == QueueState.RUNNING -> JobResult.Running
+    queueState == QueueState.QUEUED || queueState == QueueState.WAITING_GATE -> JobResult.Queued
+    lastResult == null -> null
+    lastResult.startsWith("Optimized (checked)") -> JobResult.Verified
+    lastResult.startsWith("Optimized") -> JobResult.Unverified
+    else -> JobResult.Failed
 }
