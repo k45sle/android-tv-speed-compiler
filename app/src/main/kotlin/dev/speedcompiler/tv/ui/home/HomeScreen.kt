@@ -49,6 +49,7 @@ import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueEntry
+import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.Instant
@@ -65,6 +66,7 @@ class HomeState(
     val setupDone: Boolean = true,
     /** False until settings have loaded; the status row waits so it never shows a wrong first state. */
     val loaded: Boolean = true,
+    val history: List<QueueItem> = emptyList(),
 )
 
 private fun appResult(app: WatchedApp, queue: List<QueueEntry>) =
@@ -79,8 +81,9 @@ fun HomeScreen(go: (String) -> Unit) {
     val watched by remember(graph) { graph.database.watchedApps().all() }.collectAsState(emptyList())
     val queue by remember(graph) { graph.scheduler.queue }.collectAsState(emptyList())
     val events by remember(graph) { graph.database.events().recent(4) }.collectAsState(emptyList())
+    val history by remember(graph) { graph.scheduler.history }.collectAsState(emptyList())
     val settings = loadedSettings ?: SettingsValues()
-    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null), go)
+    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null, history), go)
 }
 
 @Composable
@@ -90,11 +93,12 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
     val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
     val online = s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)
     val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
+    val batch = aggregateLine(batchDone(s.queue, s.history), s.queue)
     val queueLine = when {
-        waiting == 0 -> "Nothing waiting"
+        waiting == 0 -> batch ?: "Nothing waiting"
         next.isEmpty() -> "$waiting waiting"
         else -> "$waiting waiting · next: $next"
-    }
+    }.let { if (batch == null || waiting == 0) it else "$it · $batch" }
     // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
     val (title, subtitle) = when {
         !s.loaded -> "" to null

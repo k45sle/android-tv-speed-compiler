@@ -16,7 +16,10 @@ import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.ui.Routes
+import dev.speedcompiler.tv.watch.DEFAULT_AVG_DURATION_MILLIS
 import dev.speedcompiler.tv.watch.Eta
+import dev.speedcompiler.tv.watch.QueueEntry
+import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueState
 import java.time.Instant
 import java.time.ZoneId
@@ -77,6 +80,28 @@ fun etaText(eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.system
     Eta.Paused -> "Auto-optimize is off"
     Eta.Unknown -> "Unknown"
     is Eta.InQueue -> "#${eta.position + 1} in queue, about ${(eta.approxMillis / 60_000).coerceAtLeast(1)} min"
+}
+
+/**
+ * "k of N, about M min left" for a batch of two or more jobs: [done] finished ones plus the active [queue]. Null for a single job.
+ * The minutes are left out when any job waits on something with no time (gate, pairing). Per-job time comes from the queue's own
+ * [Eta.InQueue] figures, else the default.
+ */
+fun aggregateLine(done: Int, queue: List<QueueEntry>): String? {
+    val total = done + queue.size
+    if (total < 2 || queue.isEmpty()) return null
+    val blind = queue.any { it.eta != Eta.None && it.eta !is Eta.InQueue }
+    val per = queue.firstNotNullOfOrNull { (it.eta as? Eta.InQueue)?.takeIf { e -> e.position > 0 }?.let { e -> e.approxMillis / e.position } }
+        ?: DEFAULT_AVG_DURATION_MILLIS
+    val left = if (blind) "" else ", about ${(per * queue.size / 60_000).coerceAtLeast(1)} min left"
+    return "$done of $total$left"
+}
+
+/** Jobs that ran (done or failed, not cancelled) since the oldest active one was queued. */
+// shortcut: jobs that finished while an old job sat at the gate count toward its batch; store a batch id if that misleads.
+fun batchDone(queue: List<QueueEntry>, history: List<QueueItem>): Int {
+    val since = queue.minOfOrNull { it.item.enqueuedAt } ?: return 0
+    return history.count { it.state != QueueState.SKIPPED && (it.finishedAt ?: 0) >= since }
 }
 
 fun stateText(state: QueueState) = when (state) {
