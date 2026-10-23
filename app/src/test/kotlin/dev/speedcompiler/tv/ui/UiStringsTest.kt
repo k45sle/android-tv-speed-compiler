@@ -17,12 +17,12 @@ import java.io.File
 class UiStringsTest {
     private val textLiteral = Regex("""\bText\(\s*"[^"]*\p{L}""")
     private val sentence = Regex(""""[A-Z][a-z']+( [A-Za-z']+)+""")
-    // Stored engine text is matched as a key in storedText(), not shown as written here.
-    private val allowed = Regex(""" to R\.string\.stored_""")
+    // Stored engine text is matched as a key in storedText(); preset names are ids, their labels are resources.
+    private val allowed = Regex(""" to R\.string\.stored_|\bPreset\(""")
 
     @Test fun noHardcodedEnglishInUi() {
         // Tests run in app/.
-        val hits = File("src/main/kotlin/dev/speedcompiler/tv/ui").walk().filter { it.extension == "kt" }.flatMap { f ->
+        val hits = listOf("ui", "theme").map { File("src/main/kotlin/dev/speedcompiler/tv/$it") }.flatMap { it.walk() }.filter { it.extension == "kt" }.flatMap { f ->
             f.readLines().mapIndexedNotNull { i, raw ->
                 val line = raw.substringBefore("//").trim()
                 val code = !line.startsWith("*") && !line.startsWith("/*")
@@ -40,5 +40,11 @@ class UiStringsTest {
         assertEquals("Nuvio and 2 others", res.getQuantityString(R.plurals.setup_subject_others, 2, "Nuvio", 2))
         assertEquals("Cancel the 1 app in the queue?", res.getQuantityString(R.plurals.activity_confirm_cancel, 1, 1))
         assertEquals("Cancel all 4 apps in the queue?", res.getQuantityString(R.plurals.activity_confirm_cancel, 4, 4))
+    }
+
+    @Test fun doubleSpacesSurviveResourceCompile() {
+        // aapt collapses runs of spaces unless the string is quoted.
+        val res = ApplicationProvider.getApplicationContext<Context>().resources
+        assertEquals("▲▼ choose  ● select  ◀ back", res.getString(R.string.common_footer_hint))
     }
 }

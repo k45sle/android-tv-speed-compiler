@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.settings
 
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -21,10 +22,11 @@ class SettingsDeps(
 fun rememberSettingsDeps(): SettingsDeps {
     val graph = rememberGraph()
     val context = LocalContext.current.applicationContext
-    return remember(graph) {
+    val res = LocalResources.current
+    return remember(graph, res) {
         SettingsDeps(
             graph.settings.values, graph.settings::update, graph.connectionKeeper.status,
-            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: context.getString(R.string.settings_version_unknown),
+            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: res.getString(R.string.settings_version_unknown),
         )
     }
 }

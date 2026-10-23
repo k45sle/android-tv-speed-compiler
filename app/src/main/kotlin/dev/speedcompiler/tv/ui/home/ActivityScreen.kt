@@ -138,7 +138,7 @@ fun ActivityContent(
             ListRow(
                 l.label,
                 Modifier.semantics { contentDescription = rowDesc },
-                subtitle = listOf(stateText(res, e.state), eta).filter { it.isNotEmpty() }.joinToString(" · "),
+                subtitle = stateText(res, e.state).let { st -> if (eta.isEmpty()) st else res.getString(R.string.common_join, st, eta) },
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         Icon(l)

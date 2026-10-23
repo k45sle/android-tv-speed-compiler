@@ -105,7 +105,7 @@ fun reasonText(res: Resources, e: Throwable): String = res.getString(
 fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
     val res = LocalResources.current
-    return remember {
+    return remember(res) {
         val graph = (context.applicationContext as SpeedApp).graph
         val prefs = context.applicationContext.getSharedPreferences("setup", Context.MODE_PRIVATE)
         SetupDeps(

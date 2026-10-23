@@ -324,4 +324,17 @@
     <string name="stored_optimized_checked">Optimized (checked)</string>
     <string name="stored_verify_unknown">The TV did not report this app\'s compiler filter.</string>
     <string name="stored_not_installed">Not installed</string>
+    <!-- review fixes -->
+    <string name="common_footer_hint">"▲▼ choose  ● select  ◀ back"</string>
+    <string name="common_back_arrow">◀ back</string>
+    <string name="common_press_select">▶ press select</string>
+    <string name="common_join">%1$s · %2$s</string>
+    <string name="settings_heading">- %1$s -</string>
+    <!-- Phone pairing page; strings go into HTML as is, so no markup characters. -->
+    <string name="web_page_lang" translatable="false">en</string>
+    <string name="web_page_title">Pair Speed Compile</string>
+    <string name="web_page_heading">Pair with Speed Compile</string>
+    <string name="web_page_code_label">Pairing code (6 digits, shown on the TV)</string>
+    <string name="web_page_port_label">Port (enter only if pairing fails)</string>
+    <string name="web_page_pair">Pair</string>
 </resources>

@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.theme
 
+import androidx.compose.ui.res.stringResource
+import dev.speedcompiler.tv.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.animation.core.LinearEasing
@@ -141,7 +143,7 @@ fun RoomBackdrop(modifier: Modifier = Modifier, content: @Composable BoxScope.()
     ) {
         Box(Modifier.fillMaxSize().padding(bottom = FloorH), content = content)
         Box(Modifier.align(Alignment.BottomCenter).height(FloorH), Alignment.Center) {
-            PixelText("▲▼ choose  ● select  ◀ back", color = cs.onSurfaceVariant)
+            PixelText(stringResource(R.string.common_footer_hint), color = cs.onSurfaceVariant)
         }
     }
 }
@@ -166,7 +168,7 @@ fun Marquee(
             Box(
                 Modifier.focusFx(1.05f, RowRadius, onClick = onBack).background(cs.background).border(2.dp, c.hairline)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) { PixelText("◀ back", color = cs.onSurface) }
+            ) { PixelText(stringResource(R.string.common_back_arrow), color = cs.onSurface) }
         } else {
             Box(Modifier.size(80.dp, 52.dp).background(cs.primaryContainer).border(2.dp, c.hairline), Alignment.Center) {
                 PixelBanner(stopped = true, size = 64.dp)
@@ -288,7 +290,7 @@ fun CabinetCard(
             }
         }
         Box(Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp), Alignment.CenterStart) {
-            if (lit) PixelText("▶ press select", color = c.accent)
+            if (lit) PixelText(stringResource(R.string.common_press_select), color = c.accent)
         }
     }
 }

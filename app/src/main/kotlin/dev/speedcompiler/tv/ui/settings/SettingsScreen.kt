@@ -183,7 +183,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
 @Composable
 private fun Heading(text: String) =
-    PixelText("- $text -", Modifier.padding(start = Space.x2, top = Space.x1, bottom = Space.x1 / 2), LocalSpeedColors.current.accent, 36.sp)
+    PixelText(stringResource(R.string.settings_heading, text), Modifier.padding(start = Space.x2, top = Space.x1, bottom = Space.x1 / 2), LocalSpeedColors.current.accent, 36.sp)
 
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {

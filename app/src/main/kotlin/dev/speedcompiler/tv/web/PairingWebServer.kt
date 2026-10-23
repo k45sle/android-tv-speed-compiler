@@ -55,7 +55,7 @@ class PairingWebServer(
         if (!(get || post) || !session.tokenMatches(s.uri.removePrefix("/")) || session.expired()) {
             return reply(Response.Status.NOT_FOUND, "Not found")
         }
-        if (get) return reply(Response.Status.OK, PAGE)
+        if (get) return reply(Response.Status.OK, page(res))
         if ((s.headers["content-length"]?.toLongOrNull() ?: 0L) > MAX_BODY) {
             return reply(Response.Status.lookup(413) ?: Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_too_large)))
         }
@@ -96,14 +96,14 @@ class PairingWebServer(
             "padding:.5rem;font:inherit;color:inherit;background:var(--bg);border:2px solid var(--line);border-radius:0}" +
             "button{min-height:44px;padding:0 1.5rem;font:inherit;font-weight:600;color:var(--on);background:var(--accent);border:0;border-radius:0}" +
             "input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}"
-        val PAGE = """
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pair Speed Compile</title><style>$STYLE</style></head>
-<body><main><h1>Pair with Speed Compile</h1>
+        fun page(res: Resources) = """
+<!doctype html><html lang="${res.getString(R.string.web_page_lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${res.getString(R.string.web_page_title)}</title><style>$STYLE</style></head>
+<body><main><h1>${res.getString(R.string.web_page_heading)}</h1>
 <form method="post" id="f">
-<label>Pairing code (6 digits, shown on the TV)<input name="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" autofocus></label>
-<label>Port (enter only if pairing fails)<input name="port" inputmode="numeric" maxlength="5"></label>
-<button type="submit">Pair</button>
+<label>${res.getString(R.string.web_page_code_label)}<input name="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" autofocus></label>
+<label>${res.getString(R.string.web_page_port_label)}<input name="port" inputmode="numeric" maxlength="5"></label>
+<button type="submit">${res.getString(R.string.web_page_pair)}</button>
 </form>
 <script>
 var f=document.getElementById('f'),c=document.getElementById('code'),s=0;

@@ -104,7 +104,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
         waiting == 0 -> batch ?: stringResource(R.string.home_nothing_waiting)
         next.isEmpty() -> pluralStringResource(R.plurals.home_waiting_count, waiting, waiting)
         else -> pluralStringResource(R.plurals.home_waiting_next, waiting, waiting, next)
-    }.let { if (batch == null || waiting == 0) it else "$it · $batch" }
+    }.let { if (batch == null || waiting == 0) it else stringResource(R.string.common_join, it, batch) }
     // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
     val (title, subtitle) = when {
         !s.loaded -> "" to null
