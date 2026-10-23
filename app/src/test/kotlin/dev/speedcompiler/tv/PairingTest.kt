@@ -168,8 +168,11 @@ class PairingTest {
     @Test fun handlerThreadsAreBounded() {
         val s = start(Recorder()); val before = handlerThreads()
         val idle = List(200) { runCatching { Socket("127.0.0.1", s.port) }.getOrNull() } // extras may be refused
-        eventually { handlerThreads() > before }
-        assertTrue("handler threads capped", handlerThreads() - before <= 8)
+        eventually { handlerThreads() - before >= 8 }
+        repeat(20) { // the cap must hold while the rest of the 200 connections are accepted
+            assertTrue("handler threads capped", handlerThreads() - before <= 8)
+            LockSupport.parkNanos(10_000_000)
+        }
         idle.forEach { it?.close() }
         eventually { runCatching { http(s, "/${s.token}").first == 200 }.getOrDefault(false) }
     }

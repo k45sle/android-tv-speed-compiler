@@ -73,7 +73,6 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -140,8 +139,14 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         rule.mainClock.autoAdvance = false
         rule.setContent { SpeedTheme(if (dark) ThemeChoice.Dark else ThemeChoice.Light, seed) { content() } }
         rule.mainClock.advanceTimeBy(500)
-        runBlocking(Dispatchers.IO) {} // queued after the banner loads, so they have started by now
-        while (bannersStarted.get() != bannersDone.get()) Thread.yield()
+        // shortcut: done once every started banner finished and none started for 50 ms; use a test dispatcher if shots still flake.
+        var quietSince = System.nanoTime()
+        var seen = -1
+        while (System.nanoTime() - quietSince < 50_000_000) {
+            val started = bannersStarted.get()
+            if (started != seen || started != bannersDone.get()) { seen = started; quietSince = System.nanoTime() }
+            Thread.yield()
+        }
         act()
         // A game opens a few frames after its click; 1100 ms in, the 100 ms logo loop is on frame 3 (whole logo).
         rule.mainClock.advanceTimeBy(600)
