@@ -22,6 +22,15 @@ class PairingWebServer(
     val port get() = listeningPort
     val token get() = session.token
 
+    init {
+        setAsyncRunner(object : DefaultAsyncRunner() {
+            // Extra connections are closed instead of getting a thread.
+            override fun exec(clientHandler: ClientHandler) {
+                if (running.size >= MAX_HANDLERS) clientHandler.close() else super.exec(clientHandler)
+            }
+        })
+    }
+
     override fun start() {
         start(SOCKET_READ_TIMEOUT, false)
         timer.schedule(PairingSession.TTL_MILLIS) { finish() }
@@ -44,11 +53,16 @@ class PairingWebServer(
             return reply(Response.Status.NOT_FOUND, "Not found")
         }
         if (get) return reply(Response.Status.OK, PAGE)
-        if (!session.tryAttempt()) return reply(Response.Status.FORBIDDEN, msg("Too many attempts. Restart pairing on the TV."))
+        if ((s.headers["content-length"]?.toLongOrNull() ?: 0L) > MAX_BODY) {
+            return reply(Response.Status.lookup(413) ?: Response.Status.BAD_REQUEST, msg("Request too large."))
+        }
         s.parseBody(HashMap())
+        // Malformed codes are rejected before they can use up an attempt.
         val code = PairingSession.cleanCode(s.parms["code"])
             ?: return reply(Response.Status.BAD_REQUEST, msg("Enter the 6-digit code."))
-        val port = s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 } ?: pairingPort()
+        if (!session.tryAttempt()) return reply(Response.Status.FORBIDDEN, msg("Too many attempts. Restart pairing on the TV."))
+        // The discovered port wins; the form port is only a fallback when discovery found nothing.
+        val port = pairingPort() ?: s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 }
             ?: return reply(Response.Status.BAD_REQUEST, msg("Pairing port not found. Enter the port shown on the TV and press Pair."))
         val ok = runBlocking { runCatching { pairing.pair(host(), port, code) }.getOrDefault(false) }
         if (!ok) return reply(Response.Status.OK, msg("Pairing failed. Check the code on the TV and try again."))
@@ -67,6 +81,8 @@ class PairingWebServer(
             "<title>Speed Compile</title><style>$STYLE</style></head><body><main><p>$text</p></main></body></html>"
 
     companion object {
+        private const val MAX_BODY = 4096L
+        private const val MAX_HANDLERS = 8
         private const val MIME_HTML = "text/html; charset=utf-8"
         private const val STYLE = "" +
             ":root{color-scheme:light dark;--fg:#123524;--bg:#f2e6c4;--line:#3f6450;--accent:#123524;--on:#f2e6c4}" +

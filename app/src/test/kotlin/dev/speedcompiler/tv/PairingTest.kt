@@ -4,7 +4,10 @@ import dev.speedcompiler.tv.adb.Pairing
 import dev.speedcompiler.tv.engine.FakeClock
 import dev.speedcompiler.tv.web.PairingSession
 import dev.speedcompiler.tv.web.PairingWebServer
+import dev.speedcompiler.tv.web.PairingDiscovery
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.Socket
 import java.net.URL
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -120,14 +123,68 @@ class PairingTest {
         val rec = Recorder(ok = false)
         val s = start(rec)
         assertEquals(400, http(s, "/${s.token}", "POST", "code=12").first)
-        repeat(4) { assertEquals(200, http(s, "/${s.token}", "POST", "code=123456").first) }
+        repeat(5) { assertEquals(200, http(s, "/${s.token}", "POST", "code=123456").first) }
         assertEquals(403, http(s, "/${s.token}", "POST", "code=123456").first)
-        assertEquals(4, rec.calls.size)
+        assertEquals(5, rec.calls.size)
     }
 
     @Test fun expiredServerIs404() {
         val s = start(Recorder())
         clock.now += 10 * 60 * 1000L
         assertEquals(404, http(s, "/${s.token}").first)
+    }
+
+    private fun handlerThreads() = Thread.getAllStackTraces().keys.count { it.name.startsWith("NanoHttpd Request Processor") }
+
+    // QA A-17
+    @Test fun malformedCodeDoesNotUseAnAttempt() {
+        val rec = Recorder(); val s = start(rec)
+        repeat(5) { assertEquals(400, http(s, "/${s.token}", "POST", "code=abc").first) }
+        assertEquals(200, http(s, "/${s.token}", "POST", "code=123456").first)
+        assertEquals(1, rec.calls.size)
+    }
+
+    // QA A-18
+    @Test fun discoveredPortWinsOverFormPort() {
+        val rec = Recorder(); val s = start(rec)
+        http(s, "/${s.token}", "POST", "code=123456&port=1")
+        assertEquals(4242, rec.calls.single().second)
+    }
+
+    @Test fun formPortOutOfRangeIsIgnored() {
+        val rec = Recorder(); val s = start(rec, discovered = null)
+        assertEquals(400, http(s, "/${s.token}", "POST", "code=123456&port=70000").first)
+        assertTrue(rec.calls.isEmpty())
+    }
+
+    // QA R-02
+    @Test fun handlerThreadsAreBounded() {
+        val s = start(Recorder()); val before = handlerThreads()
+        val idle = List(200) { runCatching { Socket("127.0.0.1", s.port) }.getOrNull() } // extras may be refused
+        Thread.sleep(500)
+        assertTrue("handler threads capped", handlerThreads() - before <= 8)
+        idle.forEach { it?.close() }
+        Thread.sleep(500)
+        assertEquals(200, http(s, "/${s.token}").first)
+    }
+
+    // QA R-06, D-06
+    @Test fun oversizedBodyIs413AndNotPaired() {
+        val rec = Recorder(); val s = start(rec)
+        // Headers only, so the server has nothing unread and the 413 is not lost to a reset.
+        val line = Socket("127.0.0.1", s.port).use { sock ->
+            sock.soTimeout = 3000
+            sock.getOutputStream().write("POST /${s.token} HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 5000\r\n\r\n".toByteArray())
+            sock.getInputStream().bufferedReader().readLine()
+        }
+        assertTrue(line, line.contains(" 413 "))
+        // A client that sends the whole 4 MB may see the connection reset instead; either way nothing is paired.
+        runCatching { http(s, "/${s.token}", "POST", "code=123456&pad=" + "A".repeat(4_000_000)) }
+        assertTrue(rec.calls.isEmpty())
+    }
+
+    @Test fun onlyOwnInterfaceAddressesAreTrusted() {
+        assertTrue(PairingDiscovery.isOwnAddress(InetAddress.getLoopbackAddress()))
+        assertFalse(PairingDiscovery.isOwnAddress(InetAddress.getByName("192.0.2.1")))
     }
 }
