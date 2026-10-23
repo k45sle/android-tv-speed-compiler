@@ -63,7 +63,7 @@
   </tr>
   <tr>
     <td><img src="docs/media/activity-dark.png" width="400" alt="Activity screen: a queue with Cancel buttons, and a history of finished jobs, one failed with Connection lost and a Retry button"></td>
-    <td><img src="docs/media/settings-dark.png" width="400" alt="Settings: when to optimize, pause, theme and accent colour"></td>
+    <td><img src="docs/media/settings-plum.png" width="400" alt="Settings in the Plum colour preset: when to optimize, pause, theme and accent colour"></td>
   </tr>
 </table>
 

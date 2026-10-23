@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocusable
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -63,6 +64,14 @@ class SettingsScreenTest : ComposeTestBase() {
         node.requestFocus()
         node.performKeyInput { pressKey(key) }
         rule.waitForIdle()
+    }
+
+    @Test
+    fun downFromThemeLandsOnThePickedSwatch() {
+        state.value = SettingsValues(accentPreset = Presets.indexOfFirst { it.name == "Plum" })
+        show()
+        press("Theme,", Key.DirectionDown)
+        rule.onNodeWithContentDescription("Plum").assertIsFocused()
     }
 
     @Test

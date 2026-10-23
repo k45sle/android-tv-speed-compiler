@@ -113,11 +113,11 @@ class SetupFlowTest : ComposeTestBase() {
         enter()
         see("Pick apps to optimize."); tick()
         enter() // picks Alpha, the focused row
-        rule.onNodeWithText("Continue").assertIsEnabled()
+        rule.onNodeWithText("Continue", ignoreCase = true).assertIsEnabled()
         restorer.emulateSavedInstanceStateRestore()
         rule.waitForIdle()
         see("Pick apps to optimize.")
-        rule.onNodeWithText("Continue").assertIsEnabled()
+        rule.onNodeWithText("Continue", ignoreCase = true).assertIsEnabled()
     }
 
     @Test

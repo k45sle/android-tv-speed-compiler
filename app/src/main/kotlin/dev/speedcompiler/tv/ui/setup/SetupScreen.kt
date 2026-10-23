@@ -172,7 +172,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 Body("$subject will be optimized when nothing is playing. It takes a minute or two each.")
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                     PrimaryButton("Optimize now") { finish(true) }
-                    Button(onClick = { finish(false) }) { Text("Done") }
+                    Button(onClick = { finish(false) }) { Text("Done".uppercase()) }
                 }
             }
         }
@@ -263,7 +263,7 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
 private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onContinue: () -> Unit) {
     val firstRow = remember { FocusRequester() }
     Page(6, "Pick apps to optimize.") {
-        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue") }
+        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue".uppercase()) }
         if (apps.isEmpty()) Body("No apps found.")
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(apps.size, key = { apps[it].packageName }) { i ->

@@ -109,7 +109,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
     val (title, subtitle) = when {
         !s.loaded -> "" to null
         !s.setupDone -> "Not set up yet" to null
-        s.connection == ConnectionState.Disconnected -> "Disconnected" to "$waiting waiting"
+        s.connection == ConnectionState.Disconnected -> "Disconnected" to if (waiting == 0) "Nothing waiting" else "$waiting waiting"
         s.connection == ConnectionState.Unpaired -> "Not paired" to "The TV forgot this app. Approve it again."
         else -> onOff to queueLine
     }

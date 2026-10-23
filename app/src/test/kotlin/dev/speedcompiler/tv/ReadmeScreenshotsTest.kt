@@ -31,6 +31,8 @@ import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.ThemeChoice
+import dev.speedcompiler.tv.theme.Presets
+import dev.speedcompiler.tv.theme.SeedChoice
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.ui.apps.AppDetailContent
 import dev.speedcompiler.tv.ui.apps.AppInfo
@@ -122,9 +124,9 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     private fun look(pkg: String) = demo.firstOrNull { it.pkg == pkg }
         ?.let { AppLook(it.label, art(it, 96, 96).asImageBitmap(), banner(it).asImageBitmap()) } ?: AppLook(pkg)
 
-    private fun shoot(name: String, dark: Boolean, act: () -> Unit = {}, content: @Composable () -> Unit) {
+    private fun shoot(name: String, dark: Boolean, act: () -> Unit = {}, seed: SeedChoice = SeedChoice.Preset(0), content: @Composable () -> Unit) {
         rule.mainClock.autoAdvance = false
-        rule.setContent { SpeedTheme(if (dark) ThemeChoice.Dark else ThemeChoice.Light) { content() } }
+        rule.setContent { SpeedTheme(if (dark) ThemeChoice.Dark else ThemeChoice.Light, seed) { content() } }
         rule.mainClock.advanceTimeBy(500)
         Thread.sleep(500) // the Apps screens decode banners on Dispatchers.IO, which runs on real time, not the paused clock
         act()
@@ -227,8 +229,11 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         press(); repeat(4) { rule.mainClock.advanceTimeBy(600); press() }
     }
 
-    @Test fun settingsDark() = shoot("settings-dark", true) {
-        val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Dark))
+    private val plum = Presets.indexOfFirst { it.name == "Plum" }
+
+    // The one non-default preset in the README, so a theme regression outside the default palette shows up in review.
+    @Test fun settingsPlum() = shoot("settings-plum", true, seed = SeedChoice.Preset(plum)) {
+        val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Dark, accentPreset = plum))
         SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
     }
 
@@ -252,7 +257,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     }
     @Test fun setupAppsDark() = shoot("setup-apps-dark", true, act = ::pickApps) { SetupScreen({}, deps = setupDeps(true)) }
     @Test fun setupDoneDark() = shoot("setup-done-dark", true, act = {
-        pickApps(); rule.onNodeWithText("Continue").performSemanticsAction(SemanticsActions.OnClick)
+        pickApps(); rule.onNodeWithText("Continue", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
     }) { SetupScreen({}, deps = setupDeps(true)) }
 
     private enum class Step { Home, Apps, Detail, Working, HomeDone }

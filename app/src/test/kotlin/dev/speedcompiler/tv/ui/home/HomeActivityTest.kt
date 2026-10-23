@@ -130,6 +130,13 @@ class HomeActivityTest : ComposeTestBase() {
     }
 
     @Test
+    fun homeDisconnectedWithEmptyQueueSaysNothingWaiting() {
+        show { HomeContent(HomeState(ConnectionState.Disconnected, true, watched, emptyList(), emptyList(), look), {}, now, utc) }
+        rule.onNodeWithText("Nothing waiting").assertIsDisplayed()
+        rule.onNodeWithText("0 waiting").assertDoesNotExist()
+    }
+
+    @Test
     fun etaRules() {
         val zone = utc
         assertEquals("Starts at 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z")), now, zone))
@@ -172,7 +179,4 @@ class HomeActivityTest : ComposeTestBase() {
         rule.waitForIdle()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/activity_light.png")
     }
-
-    private fun androidx.compose.ui.test.junit4.AndroidComposeTestRule<*, *>.onAllNodesWithTextCancel(index: Int) =
-        onAllNodes(androidx.compose.ui.test.hasText("Cancel"))[index]
 }

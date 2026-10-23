@@ -117,7 +117,7 @@ fun ActivityContent(
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         Icon(l)
-                        Button({ refocus = queueHeader; onCancel(e.item.id) }, Modifier.semantics { contentDescription = "Cancel ${l.label}" }) { Text("Cancel") }
+                        Button({ refocus = queueHeader; onCancel(e.item.id) }, Modifier.semantics { contentDescription = "Cancel ${l.label}" }) { Text("Cancel".uppercase()) }
                     }
                 },
             )
@@ -148,7 +148,7 @@ fun ActivityContent(
                         QueueState.SKIPPED -> Tone.Warn
                         else -> Tone.Neutral
                     }))
-                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = "Retry ${l.label}" }) { Text("Retry") }
+                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = "Retry ${l.label}" }) { Text("Retry".uppercase()) }
                 }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt

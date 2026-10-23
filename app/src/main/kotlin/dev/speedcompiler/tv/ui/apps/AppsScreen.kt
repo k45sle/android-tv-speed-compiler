@@ -114,8 +114,8 @@ fun rememberOptimizeNow(deps: AppsDeps, go: (String) -> Unit): (String) -> Unit 
         SimpleDialog({ pending = null }) {
             Text("Something is playing. Optimizing now may make it stutter.")
             Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
-                Button({ pending = null; run(pkg) }, Modifier.focusRequester(focus)) { Text("Continue") }
-                Button({ pending = null }) { Text("Cancel") }
+                Button({ pending = null; run(pkg) }, Modifier.focusRequester(focus)) { Text("Continue".uppercase()) }
+                Button({ pending = null }) { Text("Cancel".uppercase()) }
             }
         }
     }
@@ -286,10 +286,10 @@ fun AppsContent(
         fun act(f: () -> Unit): () -> Unit = { menu = null; f() }
         SimpleDialog({ menu = null }) {
             Text(app.label, style = MaterialTheme.typography.titleLarge)
-            Button(act { onOptimize(app.packageName) }, Modifier.focusRequester(focus)) { Text("Optimize now") }
-            Button(act { onQueue(app.packageName) }) { Text("Add to queue") }
-            Button(act { onToggleWatch(app.packageName, isWatched) }) { Text(if (isWatched) "Stop watching" else "Watch") }
-            Button(act { onOpen(app.packageName) }) { Text("Details") }
+            Button(act { onOptimize(app.packageName) }, Modifier.focusRequester(focus)) { Text("Optimize now".uppercase()) }
+            Button(act { onQueue(app.packageName) }) { Text("Add to queue".uppercase()) }
+            Button(act { onToggleWatch(app.packageName, isWatched) }) { Text((if (isWatched) "Stop watching" else "Watch").uppercase()) }
+            Button(act { onOpen(app.packageName) }) { Text("Details".uppercase()) }
         }
     }
 }

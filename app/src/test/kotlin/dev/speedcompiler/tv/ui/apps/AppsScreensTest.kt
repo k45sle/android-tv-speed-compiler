@@ -261,7 +261,7 @@ class AppsScreensTest : ComposeTestBase() {
             keyUp(Key.DirectionCenter)
         }
         rule.waitForIdle()
-        rule.onNodeWithText("Add to queue").assertIsDisplayed()
+        rule.onNodeWithText("Add to queue", ignoreCase = true).assertIsDisplayed()
         assertTrue(gone.isEmpty())
     }
 

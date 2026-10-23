@@ -23,7 +23,7 @@ class HelpScreenTest : ComposeTestBase() {
         rule.setContent { SpeedTheme { HelpContent(go = { went += it }) } }
         rule.onNodeWithText("The TV forgot this app").assertIsDisplayed()
         rule.onNodeWithText("The pairing code did not work").assertIsDisplayed()
-        rule.onNodeWithText("Repair").performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithText("Repair", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Routes.QuickRepair), went)
         rule.onNode(hasContentDescription("Repair")).assertIsDisplayed()
         rule.onNodeWithText("Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.").assertIsDisplayed()

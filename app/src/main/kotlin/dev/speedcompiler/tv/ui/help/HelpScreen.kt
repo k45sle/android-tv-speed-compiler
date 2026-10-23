@@ -66,7 +66,7 @@ fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
         items(helpEntries) { e ->
             ListRow(e.title, Modifier.semantics { contentDescription = "${e.title}. ${e.body}" }, e.body) {
                 if (e.route != null && e.action != null) {
-                    Button(onClick = { go(e.route) }, modifier = Modifier.remembersFocus(mem, e.title).semantics { contentDescription = e.action }) { Text(e.action) }
+                    Button(onClick = { go(e.route) }, modifier = Modifier.remembersFocus(mem, e.title).semantics { contentDescription = e.action }) { Text(e.action.uppercase()) }
                 }
             }
         }

@@ -18,6 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -117,14 +120,17 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
                 Heading("Appearance")
                 val themes = ThemeChoice.entries
+                // Down from Theme lands on the picked swatch, not the geometrically nearest one.
+                val picked = remember { FocusRequester() }
                 OperatorRow(
-                    "Theme", Modifier.hint("Theme", v.theme.name), onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
+                    "Theme", Modifier.hint("Theme", v.theme.name).focusProperties { if (v.customHue == null && v.accentPreset in Presets.indices) down = picked }, onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
                     onLeft = { set { it.copy(theme = themes.cycle(it.theme, -1)) } },
                     onRight = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
                 ) { Selector(v.theme.name, it) }
                 Row(Modifier.padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2), Alignment.CenterVertically) {
                     Presets.forEachIndexed { i, p ->
-                        Swatch(p, v.customHue == null && v.accentPreset == i) { set { it.copy(accentPreset = i, customHue = null) } }
+                        val sel = v.customHue == null && v.accentPreset == i
+                        Swatch(p, sel, if (sel) Modifier.focusRequester(picked) else Modifier) { set { it.copy(accentPreset = i, customHue = null) } }
                     }
                     Chip("Custom", v.customHue != null) { set { it.copy(customHue = it.customHue ?: 150f) } }
                 }
@@ -174,11 +180,11 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Swatch(preset: Preset, selected: Boolean, onClick: () -> Unit) {
+private fun Swatch(preset: Preset, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = LocalSpeedColors.current
     val color = remember(preset, c.dark) { Color(preset.palette(c.dark).accent) }
     Box(
-        Modifier.size(Space.x4 + Space.x1).focusFx(1.15f, RowRadius, onClick)
+        modifier.size(Space.x4 + Space.x1).focusFx(1.15f, RowRadius, onClick)
             .semantics { role = Role.RadioButton; this.selected = selected; contentDescription = preset.name }
             .background(color)
             .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.onSurface else c.hairline),
