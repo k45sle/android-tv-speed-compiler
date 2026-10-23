@@ -257,6 +257,7 @@ fun CabinetCard(
     tone: Tone = Tone.Neutral,
     onClick: (() -> Unit)? = null,
     preview: Boolean = false,
+    screenHeight: Dp = 84.dp,
     banner: @Composable BoxScope.() -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -269,7 +270,7 @@ fun CabinetCard(
                 PixelText(name, color = if (lit) c.accent else cs.onSurfaceVariant)
             }
             Box(Modifier.fillMaxWidth().background(cs.primaryContainer).padding(12.dp)) {
-                Box(Modifier.fillMaxWidth().height(84.dp).background(cs.background).border(3.dp, c.hairline), Alignment.Center, content = banner)
+                Box(Modifier.fillMaxWidth().height(screenHeight).background(cs.background).border(3.dp, c.hairline), Alignment.Center, content = banner)
             }
             Row(
                 Modifier.fillMaxWidth().height(36.dp).background(Color(Cabinet.GREY)).padding(horizontal = 10.dp),

@@ -13,6 +13,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import dev.speedcompiler.tv.theme.ArcadeButton
 import dev.speedcompiler.tv.theme.CabinetCard
+import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.theme.DipSwitch
 import dev.speedcompiler.tv.theme.Marquee
 import dev.speedcompiler.tv.theme.OperatorRow
@@ -100,7 +102,10 @@ fun AppDetailContent(
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             Marquee(app.label, compact = true, onBack = onBack)
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
-                CabinetCard(app.label, Modifier.width(280.dp), word, tone, onClick = onOptimize) { AppBanner(app, Modifier.size(width = 160.dp, height = 90.dp)) }
+                CabinetCard(app.label, Modifier.width(280.dp), word, tone, onClick = onOptimize, screenHeight = 140.dp) {
+                    // The Apps list cartridge blown up whole: its frame is fixed dp, so a bigger banner alone would widen its shape.
+                    Cartridge(Modifier.scale(1.6f)) { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) }
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
                     Text(app.packageName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(state, style = MaterialTheme.typography.titleMedium)

@@ -32,6 +32,7 @@ import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.theme.ArcadeButton
 import dev.speedcompiler.tv.theme.BannerCard
 import dev.speedcompiler.tv.theme.Cabinet
+import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.theme.FocusMemory
 import dev.speedcompiler.tv.theme.Lamp
 import dev.speedcompiler.tv.theme.Marquee
@@ -138,7 +139,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                     val look = s.look(app.packageName)
                     val tone = dotTone(app, s.queue)
                     BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), dotLabel(tone), { go(Routes.appDetail(app.packageName)) }, tone) {
-                        look.banner?.let { Image(it, null, Modifier.size(64.dp, 36.dp)) }
+                        look.banner?.let { Cartridge { Image(it, null, Modifier.size(64.dp, 36.dp)) } }
                     }
                 }
             }
