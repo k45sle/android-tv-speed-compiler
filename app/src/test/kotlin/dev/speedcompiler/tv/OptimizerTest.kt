@@ -36,6 +36,7 @@ class OptimizerTest {
         val rows = mutableListOf<Event>()
         override fun recent(limit: Int): Flow<List<Event>> = emptyFlow()
         override suspend fun insert(event: Event) { rows += event }
+        override suspend fun pruneBefore(before: Long) { rows.removeAll { it.timeMillis < before } }
     }
 
     private class Shell(

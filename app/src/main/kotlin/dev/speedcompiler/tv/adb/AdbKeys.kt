@@ -10,7 +10,10 @@ import java.security.SecureRandom
 import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.security.interfaces.RSAPrivateCrtKey
+import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.RSAPublicKeySpec
 
 /** The app's ADB identity: an RSA key and self-signed certificate, generated once and kept in [dir]. */
 class AdbKeys(dir: File) {
@@ -20,20 +23,23 @@ class AdbKeys(dir: File) {
     init {
         val keyFile = File(dir, "adb.key")
         val certFile = File(dir, "adb.crt")
-        val loaded = runCatching {
-            KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes())) to
-                parseCertificate(certFile.readBytes())
-        }.getOrNull()
-        if (loaded != null) {
-            privateKey = loaded.first
-            certificate = loaded.second
+        dir.mkdirs()
+        val key = runCatching { KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes())) }.getOrNull()
+        if (key is RSAPrivateCrtKey) {
+            // The key is the identity the TV trusts. A missing, corrupt or mismatched cert (a crash between the two writes)
+            // is rebuilt from the key's own public half, so pairing survives.
+            val publicKey = KeyFactory.getInstance("RSA").generatePublic(RSAPublicKeySpec(key.modulus, key.publicExponent))
+            val saved = runCatching { parseCertificate(certFile.readBytes()) }.getOrNull()
+            privateKey = key
+            certificate = saved?.takeIf { (it.publicKey as? RSAPublicKey)?.modulus == key.modulus }
+                ?: parseCertificate(selfSignedCertificate(publicKey.encoded, key)).also { writeAtomically(certFile, it.encoded) }
         } else {
+            // No usable key (first run, or the file is corrupt): a new identity, so the TV has to be paired again.
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
             privateKey = pair.private
             certificate = parseCertificate(selfSignedCertificate(pair.public.encoded, pair.private))
-            dir.mkdirs()
+            writeAtomically(keyFile, privateKey.encoded) // key first: a crash leaves a key and a stale cert, which the load above repairs
             writeAtomically(certFile, certificate.encoded)
-            writeAtomically(keyFile, privateKey.encoded)
         }
     }
 
