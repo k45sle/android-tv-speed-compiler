@@ -45,13 +45,28 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.ListRow
-import dev.speedcompiler.tv.theme.PixelBanner
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.QrCard
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.StatusPill
-import dev.speedcompiler.tv.theme.StepHeader
+import dev.speedcompiler.tv.theme.Cabinet
+import dev.speedcompiler.tv.theme.Lamp
+import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import dev.speedcompiler.tv.theme.RoomBackdrop
+import dev.speedcompiler.tv.theme.StageMeter
+import dev.speedcompiler.tv.theme.ArcadeButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.web.qrImageBitmap
 import kotlinx.coroutines.delay
@@ -66,6 +81,8 @@ const val HelpUrl = "https://github.com/k45sle/android-tv-speed-compiler#setup-h
 private const val PollMs = 500L
 private const val Total = 5
 private const val PairGraceMs = 2000L
+
+private val LocalPageBack = compositionLocalOf<() -> Unit> { {} }
 
 /**
  * The 7-screen first-run flow. [SetupMode.Repair] is the quick re-pair entry: it starts at screen 4.
@@ -106,22 +123,25 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     LaunchedEffect(step) { if (step == 6 || (step == 7 && apps.isEmpty())) apps = env.recentApps() } // step 7 after a restore needs the labels too
     BackHandler(enabled = help || step > first) { if (help) help = false else back() }
 
-    if (help) return HelpPage(step) { help = false }
-    when (step) {
+    val pageBack = { if (help) help = false else if (step > first) back() else onBack() }
+    CompositionLocalProvider(LocalPageBack provides pageBack) {
+    if (help) HelpPage(step) { help = false } else when (step) {
         1 -> Page(null, "Compile your apps ahead of time.") {
             Body("Android can fully compile apps ahead of time. This app does it for the apps you pick and redoes it after each update. Results vary, and each app uses a little more storage.")
-            PrimaryButton("Start", ::advance)
+            PrimaryButton("Start", onClick = ::advance)
         }
         2 -> Page(2, "Turn on Developer options.") {
-            Body("Open Settings > System > About > Build, and press it 7 times.")
+            Body("Open Settings > System > About > Build, and press it 7 times.", 0)
             PrimaryButton("Open Settings") { fail(); env.openSettings() }
-            helpOffer?.let { Button(onClick = it) { Text("Show me how") } }
+            helpOffer?.let { ShowMeHow(it) }
+            Waiting()
             AutoAdvance({ env.developerOptionsOn() }, ::advance)
         }
         3 -> Page(3, "Turn on Wireless debugging.") {
-            Body("In Developer options, switch on Wireless debugging.")
+            Body("In Developer options, switch on Wireless debugging.", 0)
             PrimaryButton("Open Developer options") { fail(); env.openDeveloperOptions() }
-            helpOffer?.let { Button(onClick = it) { Text("Show me how") } }
+            helpOffer?.let { ShowMeHow(it) }
+            Waiting()
             AutoAdvance({ env.wirelessDebuggingOn() }, ::advance)
         }
         4 -> PairStep(deps, helpOffer, onPaired = ::advance, onFail = ::fail)
@@ -132,9 +152,9 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 else if (conn == ConnectionState.Disconnected && sawConnecting) { sawConnecting = false; fail() }
             }
             Page(5, "Allow this app.") {
-                Body("Your TV will ask to allow debugging. Choose Always allow from this computer.")
+                Body("Your TV will ask to allow debugging. Choose Always allow from this computer.", 0)
                 StatusPill(if (conn == ConnectionState.Connecting) "Connecting" else "Waiting for you", Tone.Info)
-                helpOffer?.let { PrimaryButton("Show me how", it) }
+                helpOffer?.let { ShowMeHow(it) }
                 AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
             }
         }
@@ -156,6 +176,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 }
             }
         }
+    }
     }
 }
 
@@ -211,21 +232,28 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
         } != null
         if (ok) paired() else { seen = false; failed(); deps.env.startPairing() }
     }
-    Page(4, "Use your phone.") {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.x4), verticalAlignment = Alignment.CenterVertically) {
+    Page(4, "Use your phone.", side = {
+        PixelText("Scan me", color = LocalSpeedColors.current.accent, size = 36.sp)
+        Column(Modifier.background(Color(Cabinet.BLUE)).padding(Space.x2)) {
             QrCard {
                 val u = url
                 if (u != null) {
                     val bitmap = remember(u) { qrImageBitmap(u) }
-                    Image(bitmap, "QR code for the pairing page", Modifier.size(240.dp))
-                } else Box(Modifier.size(240.dp))
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(Space.x2)) {
-                Text(url ?: "Starting...", style = MonoStyle, color = LocalSpeedColors.current.accent)
-                Body("Scan this, then on the TV open Wireless debugging > Pair device with pairing code, and type the 6 digits on your phone.")
-                helpOffer?.let { PrimaryButton("Show me how", it) }
+                    Image(bitmap, "QR code for the pairing page", Modifier.size(180.dp))
+                } else Box(Modifier.size(180.dp))
             }
         }
+        Row(
+            Modifier.width(260.dp).height(36.dp).background(Color(Cabinet.GREY)),
+            Arrangement.spacedBy(Space.x2, Alignment.CenterHorizontally), Alignment.CenterVertically,
+        ) {
+            for (c in listOf(Cabinet.ORANGE, Cabinet.LOGO, Cabinet.BLUE)) Box(Modifier.size(14.dp).background(Color(c)))
+        }
+    }) {
+        Body("Scan this, then on the TV open Wireless debugging > Pair device with pairing code, and type the 6 digits on your phone.", 0)
+        Text(url ?: "Starting...", style = MonoStyle, color = LocalSpeedColors.current.accent)
+        Waiting()
+        helpOffer?.let { ShowMeHow(it) }
     }
 }
 
@@ -260,12 +288,12 @@ private fun HelpPage(step: Int, onClose: () -> Unit) {
         else -> "Choose Always allow from this computer on the TV's prompt, then OK. If no prompt appears, switch Wireless debugging off and on again."
     }
     Page(null, "Show me how") {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.x4), verticalAlignment = Alignment.CenterVertically) {
-            QrCard { Image(remember { qrImageBitmap(HelpUrl) }, "QR code for the help page", Modifier.size(200.dp)) }
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Space.x4), verticalAlignment = Alignment.CenterVertically) {
+            QrCard { Image(remember { qrImageBitmap(HelpUrl) }, "QR code for the help page", Modifier.size(180.dp)) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
                 Body(text)
                 Text(HelpUrl, style = MonoStyle, color = LocalSpeedColors.current.accent)
-                PrimaryButton("Back", onClose)
+                PrimaryButton("Back", onClick = onClose)
             }
         }
     }
@@ -283,31 +311,70 @@ private fun AutoAdvance(isMet: () -> Boolean, onMet: () -> Unit) {
     }
 }
 
-/** [step] 2..6 shows "Step N of 5" (step - 1) and a thin progress bar; null is a plain title. */
+/** [step] 2..6 shows "Step N of 5" (step - 1) and a stage meter in the marquee; null is a plain title. [side] sits on the right. */
 @Composable
-private fun Page(step: Int?, title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().padding(Space.x4 + Space.x2), verticalArrangement = Arrangement.spacedBy(Space.x3)) {
-        PixelBanner(false, Modifier.align(Alignment.End), 128.dp)
-        if (step == null) Text(title, style = MaterialTheme.typography.displaySmall)
-        else {
-            StepHeader(step - 1, Total, title)
-            Box(Modifier.fillMaxWidth().height(4.dp).background(LocalSpeedColors.current.hairline)) {
-                Box(Modifier.fillMaxWidth((step - 1) / Total.toFloat()).fillMaxHeight().background(LocalSpeedColors.current.accent))
+private fun Page(
+    step: Int?,
+    title: String,
+    side: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = LocalSpeedColors.current
+    RoomBackdrop {
+        Column(Modifier.fillMaxSize().padding(horizontal = Space.x4, vertical = Space.x1), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+            Marquee("Setup", compact = true, onBack = LocalPageBack.current, trailing = step?.let {
+                {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                        PixelText("Step ${it - 1} of $Total", color = c.accent)
+                        StageMeter(it - 1, Total)
+                    }
+                }
+            })
+            PixelText(title, size = 36.sp, color = MaterialTheme.colorScheme.onSurface)
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(Space.x2), content = content)
+                if (side != null) Column(Modifier.fillMaxHeight(), Arrangement.spacedBy(Space.x1, Alignment.CenterVertically), Alignment.CenterHorizontally, side)
             }
         }
-        content()
+    }
+}
+
+/** Sentence in a bordered panel; [n] >= 0 adds a small numbered square (Cabinet colors) in front. */
+@Composable
+private fun Body(text: String, n: Int = -1) {
+    val sentence = @Composable {
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (n < 0) return sentence()
+    Row(
+        Modifier.fillMaxWidth().border(2.dp, LocalSpeedColors.current.hairline).padding(Space.x2),
+        horizontalArrangement = Arrangement.spacedBy(Space.x2),
+    ) {
+        val color = listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.LOGO)[n % 3]
+        Box(Modifier.size(28.dp).background(Color(color)), Alignment.Center) { PixelText("${n + 1}", color = Color(Cabinet.CREAM)) }
+        Box(Modifier.weight(1f)) { sentence() }
     }
 }
 
 @Composable
-private fun Body(text: String) =
-    Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Waiting() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
+        Lamp(LocalSpeedColors.current.accent, waiting = true)
+        PixelText("Waiting for you...", color = LocalSpeedColors.current.accent)
+    }
+}
 
 @Composable
-private fun PrimaryButton(label: String, onClick: () -> Unit) {
+private fun ShowMeHow(onClick: () -> Unit) = PrimaryButton("Show me how", Color(Cabinet.BLUE), Color(Cabinet.CREAM), onClick)
+
+@Composable
+private fun PrimaryButton(label: String, fill: Color = Color.Unspecified, ink: Color = Color.Unspecified, onClick: () -> Unit) {
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     // Compose can hand focus to the new button as it attaches; the button's focus style misses that. Clear and ask again.
     LaunchedEffect(Unit) { focusManager.clearFocus(); focus.requestFocus() }
-    Button(onClick = onClick, modifier = Modifier.focusRequester(focus)) { Text(label) }
+    // Shown uppercase; the semantics keep the original string so text matchers outside this screen still find it.
+    ArcadeButton(onClick, Modifier.focusRequester(focus), fill = fill, contentColor = ink) {
+        Text(label.uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString(label) })
+    }
 }
