@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.watch.Eta
+import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.Scheduler
@@ -30,6 +31,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 
 data class AppInfo(
@@ -54,6 +56,8 @@ class AppsDeps(
     val loadApp: suspend (String) -> AppInfo? = { p -> loadApps().firstOrNull { it.packageName == p } },
     /** Undoes speed compile for one package. */
     val reset: suspend (String) -> OptimizeResult = { OptimizeResult(false, "Didn't reset: not available.") },
+    /** Successful resets, so a reset app no longer reads as compiled. */
+    val resets: Flow<List<Event>> = flowOf(emptyList()),
 )
 
 /** The app's status word: live queue state first, then the stored result; a finished job with no stored result counts as Compiled. */
@@ -68,12 +72,13 @@ fun pillFor(entry: QueueEntry?, lastResult: String?, optimizedAt: Long?, now: Lo
     return (r.label + if (eta.isEmpty()) "" else " · $eta") to Tone.Warn
 }
 
-/** Latest optimize time per package, from the watched row or the newest finished job (covers unwatched apps). */
-fun optimizedAtMap(watched: List<WatchedApp>, history: List<QueueItem>): Map<String, Long> {
+/** Latest optimize time per package, from the watched row or the newest finished job (covers unwatched apps); a later Reset clears it. */
+fun optimizedAtMap(watched: List<WatchedApp>, history: List<QueueItem>, resets: List<Event> = emptyList()): Map<String, Long> {
     val m = mutableMapOf<String, Long>()
     fun put(p: String, t: Long?) { if (t != null && t > (m[p] ?: Long.MIN_VALUE)) m[p] = t }
     watched.forEach { put(it.packageName, it.lastOptimizedAt) }
     history.filter { it.state == QueueState.DONE }.forEach { put(it.packageName, it.finishedAt) }
+    resets.forEach { r -> val p = r.packageName ?: return@forEach; if ((m[p] ?: Long.MAX_VALUE) <= r.timeMillis) m.remove(p) }
     return m
 }
 
@@ -112,6 +117,7 @@ fun rememberAppsDeps(): AppsDeps {
             musicActive = { context.getSystemService(AudioManager::class.java).isMusicActive },
             setAutoOptimize = dao::setAutoOptimize,
             reset = { graph.optimizer.reset(it) },
+            resets = graph.database.events().resets(),
         )
     }
 }

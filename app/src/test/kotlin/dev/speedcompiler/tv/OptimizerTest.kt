@@ -36,6 +36,7 @@ class OptimizerTest {
     private class Events : EventDao {
         val rows = mutableListOf<Event>()
         override fun recent(limit: Int): Flow<List<Event>> = emptyFlow()
+        override fun resets(): Flow<List<Event>> = emptyFlow()
         override suspend fun insert(event: Event) { rows += event }
         override suspend fun pruneBefore(before: Long) { rows.removeAll { it.timeMillis < before } }
     }
@@ -188,6 +189,14 @@ class OptimizerTest {
         assertTrue(bad.detail.startsWith("Didn't reset"))
         assertFalse(impl(shell, Events()).reset("a b").ok)
         assertEquals(1, shell.compiles)
+    }
+
+    @Test fun resetTimesOutAsAFailure() = runTest {
+        val ev = Events()
+        val r = impl(Shell(compileDelay = 1_000), ev, timeout = 100).reset("dev.speedcompiler.tv")
+        assertFalse(r.ok)
+        assertTrue(r.detail.startsWith("Didn't reset"))
+        assertEquals("reset_failed", ev.rows.single().kind)
     }
 
     @Test fun timesOut() = runTest {

@@ -302,6 +302,17 @@ class AppsScreensTest : ComposeTestBase() {
         assertEquals(mapOf("a.alpha" to 80L), optimizedAtMap(listOf(WatchedApp("a.alpha", "f", lastOptimizedAt = 80)), listOf(done)))
     }
 
+    @Test
+    fun aLaterResetClearsCompiled() {
+        val done = dev.speedcompiler.tv.watch.QueueItem(
+            1, "a.alpha", dev.speedcompiler.tv.watch.QueueSource.MANUAL,
+            dev.speedcompiler.tv.watch.QueueState.DONE, enqueuedAt = 1, finishedAt = 50,
+        )
+        fun reset(at: Long) = dev.speedcompiler.tv.watch.Event(timeMillis = at, packageName = "a.alpha", kind = "reset_done", message = "")
+        assertEquals(emptyMap<String, Long>(), optimizedAtMap(emptyList(), listOf(done), listOf(reset(60))))
+        assertEquals(mapOf("a.alpha" to 50L), optimizedAtMap(emptyList(), listOf(done), listOf(reset(40)))) // optimized again after the reset
+    }
+
     private fun content(
         list: List<AppInfo> = apps, loading: Boolean = false, selecting: Boolean = false, picked: Set<String> = emptySet(),
         watchedNow: Map<String, WatchedApp> = emptyMap(), onWatch: (List<String>) -> Unit = {}, onQueue: (List<String>) -> Unit = {},

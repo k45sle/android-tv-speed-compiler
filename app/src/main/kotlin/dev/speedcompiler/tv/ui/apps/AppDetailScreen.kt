@@ -11,6 +11,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,6 +62,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val queue by remember(deps) { deps.scheduler.queue }.collectAsState(emptyList())
     val watched by remember(deps) { deps.watched }.collectAsState(emptyList())
     val history by remember(deps) { deps.scheduler.history }.collectAsState(emptyList())
+    val resets by remember(deps) { deps.resets }.collectAsState(emptyList())
     val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
@@ -66,16 +70,20 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val mine = watched.firstOrNull { it.packageName == packageName }
     AppDetailContent(
         loaded ?: AppInfo(packageName, packageName),
-        mine, optimizedAtMap(watched, history)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
+        mine, optimizedAtMap(watched, history, resets)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
         onReset = {
-            scope.launch {
-                resetNote = "Resetting..."
-                val r = deps.reset(packageName)
-                if (r.ok) deps.scheduler.unwatch(packageName)
-                resetNote = r.detail
+            if (resetNote != RESETTING) scope.launch {
+                resetNote = RESETTING
+                // Unwatch first so a queued compile cannot redo speed after the reset; NonCancellable so Back does not stop it halfway.
+                resetNote = try {
+                    withContext(NonCancellable) { deps.scheduler.unwatch(packageName); deps.reset(packageName) }.detail
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    "Didn't reset: ${e.message ?: "unexpected error"}."
+                }
             }
         },
         resetNote = resetNote,
@@ -158,3 +166,5 @@ fun AppDetailContent(
         }
     }
 }
+
+private const val RESETTING = "Resetting..."

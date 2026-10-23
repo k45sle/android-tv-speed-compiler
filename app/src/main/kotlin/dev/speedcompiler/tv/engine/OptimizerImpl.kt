@@ -57,6 +57,8 @@ class OptimizerImpl(
         if (!isValidPackageId(packageName)) return finish(null, false, "Didn't reset: that is not a valid app name.", "reset_failed")
         val res = try {
             withTimeout(timeoutMillis) { shell.run(resetCommand(packageName)) }
+        } catch (e: TimeoutCancellationException) {
+            return finish(packageName, false, "Didn't reset: the TV took too long.", "reset_failed")
         } catch (e: CancellationException) {
             throw e
         } catch (e: AdbFailure.NotPaired) {
