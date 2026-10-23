@@ -9,30 +9,59 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
+import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.engine.GateCache
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 const val KEY_ITEM_ID = "itemId"
 private const val DEBOUNCE_MINUTES = 5L
 private const val BACKOFF_MINUTES = 15L
+private const val GATE_TICK_MILLIS = 30_000L
 
 fun workName(packageName: String) = "optimize:$packageName"
 
 val QueueState.isActive get() = this == QueueState.QUEUED || this == QueueState.WAITING_GATE || this == QueueState.RUNNING
+
+/** Entries with ETAs from [cache], which refreshes on every queue change, on a connection change and every 30 s while collected. */
+fun queueWithEta(active: Flow<List<QueueItem>>, connection: Flow<ConnectionState>, cache: GateCache): Flow<List<QueueEntry>> = flow {
+    coroutineScope {
+        launch { connection.distinctUntilChanged().collect { cache.refreshIfStale(force = true) } }
+        launch { while (true) { delay(GATE_TICK_MILLIS); cache.refreshIfStale() } }
+        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status) { items, gate ->
+            items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i)) }
+        })
+    }
+}
 
 /** Room holds the queue, WorkManager holds one unique job per package. Reads [graph] at call time so tests can swap parts. */
 class WorkScheduler(private val context: Context, private val graph: AppGraph) : Scheduler {
     private val queueDao get() = graph.database.queue()
     private val work get() = WorkManager.getInstance(context)
 
-    override val queue: Flow<List<QueueEntry>> get() = queueDao.active().map { items ->
-        val gate = graph.gate.status()
-        items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i)) }
+    /** ETAs read this cache, so a slow or disconnected TV never stalls the queue flow. */
+    private val gateCache by lazy {
+        GateCache(graph.clock, CoroutineScope(SupervisorJob() + Dispatchers.Default)) {
+            // The gate reads over ADB: skip it while the TV is unreachable instead of waiting on a connect.
+            if (graph.connectionMonitor.state.first() == ConnectionState.Connected) graph.gate.status() else null
+        }
     }
+
+    override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache)
 
     override val history: Flow<List<QueueItem>> get() = queueDao.history()
 

@@ -72,6 +72,7 @@ fun etaText(eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.system
     Eta.WaitingForIdle -> "Waiting for the TV to be idle"
     Eta.WaitingForPlayback -> "Waiting for playback to stop"
     Eta.Paused -> "Auto-optimize is off"
+    Eta.Unknown -> "Unknown"
     is Eta.InQueue -> "#${eta.position + 1} in queue, about ${(eta.approxMillis / 60_000).coerceAtLeast(1)} min"
 }
 

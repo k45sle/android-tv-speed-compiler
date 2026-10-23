@@ -14,6 +14,8 @@ sealed interface Eta {
     data object WaitingForIdle : Eta
     data object WaitingForPlayback : Eta
     data object Paused : Eta
+    /** The gate status is not known yet, for example while the TV is unreachable. */
+    data object Unknown : Eta
     data class InQueue(val position: Int, val approxMillis: Long) : Eta
 }
 
@@ -26,7 +28,7 @@ const val DEFAULT_AVG_DURATION_MILLIS = 120_000L
 
 fun etaFor(
     item: QueueItem,
-    gate: GateStatus,
+    gate: GateStatus?,
     position: Int,
     avgDurationMillis: Long = DEFAULT_AVG_DURATION_MILLIS,
 ): Eta {
@@ -34,6 +36,7 @@ fun etaFor(
     val wait = position * avgDurationMillis
     if (item.runNow) return Eta.InQueue(position, wait)
     return when (gate) {
+        null -> Eta.Unknown
         GateStatus.Open -> Eta.InQueue(position, wait)
         GateStatus.WaitingForIdle -> Eta.WaitingForIdle
         GateStatus.WaitingForPlayback -> Eta.WaitingForPlayback
