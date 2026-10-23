@@ -206,6 +206,7 @@ class HomeActivityTest : ComposeTestBase() {
         rule.onNodeWithContentDescription("Cancel Beta").invokeClick()
         assertEquals(listOf(2L), cancelled)
         rule.onNodeWithText("Failed: Connection lost").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Alpha, Failed, ${clockText(6_000, utc)}, Connection lost").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Retry Alpha").performScrollTo().invokeClick()
         assertEquals(listOf(7L), retried)
         rule.onNodeWithText("Failed: Connection lost").invokeClick()

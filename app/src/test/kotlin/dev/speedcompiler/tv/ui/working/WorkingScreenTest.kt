@@ -89,7 +89,7 @@ class WorkingScreenTest : ComposeTestBase() {
     fun runningShowsHonestProgressAndScreenshot() {
         show()
         rule.onNodeWithText("Optimizing Alpha", ignoreCase = true).assertIsDisplayed()
-        rule.onNodeWithText("Usually about 2 min").assertIsDisplayed()
+        rule.onNodeWithText("Estimate: usually about 2 min").assertIsDisplayed()
         rule.onNodeWithText("00:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()
@@ -217,7 +217,7 @@ class WorkingScreenTest : ComposeTestBase() {
 
         finish(item(1, QueueState.DONE).copy(finishedAt = base + 20_000))
         rule.mainClock.advanceTimeBy(2_000)
-        rule.onNodeWithText("Alpha optimized").assertIsDisplayed() // status line turns to the result; the game stays frozen behind DONE
+        rule.onNodeWithText("Alpha compiled").assertIsDisplayed() // status line turns to the result; the game stays frozen behind DONE
         rule.onNodeWithText("Back to leave").assertIsDisplayed()
         rule.onNodeWithText("00:20").assertIsDisplayed() // the clock stopped with the job
         assertEquals(0, left) // not auto-closed
@@ -255,4 +255,44 @@ class WorkingScreenTest : ComposeTestBase() {
         rule.mainClock.advanceTimeBy(1_000)
         rule.onNodeWithText("Didn't finish: the TV disconnected").assertIsDisplayed()
     }
+
+    private fun shot(name: String, job: JobView, elapsed: Long = 90_000, verified: Boolean = false, connection: ConnectionState = ConnectionState.Connected, text: String, title: String, bar: String?) {
+        rule.mainClock.autoAdvance = false
+        rule.setContent { SpeedTheme { WorkingContent(WorkingState("Alpha", null, job, elapsed, 120_000, connection, verified = verified), {}) } }
+        rule.mainClock.advanceTimeByFrame()
+        rule.onNodeWithText(title, ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText(text).assertIsDisplayed()
+        if (bar == null) rule.onNodeWithContentDescription("Time estimate", substring = true).assertDoesNotExist()
+        else rule.onNodeWithContentDescription(bar).assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/working_$name.png")
+    }
+
+    @Test
+    fun waitingShowsWaitingTitleAndEmptyBar() =
+        shot("waiting", JobView.Waiting(Eta.None), text = "Waiting for its turn", title = "Waiting to optimize Alpha", bar = "Time estimate, 0 of 10 blocks")
+
+    @Test
+    fun startingShowsWaitingTitleAndEmptyBar() =
+        shot("starting", JobView.Starting, text = "Starting…", title = "Waiting to optimize Alpha", bar = "Time estimate, 0 of 10 blocks")
+
+    @Test
+    fun runningFillsTheBarFromElapsed() =
+        shot("running_bar", JobView.Running, text = "Optimizing. This continues if you leave.", title = "Optimizing Alpha", bar = "Time estimate, 7 of 10 blocks")
+
+    @Test
+    fun runningWithoutConnectionSaysWaiting() =
+        shot("running_disconnected", JobView.Running, connection = ConnectionState.Disconnected,
+            text = "Waiting for the TV's debugging connection. It retries on its own.", title = "Waiting to optimize Alpha", bar = "Time estimate, 0 of 10 blocks")
+
+    @Test
+    fun finishedUnverifiedSaysCompiled() =
+        shot("compiled", JobView.Done, text = "Compiled. You can leave now.", title = "Alpha", bar = null)
+
+    @Test
+    fun finishedVerifiedSaysOptimized() =
+        shot("verified", JobView.Done, verified = true, text = "Optimized. You can leave now.", title = "Alpha", bar = null)
+
+    @Test
+    fun failedShowsReasonWithoutBar() =
+        shot("failed", JobView.Failed("base.apk (arm64) is verify, not speed."), text = "Didn't finish: base.apk (arm64) is verify, not speed.", title = "Alpha", bar = null)
 }

@@ -130,7 +130,7 @@ fun ActivityContent(
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
             Column {
                 Row(
-                    Modifier.fillMaxWidth().semantics { contentDescription = "${l.label}, ${stateText(h.state)}" }
+                    Modifier.fillMaxWidth().semantics { contentDescription = listOfNotNull(l.label, stateText(h.state), time, reason).joinToString(", ") }
                         .focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
                         .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
