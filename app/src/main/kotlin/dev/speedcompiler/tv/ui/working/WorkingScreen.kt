@@ -236,7 +236,7 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         }.padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        PixelBanner(s.job.finished, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 64.dp)
+        PixelBanner(s.job.finished || still, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 64.dp)
         val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
         if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
         Column(Modifier.weight(1f)) {

@@ -81,7 +81,7 @@ private fun DrawScope.artText(s: String, x: Int, y: Int, c: Color, u: Float) {
 
 /** True on devices Android flags as low-RAM; the animated screens hold still there. */
 @Composable
-fun rememberLowRam(): Boolean = LocalContext.current.getSystemService(ActivityManager::class.java).isLowRamDevice
+fun rememberLowRam(): Boolean = LocalContext.current.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
 
 /**
  * The arcade room: three cabinets at 2 dp per art pixel. The focused one is lit and plays its game in the screen on its own;
@@ -140,7 +140,7 @@ private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, still: Bo
         var sub = 0
         // Wake every 4th vsync (15 fps); the clock steps by elapsed time so the game still runs at 30 steps/s.
         while (true) {
-            delay(50)
+            delay(60) // then the next vsync: 4 frames at 60 and 120 Hz, so ~15 fps
             withFrameNanos { now ->
                 repeat(clock.due(now)) { if (++sub >= kind.def.ticksPerStep) { sub = 0; game.step(null); probe("step") } }
                 if (game.over && game.canRestart) game = kind.def.create()

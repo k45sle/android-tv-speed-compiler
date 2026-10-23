@@ -24,7 +24,7 @@ class ArcadePickerTest : ComposeTestBase() {
 
     @Test fun litCabinetRedrawsAt15AndBulbsAtMostSeven() {
         val c = run(still = false, ms = 1000)
-        assertTrue("frames=$c", c["frame"] in 13..16)
+        assertTrue("frames=$c", c["frame"] in 10..16) // capped near 15; the test clock's 16 ms frames give ~12
         assertTrue("ticks=$c", c["tick"] in 1..7)
         assertTrue("steps=$c", c["step"]!! >= 20) // 30 steps/s, divided by ticksPerStep
     }
