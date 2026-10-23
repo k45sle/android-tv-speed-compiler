@@ -103,7 +103,8 @@ fun rememberAppsDeps(): AppsDeps {
     }
 }
 
-private suspend fun loadUserApps(context: Context, packages: List<String>): List<AppInfo> = withContext(Dispatchers.IO) {
+/** Non-system apps among [packages] (updated system apps count as user apps), read on IO. Shared with Setup. */
+internal suspend fun loadUserApps(context: Context, packages: List<String>): List<AppInfo> = withContext(Dispatchers.IO) {
     val pm = context.packageManager
     packages.filter { it != context.packageName }.mapNotNull { p ->
         runCatching {

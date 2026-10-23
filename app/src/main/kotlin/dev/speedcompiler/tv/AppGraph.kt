@@ -6,6 +6,7 @@ import androidx.room.Room
 import android.media.AudioManager
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.adb.ConnectionMonitor
+import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.LibAdb
 import dev.speedcompiler.tv.adb.Pairing
@@ -29,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 private val Context.settingsStore by preferencesDataStore("settings")
 
@@ -55,4 +57,15 @@ class AppGraph(context: Context) {
         GateConfigProvider { settings.values.first().toGateConfig() },
     )
     var scheduler: Scheduler = WorkScheduler(app, this)
+
+    /** The TV keeps the trust, so this flag (read by Setup) is the only local trace that we hold a pairing. */
+    init {
+        val prefs = app.getSharedPreferences("setup", Context.MODE_PRIVATE)
+        appScope.launch {
+            connectionMonitor.state.collect {
+                if (it == ConnectionState.Connected) prefs.edit().putBoolean("paired", true).apply()
+                else if (it == ConnectionState.Unpaired) prefs.edit().putBoolean("paired", false).apply()
+            }
+        }
+    }
 }
