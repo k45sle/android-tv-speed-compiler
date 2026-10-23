@@ -130,7 +130,7 @@ class SettingsScreenTest : ComposeTestBase() {
         click("Custom")
         assertEquals(150f, state.value.customHue)
         press("Custom accent hue", Key.DirectionRight)
-        assertEquals(155f, state.value.customHue)
+        assertEquals(165f, state.value.customHue)
         clickDesc("Plum")
         assertEquals(null, state.value.customHue)
     }

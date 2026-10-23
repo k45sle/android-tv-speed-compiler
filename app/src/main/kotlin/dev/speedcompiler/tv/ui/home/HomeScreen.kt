@@ -132,7 +132,7 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
             })
             if (s.watched.isNotEmpty()) LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(Space.x2),
-                contentPadding = PaddingValues(end = 4.dp),
+                contentPadding = PaddingValues(start = Space.x1, top = Space.x1, end = Space.x1, bottom = Space.x1),
             ) {
                 items(s.watched, key = { it.packageName }) { app ->
                     val look = s.look(app.packageName)

@@ -98,14 +98,14 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                 Heading("When to optimize")
                 val modes = Mode.entries
                 OperatorRow(
-                    "Mode", Modifier.remembersFocus(mem, "auto"),
+                    "Mode", Modifier.remembersFocus(mem, "auto").hint("Mode", v.mode.name),
                     onClick = { set { it.copy(mode = modes.cycle(it.mode, 1)) } },
                     onLeft = { set { it.copy(mode = modes.cycle(it.mode, -1)) } },
                     onRight = { set { it.copy(mode = modes.cycle(it.mode, 1)) } },
                 ) { Selector(v.mode.name, it) }
                 val gates = GateMode.entries
                 OperatorRow(
-                    "Run jobs", onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
+                    "Run jobs", Modifier.hint("Run jobs", gateText(v.gateMode)), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
                     onLeft = { set { it.copy(gateMode = gates.cycle(it.gateMode, -1)) } },
                     onRight = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
                 ) { Selector(gateText(v.gateMode), it) }
@@ -118,7 +118,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                 Heading("Appearance")
                 val themes = ThemeChoice.entries
                 OperatorRow(
-                    "Theme", onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
+                    "Theme", Modifier.hint("Theme", v.theme.name), onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
                     onLeft = { set { it.copy(theme = themes.cycle(it.theme, -1)) } },
                     onRight = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
                 ) { Selector(v.theme.name, it) }
@@ -185,7 +185,7 @@ private fun Swatch(preset: Preset, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
-/** Hue picker as a block meter: one block per 15 degrees in its own hue, the current one taller and framed. D-pad left/right moves 5 degrees. */
+/** Hue picker as a block meter: one block per 15 degrees in its own hue, the current one taller and framed. D-pad left/right moves 15 degrees. */
 @Composable
 private fun BlockMeter(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Modifier) {
     val c = LocalSpeedColors.current
@@ -196,8 +196,8 @@ private fun BlockMeter(hue: Float, onHueChange: (Float) -> Unit, modifier: Modif
             .onKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (it.key) {
-                    Key.DirectionLeft -> { onHueChange((hue - 5f + 360f) % 360f); true }
-                    Key.DirectionRight -> { onHueChange((hue + 5f) % 360f); true }
+                    Key.DirectionLeft -> { onHueChange((hue - 15f + 360f) % 360f); true }
+                    Key.DirectionRight -> { onHueChange((hue + 15f) % 360f); true }
                     else -> false
                 }
             }.padding(Space.x1),
@@ -214,9 +214,11 @@ private fun BlockMeter(hue: Float, onHueChange: (Float) -> Unit, modifier: Modif
 }
 
 /** D-pad left/right moves by 30 minutes, wrapping around midnight. */
+private fun Modifier.hint(label: String, value: String) = semantics { contentDescription = "$label, $value. Press left or right to change" }
+
 @Composable
 private fun TimeRow(label: String, minute: Int, onStep: (Int) -> Unit) =
-    OperatorRow(label, onClick = { onStep(STEP_MINUTES) }, onLeft = { onStep(-STEP_MINUTES) }, onRight = { onStep(STEP_MINUTES) }) { Selector(clockText(minute), it) }
+    OperatorRow(label, Modifier.hint(label, clockText(minute)), onClick = { onStep(STEP_MINUTES) }, onLeft = { onStep(-STEP_MINUTES) }, onRight = { onStep(STEP_MINUTES) }) { Selector(clockText(minute), it) }
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) =

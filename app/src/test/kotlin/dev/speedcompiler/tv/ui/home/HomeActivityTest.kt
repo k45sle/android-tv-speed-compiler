@@ -14,6 +14,10 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.unit.dp
+import dev.speedcompiler.tv.ui.Routes
+import org.junit.Assert.assertTrue
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.SpeedTheme
@@ -77,6 +81,30 @@ class HomeActivityTest : ComposeTestBase() {
         rule.onNodeWithText("Recent activity", ignoreCase = true).assertIsDisplayed()
         everyClickableIsLabelled()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_connected.png")
+    }
+
+    @Test
+    fun gridButtonsFitInsideTheScreenAndNavigate() {
+        val went = mutableListOf<String>()
+        home(ConnectionState.Connected) { went += it }
+        val screen = rule.onRoot().getBoundsInRoot()
+        listOf("Apps", "Activity", "Settings", "Setup").forEach {
+            val b = rule.onNodeWithText(it, ignoreCase = true)
+            b.assertIsDisplayed()
+            val r = b.getBoundsInRoot()
+            assertTrue("$it clipped: $r", r.left >= 0.dp && r.top >= 0.dp && r.right <= screen.right && r.bottom <= screen.bottom)
+            b.invokeClick()
+        }
+        assertEquals(listOf(Routes.Apps, Routes.Activity, Routes.Settings, Routes.Setup), went)
+    }
+
+    @Test
+    fun recentActivityShowsFailedAndOptimizedWords() {
+        show {
+            HomeContent(HomeState(ConnectionState.Connected, true, watched, queue, events + Event(2, 6_000, "b.beta", "optimize_verified", "ok"), look), {}, now, utc)
+        }
+        rule.onNodeWithText("Failed", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Optimized", ignoreCase = true).assertIsDisplayed()
     }
 
     @Test

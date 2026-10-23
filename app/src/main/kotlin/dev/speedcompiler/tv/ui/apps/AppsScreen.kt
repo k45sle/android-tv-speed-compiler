@@ -228,11 +228,15 @@ fun AppsContent(
             }
             val toggleSort = { sort = if (sort == Sort.Recent) Sort.Name else Sort.Recent }
             var sortFocused by remember { mutableStateOf(false) }
+            var sortPressed by remember { mutableStateOf(false) }
             Box(
-                Modifier.remembersFocus(mem, "sort").onFocusChanged { sortFocused = it.hasFocus }
+                Modifier.remembersFocus(mem, "sort").onFocusChanged { sortFocused = it.hasFocus; if (!it.isFocused) sortPressed = false }
                     .onKeyEvent {
                         val select = it.key == Key.DirectionCenter || it.key == Key.Enter || it.key == Key.NumPadEnter
-                        if (select && it.type == KeyEventType.KeyUp) toggleSort()
+                        if (select) when (it.type) {
+                            KeyEventType.KeyDown -> sortPressed = true
+                            KeyEventType.KeyUp -> if (sortPressed) { sortPressed = false; toggleSort() } // ignore a release whose press landed elsewhere
+                        }
                         select
                     }
                     // Not clickable(): that takes focus only outside touch mode, which would refuse the focus restore (as ArcadeButton does).
@@ -261,13 +265,11 @@ fun AppsContent(
                         },
                     subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
                     onClick = { onOpen(app.packageName) },
+                    leading = { AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp)) },
                     trailing = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-                            if (pill != null) {
-                                Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
-                                PixelText(pill.first, color = toneColor(pill.second))
-                            }
-                            AppBanner(app, Modifier.size(width = 80.dp, height = 45.dp))
+                        if (pill != null) Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+                            Lamp(toneColor(pill.second), waiting = pill.second == Tone.Warn)
+                            PixelText(pill.first, color = toneColor(pill.second))
                         }
                     },
                 )

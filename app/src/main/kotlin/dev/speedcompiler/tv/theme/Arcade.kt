@@ -258,6 +258,7 @@ private fun SelectRowImpl(
     preview: Boolean,
     actions: (@Composable RowScope.() -> Unit)?,
     trailing: (@Composable (Boolean) -> Unit)?,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val c = LocalSpeedColors.current
@@ -270,6 +271,7 @@ private fun SelectRowImpl(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(28.dp)) { if (focused) PixelText("▶", color = c.accent) }
+        if (leading != null) Box(Modifier.padding(end = 16.dp)) { leading() }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = if (focused) c.accent else cs.onSurface)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
@@ -289,7 +291,8 @@ fun SelectRow(
     preview: Boolean = false,
     actions: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
-) = SelectRowImpl(title, modifier, subtitle, onClick, preview, actions, trailing?.let { t -> { _: Boolean -> t() } })
+    leading: (@Composable () -> Unit)? = null,
+) = SelectRowImpl(title, modifier, subtitle, onClick, preview, actions, trailing?.let { t -> { _: Boolean -> t() } }, leading)
 
 /** A SelectRow with a control on the right: [control] gets the focused state. Left and right keys call [onLeft] and [onRight]. */
 @Composable
@@ -366,6 +369,7 @@ fun ArcadeButton(
                 drawRect(face.darker(), Offset(0f, size.height - dp), Size(size.width, dp))
                 drawRect(face, Offset(0f, shift), Size(size.width, size.height - depth.toPx()))
             },
+        contentAlignment = Alignment.Center,
     ) {
         CompositionLocalProvider(LocalContentColor provides ink, LocalTextStyle provides PixelLabel) {
             Row(
