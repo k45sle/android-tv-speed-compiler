@@ -53,17 +53,18 @@ class GateImpl(
     }
 }
 
-/** Last gate status for display. [refreshIfStale] reloads in [scope] at most every 30 s and never waits; [status] is null until a load succeeds or when the last one failed. */
-class GateCache(private val clock: Clock, private val scope: CoroutineScope, private val load: suspend () -> GateStatus) {
+/** Last gate status for display. [refreshIfStale] reloads in [scope] at most every 30 s (unless [refreshIfStale] is forced) and never waits; [status] is null until a load succeeds, when the last one failed, or when [load] returns null (TV unreachable). */
+class GateCache(private val clock: Clock, private val scope: CoroutineScope, private val load: suspend () -> GateStatus?) {
     private val _status = MutableStateFlow<GateStatus?>(null)
     val status: StateFlow<GateStatus?> = _status
     private var startedAt = -GATE_REFRESH_MILLIS
     private var job: Job? = null
 
     @Synchronized
-    fun refreshIfStale() {
+    fun refreshIfStale(force: Boolean = false) {
         val now = clock.nowMillis()
-        if (job?.isActive == true || now - startedAt < GATE_REFRESH_MILLIS) return
+        if (force) job?.cancel()
+        else if (job?.isActive == true || now - startedAt < GATE_REFRESH_MILLIS) return
         startedAt = now
         job = scope.launch {
             _status.value = try { load() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }

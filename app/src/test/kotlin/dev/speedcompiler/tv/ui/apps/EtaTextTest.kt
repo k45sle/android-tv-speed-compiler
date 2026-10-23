@@ -22,6 +22,7 @@ class EtaTextTest {
         assertEquals("Waiting for the TV to be idle", text(Eta.WaitingForIdle))
         assertEquals("Waiting for playback to stop", text(Eta.WaitingForPlayback))
         assertEquals("Auto-optimize is off", text(Eta.Paused))
+        assertEquals("Unknown", text(Eta.Unknown))
         assertEquals("#2 in queue, about 4 min", text(Eta.InQueue(1, 240_000)))
         assertEquals("", text(Eta.None))
     }
