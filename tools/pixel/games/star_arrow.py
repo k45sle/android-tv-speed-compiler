@@ -3,14 +3,10 @@
 Usage (from the repo root): uv run --with pillow python tools/pixel/games/star_arrow.py [scratch-dir]
 The ship is the chevron from tools/pixel/logo/gen.py (hull, dashes and the barrel roll). Needs no downloaded packs.
 """
-import importlib.util, math, os, random, shutil, sys, tempfile
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.argv[1:] = ["-", sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp()]  # gen.py reads <packs-dir> <scratch-dir> at import
-sys.path.insert(0, HERE)
-from gen import OUT, img, periodic, put, save, sheet  # noqa: E402
+import importlib.util, math, os, random, shutil, sys
+import lib
+from lib import DEST, ROOT, img, periodic, put, save, sheet
 
-ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-DEST = os.path.join(ROOT, "app", "src", "main", "res", "drawable-nodpi")
 spec = importlib.util.spec_from_file_location("logo_gen", os.path.join(ROOT, "tools", "pixel", "logo", "gen.py"))
 logo = importlib.util.module_from_spec(spec); spec.loader.exec_module(logo)
 
@@ -129,8 +125,9 @@ def rocks():
 
 
 if __name__ == "__main__":
+    lib.use_scratch(sys.argv[1] if len(sys.argv) > 1 else None)
     for f in (ship, sky, stars, planet, moon, belt, flame, rocks): f()
     os.makedirs(DEST, exist_ok=True)
-    names = [f for f in os.listdir(OUT) if f.startswith("arrow_")]
-    for f in names: shutil.copy(os.path.join(OUT, f), os.path.join(DEST, "game_" + f))
+    names = [f for f in os.listdir(lib.OUT) if f.startswith("arrow_")]
+    for f in names: shutil.copy(os.path.join(lib.OUT, f), os.path.join(DEST, "game_" + f))
     print("wrote", sorted(names))
