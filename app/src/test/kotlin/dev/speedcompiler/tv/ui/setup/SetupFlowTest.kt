@@ -7,6 +7,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -183,6 +184,7 @@ class SetupFlowTest : ComposeTestBase() {
         }
         assertEquals(3, env.calls.count { it == "startPairing" })
         see("Show me how")
+        rule.onNodeWithText("Show me how").assertIsFocused() // the pair page's only action
     }
 
     @Test

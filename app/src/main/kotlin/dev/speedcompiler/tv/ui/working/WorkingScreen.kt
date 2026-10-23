@@ -206,7 +206,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
     }
     RoomBackdrop {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 6.dp, end = 48.dp), // header 104 + gap 6 + room 380 + top 6 fits the 500 dp above the floor bar
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 6.dp, end = 48.dp), // header 104 (grows for a 2-line status) + gap 6 + room 380 + top 6 fits the 500 dp above the floor bar
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             WorkingHeader(s, back, done, first)

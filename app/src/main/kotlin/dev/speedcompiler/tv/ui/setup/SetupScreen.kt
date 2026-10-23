@@ -154,7 +154,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             Page(5, "Allow this app.") {
                 Body("Your TV will ask to allow debugging. Choose Always allow from this computer.", 0)
                 StatusPill(if (conn == ConnectionState.Connecting) "Connecting" else "Waiting for you", Tone.Info)
-                helpOffer?.let { ShowMeHow(it) }
+                helpOffer?.let { ShowMeHow(it, grab = true) }
                 AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
             }
         }
@@ -255,7 +255,7 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
         Body("Scan this, then on the TV open Wireless debugging > Pair device with pairing code, and type the 6 digits on your phone.", 0)
         Text(url ?: "Starting...", style = MonoStyle, color = LocalSpeedColors.current.accent)
         Waiting()
-        helpOffer?.let { ShowMeHow(it) }
+        helpOffer?.let { ShowMeHow(it, grab = true) }
     }
 }
 
@@ -367,10 +367,12 @@ private fun Waiting() {
 }
 
 @Composable
-// Secondary: no focus grab, so the step's main action keeps initial focus.
-private fun ShowMeHow(onClick: () -> Unit) = ArcadeButton(onClick, fill = Color(Cabinet.BLUE), contentColor = Color(Cabinet.CREAM)) {
-    Text("Show me how".uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString("Show me how") })
-}
+// grab only where it is the page's sole action; otherwise the step's main button keeps initial focus.
+private fun ShowMeHow(onClick: () -> Unit, grab: Boolean = false) =
+    if (grab) PrimaryButton("Show me how", Color(Cabinet.BLUE), Color(Cabinet.CREAM), onClick)
+    else ArcadeButton(onClick, fill = Color(Cabinet.BLUE), contentColor = Color(Cabinet.CREAM)) {
+        Text("Show me how".uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString("Show me how") })
+    }
 
 @Composable
 private fun PrimaryButton(label: String, fill: Color = Color.Unspecified, ink: Color = Color.Unspecified, onClick: () -> Unit) {
