@@ -1,11 +1,16 @@
 package dev.speedcompiler.tv.engine
 
+import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
+import dev.speedcompiler.tv.web.scrub
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicInteger
+
+private const val DUMP_TTL_MILLIS = 5 * 60 * 1000L
 
 class OptimizerImpl(
     private val shell: AdbShell,
@@ -13,6 +18,12 @@ class OptimizerImpl(
     private val clock: Clock,
     private val timeoutMillis: Long = 10 * 60 * 1000L,
 ) : Optimizer {
+    private class Dump(val atMillis: Long, val text: String)
+
+    // One `dumpsys package dexopt` serves every app of a verify pass (Android 11-13 has no per-app dump).
+    @Volatile private var dump: Dump? = null
+    private val dumpGeneration = AtomicInteger(0)
+
 
     override suspend fun optimize(packageName: String): OptimizeResult {
         if (!isValidPackageId(packageName)) {
@@ -25,7 +36,16 @@ class OptimizerImpl(
     override suspend fun verify(packageName: String): String? {
         if (!isValidPackageId(packageName)) return null
         val art = parseCompilerFilter(shell.run(artDumpCommand(packageName)).output, packageName)
-        return art ?: parseCompilerFilter(shell.run(DEXOPT_DUMP_COMMAND).output, packageName)
+        return art ?: parseCompilerFilter(dexoptDump(), packageName)
+    }
+
+    private suspend fun dexoptDump(): String {
+        val now = clock.nowMillis()
+        dump?.takeIf { now - it.atMillis < DUMP_TTL_MILLIS }?.let { return it.text }
+        val generation = dumpGeneration.get()
+        val text = shell.run(DEXOPT_DUMP_COMMAND).output
+        if (generation == dumpGeneration.get()) dump = Dump(now, text) // a compile since the read makes it stale
+        return text
     }
 
     private suspend fun compile(pkg: String): OptimizeResult {
@@ -35,12 +55,20 @@ class OptimizerImpl(
             return finish(pkg, false, "Didn't finish: the TV took more than ${timeoutMillis / 60_000} minutes.", "optimize_failed")
         } catch (e: CancellationException) {
             throw e
+        } catch (e: AdbFailure.NotPaired) { // retrying cannot help: the user has to act
+            return finish(pkg, false, "Didn't finish: the TV no longer trusts this app. Pair again in Settings.", "optimize_failed")
+        } catch (e: AdbFailure.NotAuthorized) {
+            return finish(pkg, false, "Didn't finish: the TV has not allowed this app. Accept the debugging prompt on the TV.", "optimize_failed")
         } catch (e: Exception) {
             return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed", connectionLost = true)
+        } finally {
+            dumpGeneration.incrementAndGet() // the compile changes what a dump says
+            dump = null
         }
         // exitCode -1 means the TV gave no code; the word Success then decides alone.
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
-            return finish(pkg, false, "Didn't finish: the TV refused to optimize this app.", "optimize_failed")
+            val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
+            return finish(pkg, false, "Didn't finish: the TV refused to optimize this app." + said?.let { " It said: $it" }.orEmpty(), "optimize_failed")
         }
         val filter = try {
             verify(pkg)

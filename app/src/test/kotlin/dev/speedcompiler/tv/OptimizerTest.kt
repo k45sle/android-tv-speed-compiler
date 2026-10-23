@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv
 
+import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.adb.ShellResult
 import dev.speedcompiler.tv.engine.FakeClock
@@ -18,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OptimizerTest {
@@ -35,16 +37,22 @@ class OptimizerTest {
         val art: String = "",
         val dexopt: String = "",
         val compileDelay: Long = 0,
+        val compileFails: Throwable? = null,
     ) : AdbShell {
         var compiles = 0
+        var dexoptDumps = 0
         override suspend fun run(command: String): ShellResult = when {
             command.startsWith("cmd package compile") -> {
                 compiles++
+                compileFails?.let { throw it }
                 delay(compileDelay)
                 ShellResult(0, compile)
             }
             command.startsWith("pm art dump") -> ShellResult(0, art)
-            else -> ShellResult(0, dexopt)
+            else -> {
+                dexoptDumps++
+                ShellResult(0, dexopt)
+            }
         }
     }
 
@@ -102,5 +110,44 @@ class OptimizerTest {
         assertTrue(r.detail.startsWith("Didn't finish"))
         assertEquals(100, testScheduler.currentTime)
         assertEquals("optimize_failed", ev.rows.single().kind)
+    }
+
+    @Test fun notPairedAndNotAuthorizedAreTerminalWithTheFix() = runTest {
+        for ((failure, fix) in listOf(AdbFailure.NotPaired() to "Pair again", AdbFailure.NotAuthorized() to "Accept the debugging prompt")) {
+            val r = impl(Shell(compileFails = failure), Events()).optimize("com.nuvio.tv")
+            assertFalse(r.ok)
+            assertFalse(r.connectionLost)
+            assertTrue(r.detail, fix in r.detail)
+        }
+    }
+
+    @Test fun ioAndTimeoutFailuresStayRetryable() = runTest {
+        for (failure in listOf(IOException("reset"), AdbFailure.Timeout(), AdbFailure.DebuggingOff())) {
+            val ev = Events()
+            val r = impl(Shell(compileFails = failure), ev).optimize("com.nuvio.tv")
+            assertFalse(r.ok)
+            assertTrue(failure.toString(), r.connectionLost)
+            assertEquals("optimize_failed", ev.rows.single().kind)
+        }
+    }
+
+    @Test fun failureDetailKeepsTheScrubbedFirstLine() = runTest {
+        val said = "Error: pairing code 123456 rejected by emulator-5554 " + "word ".repeat(40)
+        val r = impl(Shell(compile = "\n$said\nsecond line\n__rc=1\n"), Events()).optimize("com.nuvio.tv")
+        assertTrue(r.detail, r.detail.startsWith("Didn't finish: the TV refused to optimize this app. It said: Error: pairing"))
+        assertFalse(r.detail.contains("123456") || r.detail.contains("emulator-5554") || r.detail.contains("second line"))
+        assertEquals(120, r.detail.substringAfter("It said: ").length) // cut after scrubbing
+        assertEquals("Didn't finish: the TV refused to optimize this app.", impl(Shell(compile = "\n  \n"), Events()).optimize("com.nuvio.tv").detail)
+    }
+
+    @Test fun verifyReadsTheDexoptDumpOncePerPassAndAgainAfterACompile() = runTest {
+        val shell = Shell(dexopt = v1)
+        val optimizer = impl(shell, Events())
+        assertEquals("speed", optimizer.verify("com.example.stream"))
+        optimizer.verify("com.example.other")
+        optimizer.verify("com.example.stream")
+        assertEquals(1, shell.dexoptDumps)
+        optimizer.optimize("com.example.stream") // the compile makes the cached dump stale
+        assertEquals(2, shell.dexoptDumps)
     }
 }

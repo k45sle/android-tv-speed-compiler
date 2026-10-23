@@ -48,7 +48,8 @@ private const val KEY_BOOT_COUNT = "pkg_boot_count"
 private const val KEY_SEQUENCE = "pkg_sequence"
 
 /**
- * Reports watched apps that changed or were uninstalled since the last call. Enqueues nothing.
+ * Reports watched apps that changed or were uninstalled since the last call. The stored position moves only after
+ * [onDetected] returns, so a crash while queueing them is picked up again by the next call.
  * The sequence number resets each boot, so a different boot count (or no stored state) forces a full compare.
  */
 class ChangeDetector(
@@ -56,7 +57,7 @@ class ChangeDetector(
     private val state: SyncStateDao,
     private val watched: suspend () -> List<WatchedApp>,
 ) {
-    suspend fun detect(): List<String> {
+    suspend fun detect(onDetected: suspend (List<String>) -> Unit = {}): List<String> {
         val apps = watched()
         val boot = system.bootCount()
         val storedBoot = state.get(KEY_BOOT_COUNT)?.toIntOrNull()
@@ -72,6 +73,7 @@ class ChangeDetector(
         val result = candidates
             .filter { system.fingerprint(it.packageName) != it.fingerprint }
             .map { it.packageName }
+        onDetected(result)
         state.put(SyncState(KEY_BOOT_COUNT, boot.toString()))
         state.put(SyncState(KEY_SEQUENCE, (changes?.sequence ?: incrementalFrom ?: 0).toString()))
         return result

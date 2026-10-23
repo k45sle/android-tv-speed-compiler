@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.KeeperStatus
@@ -18,13 +19,18 @@ import dev.speedcompiler.tv.engine.GateStatus
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private const val DETECT_WORK = "detect"
 private const val VERIFY_WORK = "verify"
+private const val RETRY_WORK = "retry"
 private const val KEY_BUILD = "build_fingerprint"
+private const val KEY_PACKAGE = "package"
+private const val RETRY_DELAY_HOURS = 6L
+private const val MAX_CONNECTION_TRIES = 5
 
 private val Context.graph get() = (applicationContext as SpeedApp).graph
 
@@ -66,8 +72,9 @@ suspend fun runDetect(g: AppGraph) {
     }
     val watched = g.database.watchedApps()
     ChangeDetector(g.packageSystem, g.database.syncState()) { watched.list().filter { it.autoOptimize } }
-        .detect().filter { it in installed }
-        .forEach { g.scheduler.enqueue(it, QueueSource.AUTO) } // persisted before the next detect advances
+        .detect { changed -> // the stored position advances only after these are persisted
+            changed.filter { it in installed }.forEach { g.scheduler.enqueue(it, QueueSource.AUTO) }
+        }
 }
 
 /** Queues every auto-optimized app the TV no longer reports at `speed`. */
@@ -113,6 +120,27 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 }
 
+/** One later try for a failed app. Its own work name, so it never touches the optimize worker's REPLACE. */
+private fun enqueueRetryLater(context: Context, packageName: String) {
+    val request = OneTimeWorkRequestBuilder<RetryWorker>()
+        .setInitialDelay(RETRY_DELAY_HOURS, TimeUnit.HOURS)
+        .setInputData(workDataOf(KEY_PACKAGE to packageName))
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork("$RETRY_WORK:$packageName", ExistingWorkPolicy.REPLACE, request)
+}
+
+/** Queues the app again if it is still watched and installed. */
+class RetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val g = applicationContext.graph
+        val pkg = inputData.getString(KEY_PACKAGE) ?: return Result.success()
+        if (g.database.watchedApps().get(pkg)?.autoOptimize == true && g.packageSystem.fingerprint(pkg) != null) {
+            g.scheduler.enqueue(pkg, QueueSource.AUTO)
+        }
+        return Result.success()
+    }
+}
+
 private val runLock = Mutex()
 private val runNowWaiting = AtomicInteger(0)
 
@@ -135,8 +163,20 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
     }
 
-    /** Called with [runLock] held. */
-    private suspend fun run(g: AppGraph, id: Long): Result {
+    /** Called with [runLock] held. Whatever goes wrong, the row ends up finished, never stuck in RUNNING or QUEUED. */
+    private suspend fun run(g: AppGraph, id: Long): Result = try {
+        runItem(g, id)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        val dao = g.database.queue()
+        dao.get(id)?.takeIf { it.state.isActive }?.let {
+            dao.update(it.copy(state = QueueState.FAILED, finishedAt = g.clock.nowMillis(), failureReason = "Didn't finish: unexpected error (${e.javaClass.simpleName})."))
+        }
+        Result.success()
+    }
+
+    private suspend fun runItem(g: AppGraph, id: Long): Result {
         val dao = g.database.queue()
         val item = dao.get(id)?.takeIf { it.state.isActive } ?: return Result.success()
         val pkg = item.packageName
@@ -155,18 +195,25 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         dao.update(item.copy(state = QueueState.RUNNING, startedAt = g.clock.nowMillis(), failureReason = null))
         val result = g.optimizer.optimize(pkg)
+        val sync = g.database.syncState()
+        val lostKey = "lost:$pkg" // counted here, not by runAttemptCount: gate waits retry too, and a detect pass starts a fresh worker
         if (result.connectionLost) {
-            dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
-            enqueueReconnect(applicationContext)
-            return Result.retry()
+            val tries = (sync.get(lostKey)?.toIntOrNull() ?: 0) + 1
+            if (tries < MAX_CONNECTION_TRIES) {
+                sync.put(SyncState(lostKey, tries.toString()))
+                dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
+                enqueueReconnect(applicationContext)
+                return Result.retry()
+            }
         }
+        sync.put(SyncState(lostKey, "0"))
         val now = g.clock.nowMillis()
         // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
         // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.
         // Re-enqueueing from here is not possible: REPLACE under this worker's own name would cancel it.
         // Written while the row still says RUNNING, so an enqueue cannot REPLACE this worker before it lands.
-        val watched = g.database.watchedApps()
-        watched.get(pkg)?.let { watched.upsert(it.copy(fingerprint = fingerprint, lastResult = result.detail, lastOptimizedAt = now)) }
+        // A targeted UPDATE, not a read-modify-write: a toggle of autoOptimize during the compile must survive.
+        g.database.watchedApps().recordResult(pkg, fingerprint, result.detail, now)
         dao.update(
             item.copy(
                 state = if (result.ok) QueueState.DONE else QueueState.FAILED,
@@ -174,6 +221,14 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 failureReason = result.detail.takeUnless { result.ok },
             ),
         )
+        // The fingerprint is stored either way, so the app would wait for the weekly verify: try once more later.
+        val retriedKey = "retried:$pkg"
+        if (result.ok) {
+            sync.put(SyncState(retriedKey, ""))
+        } else if (sync.get(retriedKey) != fingerprint) {
+            sync.put(SyncState(retriedKey, fingerprint))
+            enqueueRetryLater(applicationContext, pkg)
+        }
         return Result.success()
     }
 
