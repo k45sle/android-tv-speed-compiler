@@ -26,8 +26,11 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OptimizerTest {
-    private val v1 = javaClass.getResource("/fixtures/compilation.txt")!!.readText()
-    private val art = javaClass.getResource("/fixtures/pm-art-dump.txt")!!.readText()
+    private fun fixture(name: String) = javaClass.getResource("/fixtures/$name")!!.readText()
+    private val v1 = fixture("api33-dexopt.txt")
+    private val art = fixture("api34-art.txt")
+    private val artSplitProfile = fixture("api34-art-split-speed-profile.txt")
+    private val incremental = fixture("api33-incremental-dexopt.txt")
 
     private class Events : EventDao {
         val rows = mutableListOf<Event>()
@@ -70,20 +73,20 @@ class OptimizerTest {
 
     @Test fun verifiedViaArtDump() = runTest {
         val ev = Events()
-        val r = impl(Shell(art = art), ev).optimize("com.nuvio.tv")
+        val r = impl(Shell(art = art), ev).optimize("dev.speedcompiler.tv")
         assertTrue(r.ok)
         assertEquals("Optimized (checked)", r.detail)
         assertEquals("optimize_verified", ev.rows.single().kind)
     }
 
     @Test fun verifiedViaDexoptFallback() = runTest {
-        val r = impl(Shell(dexopt = v1), Events()).optimize("com.example.stream")
+        val r = impl(Shell(dexopt = v1), Events()).optimize("dev.speedcompiler.tv")
         assertEquals("Optimized (checked)", r.detail)
     }
 
     @Test fun unverifiedWhenTvDoesNotReport() = runTest {
         val ev = Events()
-        val r = impl(Shell(art = "Unknown command", dexopt = "nothing"), ev).optimize("com.nuvio.tv")
+        val r = impl(Shell(art = "Unknown command", dexopt = "nothing"), ev).optimize("dev.speedcompiler.tv")
         assertTrue(r.ok)
         assertEquals("Optimized (this TV doesn't report the result)", r.detail)
         assertEquals("optimize_unverified", ev.rows.single().kind)
@@ -91,8 +94,8 @@ class OptimizerTest {
 
     @Test fun failedCompileAndWrongFilterAndBadId() = runTest {
         val ev = Events()
-        assertFalse(impl(Shell(compile = "Failure\n__rc=1\n"), ev).optimize("com.nuvio.tv").ok)
-        assertFalse(impl(Shell(dexopt = v1), ev).optimize("com.example.other").ok)
+        assertFalse(impl(Shell(compile = "Failure\n__rc=1\n"), ev).optimize("dev.speedcompiler.tv").ok)
+        assertFalse(impl(Shell(dexopt = v1), ev).optimize("com.google.android.youtube.tv").ok)
         val shell = Shell()
         assertFalse(impl(shell, ev).optimize("com.x; rm -rf /").ok)
         assertEquals(0, shell.compiles)
@@ -101,11 +104,61 @@ class OptimizerTest {
     }
 
     @Test fun exactPackageMatching() {
-        assertEquals("speed", parseCompilerFilter(art, "com.nuvio.tv"))
-        assertEquals("verify", parseCompilerFilter(art, "com.nuvio.tv.test"))
-        assertNull(parseCompilerFilter(art, "com.nuvio"))
-        assertEquals("speed", parseCompilerFilter(v1, "com.example.stream"))
-        assertNull(parseCompilerFilter("[com.nuvio.tv.test]\n  arm: [status=speed]\n", "com.nuvio.tv"))
+        assertEquals("speed", parseCompilerFilter(art, "dev.speedcompiler.tv"))
+        assertEquals("speed", parseCompilerFilter(art, "qa.wifihold"))
+        assertNull(parseCompilerFilter(art, "dev.speedcompiler"))
+        assertEquals("speed", parseCompilerFilter(v1, "dev.speedcompiler.tv"))
+        assertNull(parseCompilerFilter("[qa.wifihold]\n  arm: [status=speed]\n", "dev.speedcompiler.tv"))
+    }
+
+    @Test fun fullyCompiledSingleAndSplitAppsReadSpeedOnBothVersions() {
+        for (pkg in listOf("dev.speedcompiler.tv", "qa.wifihold")) {
+            assertEquals("speed", parseCompilerFilter(art, pkg))
+            assertEquals("speed", parseCompilerFilter(v1, pkg))
+        }
+    }
+
+    @Test fun oneSplitLeftAtSpeedProfileIsNotFullyCompiledAndNamesTheEntry() {
+        assertEquals("not fully compiled: split_extra.apk (arm64) is speed-profile", parseCompilerFilter(artSplitProfile, "qa.wifihold"))
+        assertEquals("speed", parseCompilerFilter(artSplitProfile, "dev.speedcompiler.tv"))
+    }
+
+    @Test fun incrementalInstallStaysRunFromApkAfterSuccess() = runTest {
+        assertEquals("not fully compiled: base.apk (arm64) is run-from-apk", parseCompilerFilter(incremental, "dev.speedcompiler.tv"))
+        val r = impl(Shell(dexopt = incremental), Events(), sdk = 33).optimize("dev.speedcompiler.tv")
+        assertFalse(r.ok)
+        assertEquals("Didn't finish: base.apk (arm64) is run-from-apk, not speed.", r.detail)
+    }
+
+    // Shapes from the Android 13 emulator dump: a one-app "used by other apps" list and a secondary dex list.
+    private val v1Extras = """
+        Dexopt state:
+          [a.tethering]
+            path: /apex/a/T.apk
+              arm64: [status=speed] [reason=cmdline]
+              used by other apps: [b.stack]
+          [b.stack]
+            path: /data/app/b.stack/base.apk
+              arm64: [status=verify] [reason=first-boot]
+          [c.store]
+            path: /data/app/c.store/base.apk
+              arm64: [status=speed] [reason=cmdline]
+              arm: [status=speed-profile] [reason=install-dm]
+          [d.gms]
+            path: /data/app/d.gms/base.apk
+              arm64: [status=speed] [reason=cmdline]
+              known secondary dex files:
+                /data/user/0/d.gms/app_dg_cache/the.apk
+                  class loader context: PCL[]
+                  arm64: [status=verify] [reason=unknown]
+    """.trimIndent()
+
+    @Test fun sectionsDoNotLeakAndEveryIsaCountsButSecondaryDexDoesNot() {
+        assertEquals("speed", parseCompilerFilter(v1Extras, "a.tethering"))
+        assertEquals("not fully compiled: base.apk (arm64) is verify", parseCompilerFilter(v1Extras, "b.stack"))
+        assertEquals("not fully compiled: base.apk (arm) is speed-profile", parseCompilerFilter(v1Extras, "c.store"))
+        assertEquals("speed", parseCompilerFilter(v1Extras, "d.gms"))
+        assertEquals("speed", parseCompilerFilter(artSplitProfile, "com.google.android.youtube.tv"))
     }
 
     @Test fun rejectsBadIdInCommand() {
@@ -115,7 +168,7 @@ class OptimizerTest {
 
     @Test fun timesOut() = runTest {
         val ev = Events()
-        val r = impl(Shell(compileDelay = 1_000), ev, timeout = 100).optimize("com.nuvio.tv")
+        val r = impl(Shell(compileDelay = 1_000), ev, timeout = 100).optimize("dev.speedcompiler.tv")
         assertFalse(r.ok)
         assertTrue(r.detail.startsWith("Didn't finish"))
         assertEquals(100, testScheduler.currentTime)
@@ -124,7 +177,7 @@ class OptimizerTest {
 
     @Test fun notPairedAndNotAuthorizedAreTerminalWithTheFix() = runTest {
         for ((failure, fix) in listOf(AdbFailure.NotPaired() to "Pair again", AdbFailure.NotAuthorized() to "Accept the debugging prompt")) {
-            val r = impl(Shell(compileFails = failure), Events()).optimize("com.nuvio.tv")
+            val r = impl(Shell(compileFails = failure), Events()).optimize("dev.speedcompiler.tv")
             assertFalse(r.ok)
             assertFalse(r.connectionLost)
             assertTrue(r.terminal)
@@ -135,7 +188,7 @@ class OptimizerTest {
     @Test fun ioAndTimeoutFailuresStayRetryable() = runTest {
         for (failure in listOf(IOException("reset"), AdbFailure.Timeout(), AdbFailure.DebuggingOff())) {
             val ev = Events()
-            val r = impl(Shell(compileFails = failure), ev).optimize("com.nuvio.tv")
+            val r = impl(Shell(compileFails = failure), ev).optimize("dev.speedcompiler.tv")
             assertFalse(r.ok)
             assertTrue(failure.toString(), r.connectionLost)
             assertFalse(r.terminal)
@@ -145,21 +198,21 @@ class OptimizerTest {
 
     @Test fun failureDetailKeepsTheScrubbedFirstLine() = runTest {
         val said = "Error: pairing code 123456 rejected by emulator-5554 " + "word ".repeat(40)
-        val r = impl(Shell(compile = "\n$said\nsecond line\n__rc=1\n"), Events()).optimize("com.nuvio.tv")
+        val r = impl(Shell(compile = "\n$said\nsecond line\n__rc=1\n"), Events()).optimize("dev.speedcompiler.tv")
         assertTrue(r.detail, r.detail.startsWith("Didn't finish: the TV refused to optimize this app. It said: Error: pairing"))
         assertFalse(r.detail.contains("123456") || r.detail.contains("emulator-5554") || r.detail.contains("second line"))
         assertEquals(120, r.detail.substringAfter("It said: ").length) // cut after scrubbing
-        assertEquals("Didn't finish: the TV refused to optimize this app.", impl(Shell(compile = "\n  \n"), Events()).optimize("com.nuvio.tv").detail)
+        assertEquals("Didn't finish: the TV refused to optimize this app.", impl(Shell(compile = "\n  \n"), Events()).optimize("dev.speedcompiler.tv").detail)
     }
 
     @Test fun verifyReadsTheDexoptDumpOncePerPassAndAgainAfterACompile() = runTest {
         val shell = Shell(dexopt = v1)
         val optimizer = impl(shell, Events())
-        assertEquals("speed", optimizer.verify("com.example.stream"))
-        optimizer.verify("com.example.other")
-        optimizer.verify("com.example.stream")
+        assertEquals("speed", optimizer.verify("dev.speedcompiler.tv"))
+        optimizer.verify("com.google.android.youtube.tv")
+        optimizer.verify("dev.speedcompiler.tv")
         assertEquals(1, shell.dexoptDumps)
-        optimizer.optimize("com.example.stream") // the compile makes the cached dump stale
+        optimizer.optimize("dev.speedcompiler.tv") // the compile makes the cached dump stale
         assertEquals(2, shell.dexoptDumps)
     }
 
@@ -167,24 +220,24 @@ class OptimizerTest {
         val first = CompletableDeferred<String>()
         val shell = Shell(dexopt = v1, firstDexopt = first)
         val optimizer = impl(shell, Events())
-        val early = async { optimizer.verify("com.example.stream") } // blocks inside its dexopt read
+        val early = async { optimizer.verify("dev.speedcompiler.tv") } // blocks inside its dexopt read
         runCurrent()
-        assertEquals("Optimized (checked)", optimizer.optimize("com.example.stream").detail)
+        assertEquals("Optimized (checked)", optimizer.optimize("dev.speedcompiler.tv").detail)
         first.complete("nothing") // the pre-compile answer arrives late
         assertNull(early.await())
-        assertEquals("speed", optimizer.verify("com.example.stream"))
+        assertEquals("speed", optimizer.verify("dev.speedcompiler.tv"))
         assertEquals(2, shell.dexoptDumps)
     }
 
     @Test fun beforeAndroid14VerifyNeverAsksForAnArtDump() = runTest {
         val old = Shell(art = art, dexopt = v1)
         val oldImpl = impl(old, Events(), sdk = 33)
-        assertEquals("speed", oldImpl.verify("com.example.stream"))
-        oldImpl.verify("com.example.other")
+        assertEquals("speed", oldImpl.verify("dev.speedcompiler.tv"))
+        oldImpl.verify("com.google.android.youtube.tv")
         assertEquals(0, old.artDumps)
         assertEquals(1, old.dexoptDumps)
         val new = Shell(art = art)
-        assertEquals("speed", impl(new, Events(), sdk = 34).verify("com.nuvio.tv"))
+        assertEquals("speed", impl(new, Events(), sdk = 34).verify("dev.speedcompiler.tv"))
         assertEquals(1, new.artDumps)
         assertEquals(0, new.dexoptDumps)
     }

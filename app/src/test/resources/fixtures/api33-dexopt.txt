@@ -1,0 +1,12 @@
+Dexopt state:
+  [dev.speedcompiler.tv]
+    path: /data/app/~~syxNAZL9lqa1quiXTOwsIw==/dev.speedcompiler.tv-wbfHGGTE6EuKr18WapOPQA==/base.apk
+      arm64: [status=speed] [reason=cmdline]
+  [qa.wifihold]
+    path: /data/app/~~hHcoRPIspMllZqIzao7Eaw==/qa.wifihold-KaBF3VhRtLeV1rBnCL7SAA==/base.apk
+      arm64: [status=speed] [reason=cmdline]
+    path: /data/app/~~hHcoRPIspMllZqIzao7Eaw==/qa.wifihold-KaBF3VhRtLeV1rBnCL7SAA==/split_extra.apk
+      arm64: [status=speed] [reason=cmdline]
+  [com.google.android.youtube.tv]
+    path: /product/app/YouTubeLeanback/YouTubeLeanback.apk
+      arm64: [status=verify] [reason=cmdline]

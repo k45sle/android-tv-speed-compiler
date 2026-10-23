@@ -87,7 +87,7 @@ class OptimizerImpl(
         return when (filter) {
             null -> finish(pkg, true, "Optimized (this TV doesn't report the result)", "optimize_unverified")
             "speed" -> finish(pkg, true, "Optimized (checked)", "optimize_verified")
-            else -> finish(pkg, false, "Didn't finish: the TV still reports this app as \"$filter\".", "optimize_failed")
+            else -> finish(pkg, false, "Didn't finish: ${filter.removePrefix("not fully compiled: ")}, not speed.", "optimize_failed")
         }
     }
 
