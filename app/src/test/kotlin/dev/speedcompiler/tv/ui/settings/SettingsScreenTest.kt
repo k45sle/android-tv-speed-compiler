@@ -1,11 +1,13 @@
 package dev.speedcompiler.tv.ui.settings
 
 import dev.speedcompiler.tv.ComposeTestBase
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocusable
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -36,7 +38,7 @@ class SettingsScreenTest : ComposeTestBase() {
     private val deps = SettingsDeps(state, { f -> state.value = f(state.value) }, status, "0.1.0")
 
     private fun show() {
-        rule.setContent { SpeedTheme { SettingsScreen({ gone += it }, {}, deps) } }
+        rule.setContent { SpeedTheme(state.collectAsState().value.theme) { SettingsScreen({ gone += it }, {}, deps) } }
         // A Robolectric window starts in touch mode, where nothing can take focus; a TV has none.
         rule.runOnUiThread {
             val root = android.view.View::class.java.getMethod("getViewRootImpl").invoke(rule.activity.window.decorView)!!
@@ -47,7 +49,7 @@ class SettingsScreenTest : ComposeTestBase() {
 
     // TV buttons react to OK, not touch, so invoke the click action directly.
     private fun click(text: String) {
-        rule.onNodeWithText(text).performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithText(text, ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
         rule.waitForIdle()
     }
 
@@ -57,16 +59,17 @@ class SettingsScreenTest : ComposeTestBase() {
     }
 
     private fun press(descStart: String, key: Key) {
-        rule.onNode(hasContentDescription(descStart, substring = true)).requestFocus()
-        rule.onNode(hasContentDescription(descStart, substring = true)).performKeyInput { pressKey(key) }
+        val node = rule.onNode(hasContentDescription(descStart, substring = true) or hasText(descStart, ignoreCase = true))
+        node.requestFocus()
+        node.performKeyInput { pressKey(key) }
         rule.waitForIdle()
     }
 
     @Test
     fun modeAndGateChangesPersist() {
         show()
-        click("Manual")
-        click("When nothing is playing")
+        click("Mode")
+        click("Run jobs")
         assertEquals(Mode.Manual, state.value.mode)
         assertEquals(GateMode.NothingPlaying, state.value.gateMode)
         rule.onNodeWithText("Start time").assertDoesNotExist()
@@ -84,7 +87,7 @@ class SettingsScreenTest : ComposeTestBase() {
     @Test
     fun windowTimesStepWithDpadAndWrap() {
         show()
-        click("During set hours")
+        click("Run jobs"); click("Run jobs")
         assertEquals(GateMode.Window, state.value.gateMode)
         press("Start time", Key.DirectionRight)
         assertEquals(150, state.value.windowStartMinute)
@@ -99,9 +102,9 @@ class SettingsScreenTest : ComposeTestBase() {
     @Test
     fun quickStepsAllLand() {
         show()
-        click("During set hours")
-        rule.onNode(hasContentDescription("Start time", substring = true)).requestFocus()
-        rule.onNode(hasContentDescription("Start time", substring = true)).performKeyInput {
+        click("Run jobs"); click("Run jobs")
+        rule.onNodeWithText("Start time").requestFocus()
+        rule.onNodeWithText("Start time").performKeyInput {
             repeat(3) { pressKey(Key.DirectionRight) }
         }
         rule.waitForIdle()
@@ -119,7 +122,7 @@ class SettingsScreenTest : ComposeTestBase() {
     @Test
     fun appearancePersists() {
         show()
-        click("Dark")
+        click("Theme"); click("Theme")
         clickDesc("Plum")
         assertEquals(ThemeChoice.Dark, state.value.theme)
         assertEquals(Presets.indexOfFirst { it.name == "Plum" }, state.value.accentPreset)
@@ -143,10 +146,13 @@ class SettingsScreenTest : ComposeTestBase() {
 
     @Test
     fun everyFocusableIsLabelledAndScreenshots() {
-        state.value = SettingsValues(gateMode = GateMode.Window, customHue = 200f)
+        state.value = SettingsValues(gateMode = GateMode.Window, customHue = 200f, theme = ThemeChoice.Dark)
         show()
-        rule.onRoot().captureRoboImage("build/outputs/roborazzi/settings.png")
-        rule.onNodeWithText("Version 0.1.0").assertExists()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/settings_dark.png")
+        state.value = state.value.copy(theme = ThemeChoice.Light)
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/settings_light.png")
+        rule.onNodeWithText("Version 0.1.0", ignoreCase = true).assertExists()
         rule.onAllNodes(isFocusable()).fetchSemanticsNodes().forEach {
             val c = it.config
             assertTrue("unlabelled focusable: $c", SemanticsProperties.Text in c || SemanticsProperties.ContentDescription in c)
