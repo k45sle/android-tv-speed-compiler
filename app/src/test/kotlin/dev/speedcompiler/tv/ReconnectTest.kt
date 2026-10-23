@@ -11,9 +11,11 @@ import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.watch.BootReceiver
 import dev.speedcompiler.tv.watch.RECONNECT_WORK
+import dev.speedcompiler.tv.watch.enqueueReconnect
 import dev.speedcompiler.tv.watch.reconnectWithRetry
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,9 +30,10 @@ class ReconnectTest {
     private val log = mutableListOf<String>()
     private val pauses = mutableListOf<Long>()
 
-    private suspend fun run(network: Boolean, vararg results: KeeperStatus) {
+    private suspend fun run(network: Boolean, vararg results: KeeperStatus, fromBoot: Boolean = true) {
         val queue = results.toMutableList()
         reconnectWithRetry(
+            fromBoot = fromBoot,
             waitForNetwork = { log += "net"; network },
             enableWifiAdb = { log += "wifi" },
             reconnect = { log += "connect"; queue.removeAt(0) },
@@ -42,6 +45,17 @@ class ReconnectTest {
     @Test fun connectsFirstTry() = runTest {
         run(true, KeeperStatus.Connected)
         assertEquals(listOf("net", "wifi", "connect"), log)
+    }
+
+    // QA A-04
+    @Test fun nonBootPathNeverEnablesWirelessDebugging() = runTest {
+        run(true, KeeperStatus.Connected, fromBoot = false)
+        assertEquals(listOf("net", "connect"), log)
+    }
+
+    @Test fun bootPathEnablesWirelessDebugging() = runTest {
+        run(true, TIMEOUT, KeeperStatus.Connected, fromBoot = true)
+        assertEquals(1, log.count { it == "wifi" })
     }
 
     @Test fun retriesThenConnects() = runTest {
@@ -72,5 +86,18 @@ class ReconnectTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(ctx, Configuration.Builder().build())
         BootReceiver().onReceive(ctx, Intent(Intent.ACTION_BOOT_COMPLETED))
         assertEquals(1, WorkManager.getInstance(ctx).getWorkInfosForUniqueWork(RECONNECT_WORK).get().size)
+    }
+
+    // Only a fromBoot request replaces a queued reconnect, so this shows BootReceiver passes the flag.
+    @Test fun bootReplacesAQueuedAppOpenReconnect() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        WorkManagerTestInitHelper.initializeTestWorkManager(ctx, Configuration.Builder().build())
+        val wm = WorkManager.getInstance(ctx)
+        enqueueReconnect(ctx)
+        val appOpen = wm.getWorkInfosForUniqueWork(RECONNECT_WORK).get().single().id
+        enqueueReconnect(ctx)
+        assertEquals(appOpen, wm.getWorkInfosForUniqueWork(RECONNECT_WORK).get().single().id)
+        BootReceiver().onReceive(ctx, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertNotEquals(appOpen, wm.getWorkInfosForUniqueWork(RECONNECT_WORK).get().single().id)
     }
 }

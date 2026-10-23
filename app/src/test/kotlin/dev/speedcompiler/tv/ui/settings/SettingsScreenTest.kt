@@ -150,7 +150,7 @@ class SettingsScreenTest : ComposeTestBase() {
         click("Reconnect"); click("Pair again"); click("Export diagnostics"); click("Help")
         assertEquals(listOf(Routes.Reconnect, Routes.QuickRepair, Routes.Diagnostics, Routes.Help), gone)
         click("Keep this TV trusting the app")
-        assertEquals(false, state.value.keepTrusting)
+        assertEquals(true, state.value.keepTrusting)
     }
 
     @Test

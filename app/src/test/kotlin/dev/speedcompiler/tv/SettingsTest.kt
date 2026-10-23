@@ -21,6 +21,12 @@ class SettingsTest {
     @get:Rule val tmp = TemporaryFolder()
 
     @Test
+    fun keepTrustingIsOffByDefault() = runBlocking {
+        val store = PreferenceDataStoreFactory.create { tmp.newFile("k.preferences_pb").also { it.delete() } }
+        assertEquals(false, DataStoreSettings(store).values.first().keepTrusting)
+    }
+
+    @Test
     fun defaultsThenPersistsUpdates() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("s.preferences_pb").also { it.delete() } }
         val settings = DataStoreSettings(store)

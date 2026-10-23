@@ -142,7 +142,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                 }
 
                 Heading("Connection")
-                SwitchRow("Keep this TV trusting the app", "Stops the TV asking to allow debugging again", v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
+                SwitchRow("Keep this TV trusting the app", "Off by default. Stops the TV asking to allow debugging again", v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
                 val (text, tone) = when (status) {
                     KeeperStatus.Connected -> "Connected" to Tone.Ok
                     KeeperStatus.Reconnecting -> "Connecting" to Tone.Info
