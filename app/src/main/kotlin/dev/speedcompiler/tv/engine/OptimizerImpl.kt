@@ -53,6 +53,31 @@ class OptimizerImpl(
         return text
     }
 
+    override suspend fun reset(packageName: String): OptimizeResult {
+        if (!isValidPackageId(packageName)) return finish(null, false, "Didn't reset: that is not a valid app name.", "reset_failed")
+        val res = try {
+            withTimeout(timeoutMillis) { shell.run(resetCommand(packageName)) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AdbFailure.NotPaired) {
+            return finish(packageName, false, "Didn't reset: the TV no longer trusts this app. Choose Fix connection in Settings.", "reset_failed", terminal = true)
+        } catch (e: AdbFailure.NotAuthorized) {
+            return finish(packageName, false, "Didn't reset: the TV has not allowed this app. Accept the debugging prompt on the TV.", "reset_failed", terminal = true)
+        } catch (e: Exception) {
+            return finish(packageName, false, "Didn't reset: lost the connection to the TV.", "reset_failed", connectionLost = true)
+        } finally {
+            synchronized(dumpLock) { // the reset changes what a dump says
+                dumpGeneration++
+                dump = null
+            }
+        }
+        if (res.exitCode > 0 || !compileSucceeded(res.output)) {
+            val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
+            return finish(packageName, false, "Didn't reset: the TV refused." + said?.let { " It said: $it" }.orEmpty(), "reset_failed")
+        }
+        return finish(packageName, true, "Reset done. The TV chooses how to run this app again.", "reset_done")
+    }
+
     private suspend fun compile(pkg: String): OptimizeResult {
         val res = try {
             withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)) }

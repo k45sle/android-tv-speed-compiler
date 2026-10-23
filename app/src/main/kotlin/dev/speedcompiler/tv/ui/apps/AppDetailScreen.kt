@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +62,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
+    var resetNote by remember(packageName) { mutableStateOf<String?>(null) }
     val mine = watched.firstOrNull { it.packageName == packageName }
     AppDetailContent(
         loaded ?: AppInfo(packageName, packageName),
@@ -67,6 +70,15 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
+        onReset = {
+            scope.launch {
+                resetNote = "Resetting..."
+                val r = deps.reset(packageName)
+                if (r.ok) deps.scheduler.unwatch(packageName)
+                resetNote = r.detail
+            }
+        },
+        resetNote = resetNote,
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
     )
@@ -85,6 +97,8 @@ fun AppDetailContent(
     onAuto: (Boolean) -> Unit,
     onBack: () -> Unit = {},
     runs: List<QueueItem> = emptyList(),
+    onReset: () -> Unit = {},
+    resetNote: String? = null,
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
@@ -125,7 +139,9 @@ fun AppDetailContent(
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton("Optimize now", onOptimize, Modifier.remembersFocus(mem, "optimize"))
                         ArcadeButton(if (watched != null) "Stop watching" else "Watch", onToggleWatch, Modifier.remembersFocus(mem, "watch"))
+                        ArcadeButton("Reset", onReset, Modifier.remembersFocus(mem, "reset"))
                     }
+                    if (resetNote != null) Text(resetNote, style = MaterialTheme.typography.bodyMedium)
                     if (watched != null) {
                         OperatorRow(
                             "Auto-optimize this app", onClick = { onAuto(!watched.autoOptimize) },

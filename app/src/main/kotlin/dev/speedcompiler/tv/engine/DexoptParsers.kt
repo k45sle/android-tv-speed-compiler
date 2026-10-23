@@ -14,6 +14,12 @@ fun compileCommand(pkg: String): String {
     return "cmd package compile -m speed -f $pkg"
 }
 
+/** Undoes [compileCommand]: the TV goes back to its own compile choice for the app. Throws on an invalid id. */
+fun resetCommand(pkg: String): String {
+    require(isValidPackageId(pkg)) { "invalid package id" }
+    return "cmd package compile --reset $pkg"
+}
+
 fun artDumpCommand(pkg: String): String {
     require(isValidPackageId(pkg)) { "invalid package id" }
     return "pm art dump $pkg"

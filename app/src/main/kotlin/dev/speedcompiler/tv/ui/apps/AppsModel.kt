@@ -3,6 +3,7 @@ package dev.speedcompiler.tv.ui.apps
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import dev.speedcompiler.tv.engine.OptimizeResult
 import androidx.core.graphics.drawable.toBitmap
 import android.media.AudioManager
 import androidx.compose.runtime.Composable
@@ -51,6 +52,8 @@ class AppsDeps(
     val zone: ZoneId = ZoneId.systemDefault(),
     /** One package, for the detail screen; falls back to scanning the list. */
     val loadApp: suspend (String) -> AppInfo? = { p -> loadApps().firstOrNull { it.packageName == p } },
+    /** Undoes speed compile for one package. */
+    val reset: suspend (String) -> OptimizeResult = { OptimizeResult(false, "Didn't reset: not available.") },
 )
 
 /** The app's status word: live queue state first, then the stored result; a finished job with no stored result counts as Compiled. */
@@ -108,6 +111,7 @@ fun rememberAppsDeps(): AppsDeps {
             watched = dao.all(),
             musicActive = { context.getSystemService(AudioManager::class.java).isMusicActive },
             setAutoOptimize = dao::setAutoOptimize,
+            reset = { graph.optimizer.reset(it) },
         )
     }
 }
