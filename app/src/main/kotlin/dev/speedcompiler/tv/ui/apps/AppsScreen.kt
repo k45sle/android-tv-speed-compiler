@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.apps
 
+import dev.speedcompiler.tv.theme.upper
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +79,11 @@ import androidx.compose.ui.focus.FocusDirection
 import android.view.ViewTreeObserver
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
+import dev.speedcompiler.tv.R
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.focus.focusProperties
@@ -91,7 +97,7 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.ZoneId
 import kotlinx.coroutines.launch
 
-private enum class Sort(val label: String) { Recent("Recently updated"), Name("A–Z") }
+private enum class Sort(@StringRes val label: Int) { Recent(R.string.apps_sort_recent), Name(R.string.apps_sort_name) }
 
 /** Modal with a column of content; the caller focuses its first button. */
 @Composable
@@ -115,10 +121,10 @@ fun rememberOptimizeNow(deps: AppsDeps, go: (String) -> Unit): (String) -> Unit 
         val focus = remember { FocusRequester() }
         LaunchedEffect(Unit) { focus.requestFocus() }
         SimpleDialog({ pending = null }) {
-            Text("Something is playing. Optimizing now may make it stutter.")
+            Text(stringResource(R.string.apps_music_warning))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
-                Button({ pending = null; run(pkg) }, Modifier.focusRequester(focus)) { Text("Continue".uppercase()) }
-                Button({ pending = null }) { Text("Cancel".uppercase()) }
+                Button({ pending = null; run(pkg) }, Modifier.focusRequester(focus)) { Text(stringResource(R.string.common_continue).upper()) }
+                Button({ pending = null }) { Text(stringResource(R.string.common_cancel).upper()) }
             }
         }
     }
@@ -212,14 +218,19 @@ fun AppsContent(
     }
     fun finish(act: (List<String>) -> Unit) { act(selected.toList()); selected = emptySet(); selecting = false }
     val c = LocalSpeedColors.current
+    val res = LocalResources.current
+    val searchHint = stringResource(R.string.apps_search_hint)
+    val openMenu = stringResource(R.string.apps_open_menu)
 
     RoomBackdrop {
     Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
-        Marquee("Your apps", compact = true, onBack = onBack, trailing = { PixelText("${apps.size} apps · ${watched.size} watched", color = c.accent) })
+        Marquee(stringResource(R.string.apps_title), compact = true, onBack = onBack, trailing = {
+            PixelText(stringResource(R.string.apps_summary, pluralStringResource(R.plurals.apps_count, apps.size, apps.size), pluralStringResource(R.plurals.apps_watched_count, watched.size, watched.size)), color = c.accent)
+        })
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
-            PixelText("search:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PixelText(stringResource(R.string.apps_search_label), color = MaterialTheme.colorScheme.onSurfaceVariant)
             // TV pattern: the box takes focus like a button; OK starts editing (and the keyboard), Up/Down leave it.
-            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = "Search apps" }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(2.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x1)) {
+            Box(Modifier.weight(1f).focusRequester(box).semantics { contentDescription = searchHint }.focusFx(1.025f, RowRadius, onClick = { editing = true }).border(2.dp, c.hairline, RoundedCornerShape(RowRadius)).padding(Space.x1)) {
                 BasicTextField(
                     query, { query = it },
                     Modifier.fillMaxWidth().focusRequester(field).onFocusChanged { if (!it.isFocused) editing = false }
@@ -237,7 +248,7 @@ fun AppsContent(
                     cursorBrush = SolidColor(c.accent),
                     decorationBox = { inner ->
                         Box {
-                            if (query.isEmpty()) Text("Search apps", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (query.isEmpty()) Text(searchHint, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             inner()
                         }
                     },
@@ -262,28 +273,28 @@ fun AppsContent(
                     .semantics(mergeDescendants = true) { role = Role.Button; onClick { toggleSort(); true } }
                     .background(if (sortFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                     .border(2.dp, c.hairline).padding(horizontal = Space.x2, vertical = Space.x1),
-            ) { Selector("Sort: ${sort.label}", sortFocused) }
-            Button({ selecting = !selecting; selected = emptySet() }) { Text((if (selecting) "Done" else "Select").uppercase()) }
+            ) { Selector(stringResource(R.string.apps_sort_format, stringResource(sort.label)), sortFocused) }
+            Button({ selecting = !selecting; selected = emptySet() }) { Text(stringResource(if (selecting) R.string.common_done else R.string.apps_select).upper()) }
         }
         if (selecting) Row(horizontalArrangement = Arrangement.spacedBy(Space.x1), verticalAlignment = Alignment.CenterVertically) {
             val none = selected.isEmpty()
-            Button({ finish(onWatchSelected) }, enabled = !none) { Text("Watch selected".uppercase()) }
-            Button({ finish(onQueueSelected) }, enabled = !none) { Text("Optimize selected".uppercase()) }
-            Button({ selected = selected + apps.map { it.packageName }.filter { it in watched } }) { Text("Select all watched".uppercase()) }
-            PixelText("${selected.size} selected", color = c.accent)
-        } else PixelText("Hold OK on an app for more options", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button({ finish(onWatchSelected) }, enabled = !none) { Text(stringResource(R.string.apps_watch_selected).upper()) }
+            Button({ finish(onQueueSelected) }, enabled = !none) { Text(stringResource(R.string.apps_optimize_selected).upper()) }
+            Button({ selected = selected + apps.map { it.packageName }.filter { it in watched } }) { Text(stringResource(R.string.apps_select_all_watched).upper()) }
+            PixelText(pluralStringResource(R.plurals.apps_selected_count, selected.size, selected.size), color = c.accent)
+        } else PixelText(stringResource(R.string.apps_hold_ok_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (shown.isEmpty()) Text(
-            when { loading -> "Loading apps…"; apps.isEmpty() -> "No apps found."; else -> "No apps match your search." },
+            when { loading -> stringResource(R.string.apps_loading); apps.isEmpty() -> stringResource(R.string.setup_no_apps); else -> stringResource(R.string.apps_no_match) },
             style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
-                val pill = pillFor(queue[app.packageName], watched[app.packageName]?.lastResult, optimizedAt[app.packageName], now, zone)
+                val pill = pillFor(res, queue[app.packageName], watched[app.packageName]?.lastResult, optimizedAt[app.packageName], now, zone)
                 SelectRow(
                     app.label,
                     Modifier.remembersFocus(mem, app.packageName).semantics {
                         if (selecting) { role = Role.Checkbox; toggleableState = ToggleableState(app.packageName in selected) }
-                        onLongClick("Open menu") { menu = app; true }
+                        onLongClick(openMenu) { menu = app; true }
                     }
                         .onPreviewKeyEvent {
                             val enter = it.key == Key.Enter || it.key == Key.DirectionCenter || it.key == Key.NumPadEnter
@@ -295,7 +306,7 @@ fun AppsContent(
                             if (up) swallowUp = false
                             long || up
                         },
-                    subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { "Version $it" },
+                    subtitle = app.versionName.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.apps_version, it) },
                     onClick = { if (selecting) selected = if (app.packageName in selected) selected - app.packageName else selected + app.packageName else onOpen(app.packageName) },
                     leading = { Cartridge { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) } },
                     trailing = {
@@ -319,10 +330,10 @@ fun AppsContent(
         fun act(f: () -> Unit): () -> Unit = { menu = null; f() }
         SimpleDialog({ menu = null }) {
             Text(app.label, style = MaterialTheme.typography.titleLarge)
-            Button(act { onOptimize(app.packageName) }, Modifier.focusRequester(focus)) { Text("Optimize now".uppercase()) }
-            Button(act { onQueue(app.packageName) }) { Text("Add to queue".uppercase()) }
-            Button(act { onToggleWatch(app.packageName, isWatched) }) { Text((if (isWatched) "Stop watching" else "Watch").uppercase()) }
-            Button(act { onOpen(app.packageName) }) { Text("Details".uppercase()) }
+            Button(act { onOptimize(app.packageName) }, Modifier.focusRequester(focus)) { Text(stringResource(R.string.setup_optimize_now).upper()) }
+            Button(act { onQueue(app.packageName) }) { Text(stringResource(R.string.apps_add_to_queue).upper()) }
+            Button(act { onToggleWatch(app.packageName, isWatched) }) { Text(stringResource(if (isWatched) R.string.apps_stop_watching else R.string.apps_watch).upper()) }
+            Button(act { onOpen(app.packageName) }) { Text(stringResource(R.string.apps_details).upper()) }
         }
     }
 }

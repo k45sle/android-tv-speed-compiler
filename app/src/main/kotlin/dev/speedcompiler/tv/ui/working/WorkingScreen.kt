@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.working
 
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -71,10 +72,12 @@ import dev.speedcompiler.tv.ui.home.jobResult
 import dev.speedcompiler.tv.ui.home.aggregateLine
 import dev.speedcompiler.tv.ui.home.batchDone
 import dev.speedcompiler.tv.ui.home.etaText
+import dev.speedcompiler.tv.ui.home.storedText
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.ui.home.lookup
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import dev.speedcompiler.tv.watch.DEFAULT_AVG_DURATION_MILLIS
@@ -86,6 +89,7 @@ import kotlinx.coroutines.delay
 import dev.speedcompiler.tv.adb.ConnectionState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import android.content.res.Resources
 
 /** What the job for this package is doing. Never a percentage: the engine cannot report one. */
 sealed interface JobView {
@@ -112,15 +116,15 @@ fun thisRun(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, open
         ?: history.filter { it.packageName == pkg && (it.finishedAt ?: 0) >= openedAt - RUN_WINDOW_MILLIS }
             .maxWithOrNull(compareBy({ it.finishedAt }, { it.id }))
 
-fun jobView(pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long, now: Long): JobView {
+fun jobView(res: Resources, pkg: String, queue: List<QueueEntry>, history: List<QueueItem>, openedAt: Long, now: Long): JobView {
     val run = thisRun(pkg, queue, history, openedAt)
         ?: return if (now - openedAt >= RUN_WINDOW_MILLIS) JobView.CouldntStart else JobView.Starting
     return when (run.state) {
         QueueState.RUNNING -> JobView.Running
         QueueState.QUEUED, QueueState.WAITING_GATE -> JobView.Waiting(queue.firstOrNull { it.item.id == run.id }?.eta ?: Eta.None)
         QueueState.DONE -> JobView.Done
-        QueueState.SKIPPED -> JobView.Failed("It was cancelled.")
-        QueueState.FAILED -> JobView.Failed(run.failureReason ?: "No reason was recorded.")
+        QueueState.SKIPPED -> JobView.Failed(res.getString(R.string.working_cancelled))
+        QueueState.FAILED -> JobView.Failed(run.failureReason ?: res.getString(R.string.working_no_reason))
     }
 }
 
@@ -133,9 +137,9 @@ fun averageDuration(history: List<QueueItem>): Long =
 /** Nearest whole minute, at least 1. */
 fun usuallyMinutes(avgMillis: Long) = ((avgMillis + 30_000) / 60_000).coerceAtLeast(1)
 
-fun waitingForConnectionText(c: ConnectionState) =
-    if (c == ConnectionState.Unpaired) "Waiting for setup. Finish setup, then this starts."
-    else "Waiting for the TV's debugging connection. It retries on its own."
+fun waitingForConnectionText(res: Resources, c: ConnectionState) =
+    if (c == ConnectionState.Unpaired) res.getString(R.string.working_waiting_setup)
+    else res.getString(R.string.working_waiting_debugging)
 
 fun elapsedText(millis: Long): String {
     val s = millis / 1000
@@ -190,7 +194,7 @@ fun WorkingHost(
     val h by history.collectAsState(emptyList())
     val conn by connection.collectAsState<ConnectionState, ConnectionState?>(null)
     var now by remember { mutableLongStateOf(openedAt) }
-    val job = jobView(pkg, q, h, openedAt, now)
+    val job = jobView(LocalResources.current, pkg, q, h, openedAt, now)
     val run = thisRun(pkg, q, h, openedAt)
     LaunchedEffect(job.finished) {
         now = clock()
@@ -198,7 +202,7 @@ fun WorkingHost(
     }
     val end = if (job.finished) run?.finishedAt ?: now else now
     val elapsed = (end - (run?.startedAt ?: openedAt)).coerceAtLeast(0)
-    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best, checked, aggregateLine(batchDone(q, h), q)), back, saveBest)
+    WorkingContent(WorkingState(look.label, look.banner ?: look.icon, job, elapsed, averageDuration(h), conn, best, checked, aggregateLine(LocalResources.current, batchDone(q, h), q)), back, saveBest)
 }
 
 @Composable
@@ -239,6 +243,8 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
     val still = rememberLowRam()
     LaunchedEffect(still) { if (!still) while (true) { delay(166); chase = (chase + 1) % 4 } }
     val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    val res = LocalResources.current
+    val bannerDesc = if (s.job.finished) stringResource(R.string.common_done) else stringResource(R.string.working_working_desc)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 104.dp).background(cs.background).drawBehind {
             val sw = 4.dp.toPx()
@@ -250,47 +256,53 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         }.padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        PixelBanner(s.job.finished || still, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 64.dp)
+        PixelBanner(s.job.finished || still, Modifier.semantics { contentDescription = bannerDesc }, size = 64.dp)
         val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
         if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
         Column(Modifier.weight(1f)) {
             val running = s.running
-            PixelText(if (s.job.finished) s.label else if (running) "Optimizing ${s.label}" else "Waiting to optimize ${s.label}", color = c.accent, size = 28.sp, overflow = TextOverflow.Ellipsis)
+            PixelText(
+                if (s.job.finished) s.label else if (running) stringResource(R.string.working_optimizing, s.label) else stringResource(R.string.working_waiting_to_optimize, s.label),
+                color = c.accent, size = 28.sp, overflow = TextOverflow.Ellipsis,
+            )
             // Without a connection the worker loops running -> retry; say what it is really waiting on.
             if (!s.job.finished && s.connection != ConnectionState.Connected) {
-                line(s.connection?.let(::waitingForConnectionText) ?: "Starting…", cs.onSurface)
+                line(s.connection?.let { waitingForConnectionText(res, it) } ?: stringResource(R.string.working_starting), cs.onSurface)
             } else when (val j = s.job) {
-                is JobView.Done -> line(if (s.verified) "Optimized. You can leave now." else "Compiled. You can leave now.", c.ok)
-                is JobView.Failed -> line("Didn't finish: ${j.reason}", c.error)
-                is JobView.Waiting -> line(etaText(j.eta).ifEmpty { "Waiting for its turn" }, cs.onSurface)
-                JobView.CouldntStart -> line("Couldn't start. Try again from the app.", c.error)
-                JobView.Starting -> line("Starting…", cs.onSurface)
-                JobView.Running -> line("Optimizing. This continues if you leave.", cs.onSurface)
+                is JobView.Done -> line(stringResource(if (s.verified) R.string.working_optimized_leave else R.string.working_compiled_leave), c.ok)
+                is JobView.Failed -> line(stringResource(R.string.working_failed, storedText(res, j.reason)), c.error)
+                is JobView.Waiting -> line(etaText(res, j.eta).ifEmpty { stringResource(R.string.working_waiting_turn) }, cs.onSurface)
+                JobView.CouldntStart -> line(stringResource(R.string.working_couldnt_start), c.error)
+                JobView.Starting -> line(stringResource(R.string.working_starting), cs.onSurface)
+                JobView.Running -> line(stringResource(R.string.working_optimizing_continues), cs.onSurface)
             }
             if (s.batch != null) Text(s.batch, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val elapsedDesc = stringResource(R.string.working_elapsed, elapsedText(s.elapsedMillis))
                 if (s.job != JobView.CouldntStart) PixelText(
                     elapsedText(s.elapsedMillis), color = cs.onSurface,
-                    modifier = Modifier.semantics { contentDescription = "Elapsed ${elapsedText(s.elapsedMillis)}" },
+                    modifier = Modifier.semantics { contentDescription = elapsedDesc },
                 )
                 if (!s.job.finished) {
                     val blocks = 10
                     val filled = (if (running) s.elapsedMillis * blocks / s.avgMillis.coerceAtLeast(1) else 0).coerceIn(0, blocks.toLong()).toInt()
-                    Row(Modifier.semantics { contentDescription = "Time estimate, $filled of $blocks blocks" }, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    val blocksDesc = pluralStringResource(R.plurals.working_blocks_desc, blocks, filled, blocks)
+                    Row(Modifier.semantics { contentDescription = blocksDesc }, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         repeat(blocks) { i ->
                             Box(Modifier.size(18.dp, 12.dp).then(if (i < filled) Modifier.background(c.accent) else Modifier.border(2.dp, c.hairline)))
                         }
                     }
                     Text(
-                        "Estimate: usually about ${usuallyMinutes(s.avgMillis)} min",
+                        stringResource(R.string.working_estimate, usuallyMinutes(s.avgMillis)),
                         style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1,
                     )
                 }
             }
         }
+        val leaveDesc = stringResource(if (s.job.finished) R.string.working_done_leave_desc else R.string.working_leave_desc)
         ArcadeButton(
-            if (s.job.finished) "Done" else "Leave", back,
-            Modifier.focusRequester(done).focusProperties { down = picker }.semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" },
+            stringResource(if (s.job.finished) R.string.common_done else R.string.working_leave), back,
+            Modifier.focusRequester(done).focusProperties { down = picker }.semantics { contentDescription = leaveDesc },
         )
     }
 }
@@ -300,9 +312,9 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
 private fun StatusLine(s: WorkingState) {
     val ok = s.job is JobView.Done
     val text = when (val j = s.job) {
-        is JobView.Done -> "${s.label} ${if (s.verified) "optimized" else "compiled"}"
-        is JobView.Failed, JobView.CouldntStart -> "${s.label} didn't finish"
-        else -> if (s.running) "Optimizing ${s.label}" else "Waiting to optimize ${s.label}"
+        is JobView.Done -> stringResource(if (s.verified) R.string.working_status_optimized else R.string.working_status_compiled, s.label)
+        is JobView.Failed, JobView.CouldntStart -> stringResource(R.string.working_status_failed, s.label)
+        else -> if (s.running) stringResource(R.string.working_optimizing, s.label) else stringResource(R.string.working_waiting_to_optimize, s.label)
     }
     val color = if (ok) GameColors.green3 else GameColors.cream
     Row(
@@ -312,6 +324,6 @@ private fun StatusLine(s: WorkingState) {
         Text(stringResource(R.string.app_name), color = color, style = MaterialTheme.typography.labelLarge)
         Text(text, color = color, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
         Text(elapsedText(s.elapsedMillis), color = color, style = MonoStyle)
-        Text(if (s.job.finished) "Back to leave" else "Back to stop", color = GameColors.gold, style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(if (s.job.finished) R.string.working_back_leave else R.string.working_back_stop), color = GameColors.gold, style = MaterialTheme.typography.labelLarge)
     }
 }

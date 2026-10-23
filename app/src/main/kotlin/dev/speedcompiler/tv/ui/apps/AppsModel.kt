@@ -1,7 +1,9 @@
 package dev.speedcompiler.tv.ui.apps
 
+import dev.speedcompiler.tv.engine.RESET_UNSUPPORTED
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.content.res.Resources
 import android.graphics.Bitmap
 import dev.speedcompiler.tv.engine.OptimizeResult
 import androidx.core.graphics.drawable.toBitmap
@@ -15,6 +17,7 @@ import androidx.compose.runtime.remember
 import kotlinx.coroutines.delay
 import dev.speedcompiler.tv.watch.QueueItem
 import androidx.compose.ui.platform.LocalContext
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.watch.Eta
@@ -55,7 +58,7 @@ class AppsDeps(
     /** One package, for the detail screen; falls back to scanning the list. */
     val loadApp: suspend (String) -> AppInfo? = { p -> loadApps().firstOrNull { it.packageName == p } },
     /** Undoes speed compile for one package. */
-    val reset: suspend (String) -> OptimizeResult = { OptimizeResult(false, "Didn't reset: not available.") },
+    val reset: suspend (String) -> OptimizeResult = { OptimizeResult(false, RESET_UNSUPPORTED) },
     /** Successful resets, so a reset app no longer reads as compiled. */
     val resets: Flow<List<Event>> = flowOf(emptyList()),
 )
@@ -65,11 +68,12 @@ fun resultFor(entry: QueueEntry?, lastResult: String?, optimizedAt: Long?): JobR
     jobResult(lastResult, entry?.state) ?: if (optimizedAt != null) JobResult.Unverified else null
 
 /** Row pill: the [JobResult] word; Queued also carries the ETA (gate-held jobs read Queued too). */
-fun pillFor(entry: QueueEntry?, lastResult: String?, optimizedAt: Long?, now: Long, zone: ZoneId): Pair<String, Tone>? {
+fun pillFor(res: Resources, entry: QueueEntry?, lastResult: String?, optimizedAt: Long?, now: Long, zone: ZoneId): Pair<String, Tone>? {
     val r = resultFor(entry, lastResult, optimizedAt) ?: return null
-    if (r != JobResult.Queued) return r.label to r.tone
-    val eta = etaText(entry!!.eta, Instant.ofEpochMilli(now), zone)
-    return (r.label + if (eta.isEmpty()) "" else " · $eta") to Tone.Warn
+    if (r != JobResult.Queued) return res.getString(r.label) to r.tone
+    val eta = etaText(res, entry!!.eta, Instant.ofEpochMilli(now), zone)
+    val label = res.getString(r.label)
+    return (if (eta.isEmpty()) label else res.getString(R.string.apps_pill_eta, label, eta)) to Tone.Warn
 }
 
 /** Latest optimize time per package, from the watched row or the newest finished job (covers unwatched apps); a later Reset clears it. */
@@ -90,13 +94,13 @@ fun rememberNow(deps: AppsDeps): Long {
     return now
 }
 
-fun agoText(thenMillis: Long, now: Long): String {
+fun agoText(res: Resources, thenMillis: Long, now: Long): String {
     val min = ((now - thenMillis) / 60_000).coerceAtLeast(0)
     return when {
-        min < 1 -> "just now"
-        min < 60 -> "$min min ago"
-        min < 24 * 60 -> "${min / 60} h ago"
-        else -> "${min / (24 * 60)} d ago"
+        min < 1 -> res.getString(R.string.apps_ago_just_now)
+        min < 60 -> res.getString(R.string.apps_ago_minutes, min)
+        min < 24 * 60 -> res.getString(R.string.apps_ago_hours, min / 60)
+        else -> res.getString(R.string.apps_ago_days, min / (24 * 60))
     }
 }
 

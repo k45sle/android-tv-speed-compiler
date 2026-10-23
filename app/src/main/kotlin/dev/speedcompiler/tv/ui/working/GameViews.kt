@@ -19,11 +19,13 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.withFrameNanos
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.ui.working.games.AlienRunDef
 import dev.speedcompiler.tv.ui.working.games.StarArrowDef
 import dev.speedcompiler.tv.ui.working.games.Game
@@ -71,6 +73,9 @@ fun GamePlayer(
     val renderer = kind.def.renderer()
     val surface = remember { Surface() }
     val top = with(LocalDensity.current) { statusHeight.toPx() }
+    val gameDesc = stringResource(R.string.working_game_desc, stringResource(kind.title))
+    val doneText = stringResource(R.string.working_done_pixel)
+    val pressBack = stringResource(R.string.working_press_back)
     LaunchedEffect(kind, paused) { runCatching { focus.requestFocus() } }
     LaunchedEffect(kind, paused) {
         if (paused) { onBest(game.score); return@LaunchedEffect }
@@ -90,7 +95,7 @@ fun GamePlayer(
     }
     Canvas(
         modifier.fillMaxSize()
-            .semantics { contentDescription = "${kind.title} game. Arrow keys move, Select to act or restart, Back to stop playing." }
+            .semantics { contentDescription = gameDesc }
             .focusRequester(focus).focusable()
             .onKeyEvent { e ->
                 // Only KeyDown is handled and consumed; KeyUp passes through.
@@ -109,7 +114,7 @@ fun GamePlayer(
         drawRect(GameColors.sky3)
         surface.frame(this, top) {
             renderer.draw(surface, game, maxOf(best, game.score))
-            if (paused) surface.banner("DONE", "PRESS BACK", -1, GameColors.green3)
+            if (paused) surface.banner(doneText, pressBack, -1, GameColors.green3)
         }
     }
 }

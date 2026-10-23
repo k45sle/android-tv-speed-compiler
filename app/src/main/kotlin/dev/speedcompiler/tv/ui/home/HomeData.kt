@@ -1,6 +1,9 @@
 package dev.speedcompiler.tv.ui.home
 
+import dev.speedcompiler.tv.engine.RESET_UNSUPPORTED
 import android.content.Context
+import android.content.res.Resources
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
@@ -24,6 +27,7 @@ import dev.speedcompiler.tv.watch.QueueState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import dev.speedcompiler.tv.R
 
 /** Label and artwork for a package; falls back to the package name when PackageManager does not know it. */
 class AppLook(val label: String, val icon: ImageBitmap? = null, val banner: ImageBitmap? = null)
@@ -64,22 +68,22 @@ fun clockText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
     stamp.format(Instant.ofEpochMilli(millis).atZone(zone))
 
 /** Never a percentage. Empty when there is nothing to say (running or finished). */
-fun etaText(eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String = when (eta) {
+fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String = when (eta) {
     Eta.None -> ""
     is Eta.StartsAt -> {
         val at = eta.at.atZone(zone)
         val today = now.atZone(zone).toLocalDate()
         when (at.toLocalDate()) {
-            today -> "Starts at ${clock.format(at)}"
-            today.plusDays(1) -> "Starts tomorrow ${clock.format(at)}"
-            else -> "Starts ${date.format(at)} ${clock.format(at)}"
+            today -> res.getString(R.string.home_eta_starts_today, clock.format(at))
+            today.plusDays(1) -> res.getString(R.string.home_eta_starts_tomorrow, clock.format(at))
+            else -> res.getString(R.string.home_eta_starts_on, date.format(at), clock.format(at))
         }
     }
-    Eta.WaitingForIdle -> "Waiting for the TV to be idle"
-    Eta.WaitingForPlayback -> "Waiting for playback to stop"
-    Eta.Paused -> "Auto-optimize is off"
-    Eta.Unknown -> "Unknown"
-    is Eta.InQueue -> "#${eta.position + 1} in queue, about ${(eta.approxMillis / 60_000).coerceAtLeast(1)} min"
+    Eta.WaitingForIdle -> res.getString(R.string.home_eta_waiting_idle)
+    Eta.WaitingForPlayback -> res.getString(R.string.home_eta_waiting_playback)
+    Eta.Paused -> res.getString(R.string.home_auto_off)
+    Eta.Unknown -> res.getString(R.string.home_eta_unknown)
+    is Eta.InQueue -> res.getString(R.string.home_eta_in_queue, eta.position + 1, (eta.approxMillis / 60_000).coerceAtLeast(1))
 }
 
 /**
@@ -87,14 +91,15 @@ fun etaText(eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.system
  * The minutes are left out when any job waits on something with no time (gate, pairing). Per-job time comes from the queue's own
  * [Eta.InQueue] figures, else the default.
  */
-fun aggregateLine(done: Int, queue: List<QueueEntry>): String? {
+fun aggregateLine(res: Resources, done: Int, queue: List<QueueEntry>): String? {
     val total = done + queue.size
     if (total < 2 || queue.isEmpty()) return null
     val blind = queue.any { it.eta != Eta.None && it.eta !is Eta.InQueue }
     val per = queue.firstNotNullOfOrNull { (it.eta as? Eta.InQueue)?.takeIf { e -> e.position > 0 }?.let { e -> e.approxMillis / e.position } }
         ?: DEFAULT_AVG_DURATION_MILLIS
-    val left = if (blind) "" else ", about ${(per * queue.size / 60_000).coerceAtLeast(1)} min left"
-    return "$done of $total$left"
+    val minutes = (per * queue.size / 60_000).coerceAtLeast(1)
+    return if (blind) res.getString(R.string.home_batch_progress, done, total)
+    else res.getString(R.string.home_batch_progress_left, done, total, minutes)
 }
 
 /** Jobs that ran (done or failed, not cancelled) since the oldest active one was queued. */
@@ -104,36 +109,37 @@ fun batchDone(queue: List<QueueEntry>, history: List<QueueItem>): Int {
     return history.count { it.state != QueueState.SKIPPED && (it.finishedAt ?: 0) >= since }
 }
 
-fun stateText(state: QueueState) = when (state) {
-    QueueState.RUNNING -> "Running"
-    QueueState.QUEUED -> "Queued"
-    QueueState.WAITING_GATE -> "Waiting"
-    QueueState.DONE -> "Done"
-    QueueState.FAILED -> "Failed"
-    QueueState.SKIPPED -> "Skipped"
-}
-
-/** The one label for every repair button (B-12). */
-const val FIX_LABEL = "Fix connection"
+fun stateText(res: Resources, state: QueueState): String = res.getString(
+    when (state) {
+        QueueState.RUNNING -> R.string.home_running
+        QueueState.QUEUED -> R.string.home_queued
+        QueueState.WAITING_GATE -> R.string.home_waiting
+        QueueState.DONE -> R.string.common_done
+        QueueState.FAILED -> R.string.home_failed
+        QueueState.SKIPPED -> R.string.home_skipped
+    },
+)
 
 /** Where "Fix connection" goes for each [Fix]; only a forgotten pairing needs the repair flow. */
 fun fixRoute(fix: Fix) = if (fix == Fix.QuickRepair) Routes.QuickRepair else Routes.Reconnect
 
 /** What the user should do, shown next to a failed connection (B-09). */
-fun fixText(fix: Fix) = when (fix) {
-    Fix.QuickRepair -> "The TV forgot this app. Approve it again on the TV."
-    Fix.TurnOnWirelessDebugging -> "Turn on Wireless debugging in Developer options on the TV."
-    Fix.AllowPrompt -> "Press Allow on the prompt on the TV."
-    Fix.Retry -> "The TV did not answer. Try again."
-}
+fun fixText(res: Resources, fix: Fix): String = res.getString(
+    when (fix) {
+        Fix.QuickRepair -> R.string.home_fix_forgot
+        Fix.TurnOnWirelessDebugging -> R.string.home_fix_wireless
+        Fix.AllowPrompt -> R.string.home_fix_allow
+        Fix.Retry -> R.string.home_fix_retry
+    },
+)
 
 /** What happened to an app's latest job (B-22). */
-enum class JobResult(val label: String, val tone: Tone) {
-    Verified("Optimized", Tone.Ok),
-    Unverified("Compiled", Tone.Warn),
-    Failed("Didn't finish", Tone.Error),
-    Running("Running", Tone.Info),
-    Queued("Queued", Tone.Neutral),
+enum class JobResult(@StringRes val label: Int, val tone: Tone) {
+    Verified(R.string.home_optimized, Tone.Ok),
+    Unverified(R.string.home_compiled, Tone.Warn),
+    Failed(R.string.home_didnt_finish, Tone.Error),
+    Running(R.string.home_running, Tone.Info),
+    Queued(R.string.home_queued, Tone.Neutral),
 }
 
 /** Live queue state wins; otherwise the stored result text. Null when the app has never been optimized. */
@@ -144,4 +150,42 @@ fun jobResult(lastResult: String?, queueState: QueueState?): JobResult? = when {
     lastResult.startsWith("Optimized (checked)") -> JobResult.Verified
     lastResult.startsWith("Optimized") -> JobResult.Unverified
     else -> JobResult.Failed
+}
+
+private val StoredFixed = mapOf(
+    "Didn't finish: that is not a valid app name." to R.string.stored_finish_invalid_app,
+    "Didn't reset: that is not a valid app name." to R.string.stored_reset_invalid_app,
+    "Didn't reset: the TV took too long." to R.string.stored_reset_too_long,
+    "Didn't reset: the TV no longer trusts this app. Choose Fix connection in Settings." to R.string.stored_reset_not_paired,
+    "Didn't reset: the TV has not allowed this app. Accept the debugging prompt on the TV." to R.string.stored_reset_not_allowed,
+    "Didn't reset: lost the connection to the TV." to R.string.stored_reset_lost,
+    "Didn't reset: the TV refused." to R.string.stored_reset_refused,
+    RESET_UNSUPPORTED to R.string.stored_reset_unsupported,
+    "Reset done. The TV chooses how to run this app again." to R.string.stored_reset_done,
+    "Didn't finish: the TV no longer trusts this app. Choose Fix connection in Settings." to R.string.stored_finish_not_paired,
+    "Didn't finish: the TV has not allowed this app. Accept the debugging prompt on the TV." to R.string.stored_finish_not_allowed,
+    "Didn't finish: lost the connection to the TV." to R.string.stored_finish_lost,
+    "Didn't finish: the TV refused to optimize this app." to R.string.stored_finish_refused,
+    "Optimized (this TV doesn't report the result)" to R.string.stored_optimized_unverified,
+    "Optimized (checked)" to R.string.stored_optimized_checked,
+    "The TV did not report this app's compiler filter." to R.string.stored_verify_unknown,
+    "Not installed" to R.string.stored_not_installed,
+)
+
+private val StoredDynamic = listOf(
+    Regex("Didn't reset: the TV refused\\. It said: (.*)", RegexOption.DOT_MATCHES_ALL) to R.string.stored_reset_refused_said,
+    Regex("Didn't finish: the TV refused to optimize this app\\. It said: (.*)", RegexOption.DOT_MATCHES_ALL) to R.string.stored_finish_refused_said,
+    Regex("Didn't finish: the TV took more than (\\d+) minutes\\.") to R.string.stored_finish_timeout,
+    Regex("Didn't finish: unexpected error \\((.*)\\)\\.") to R.string.stored_finish_unexpected,
+    Regex("Didn't finish: (.*), not speed\\.", RegexOption.DOT_MATCHES_ALL) to R.string.stored_finish_not_speed,
+)
+
+/** Display text for a message the engine stored in Room (always English); anything unknown comes back as stored. */
+fun storedText(res: Resources, text: String): String {
+    StoredFixed[text]?.let { return res.getString(it) }
+    for ((re, id) in StoredDynamic) {
+        val arg = re.matchEntire(text)?.groupValues?.get(1) ?: continue
+        return if (id == R.string.stored_finish_timeout) res.getString(id, arg.toInt()) else res.getString(id, arg)
+    }
+    return text
 }

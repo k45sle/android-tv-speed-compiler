@@ -1,5 +1,9 @@
 package dev.speedcompiler.tv.theme
 
+import androidx.compose.ui.res.stringResource
+import dev.speedcompiler.tv.R
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.runtime.State
 import androidx.compose.animation.core.animateFloat
@@ -79,11 +83,16 @@ private fun Color.darker(f: Float = 0.35f) = lerp(this, Color.Black, f)
 fun Modifier.hardShadow(d: Dp = 4.dp, color: Color = ShadowColor): Modifier =
     drawBehind { drawRect(color, Offset(d.toPx(), d.toPx()), size) }
 
+/** Capitals in the UI locale, read from the configuration so a locale change recomposes. */
+@Composable
+@ReadOnlyComposable
+fun String.upper(): String = uppercase(LocalConfiguration.current.locales[0])
+
 /** VT323 text in capitals: 26 sp labels, numbers and status words. An unspecified [color] uses the content color. */
 @Composable
 fun PixelText(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified, size: TextUnit = 26.sp, maxLines: Int = 1, overflow: TextOverflow = TextOverflow.Clip) {
     Text(
-        text.uppercase(), modifier, color, style = PixelLabel.copy(fontSize = size, letterSpacing = 1.sp),
+        text.upper(), modifier, color, style = PixelLabel.copy(fontSize = size, letterSpacing = 1.sp),
         maxLines = maxLines, overflow = overflow,
     )
 }
@@ -134,7 +143,7 @@ fun RoomBackdrop(modifier: Modifier = Modifier, content: @Composable BoxScope.()
     ) {
         Box(Modifier.fillMaxSize().padding(bottom = FloorH), content = content)
         Box(Modifier.align(Alignment.BottomCenter).height(FloorH), Alignment.Center) {
-            PixelText("▲▼ choose  ● select  ◀ back", color = cs.onSurfaceVariant)
+            PixelText(stringResource(R.string.common_footer_hint), color = cs.onSurfaceVariant)
         }
     }
 }
@@ -159,7 +168,7 @@ fun Marquee(
             Box(
                 Modifier.focusFx(1.05f, RowRadius, onClick = onBack).background(cs.background).border(2.dp, c.hairline)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) { PixelText("◀ back", color = cs.onSurface) }
+            ) { PixelText(stringResource(R.string.common_back_arrow), color = cs.onSurface) }
         } else {
             Box(Modifier.size(80.dp, 52.dp).background(cs.primaryContainer).border(2.dp, c.hairline), Alignment.Center) {
                 PixelBanner(stopped = true, size = 64.dp)
@@ -281,7 +290,7 @@ fun CabinetCard(
             }
         }
         Box(Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp), Alignment.CenterStart) {
-            if (lit) PixelText("▶ press select", color = c.accent)
+            if (lit) PixelText(stringResource(R.string.common_press_select), color = c.accent)
         }
     }
 }
@@ -436,7 +445,7 @@ fun ArcadeButton(
     fill: Color = Color.Unspecified,
     contentColor: Color = Color.Unspecified,
     preview: Boolean = false,
-) = ArcadeButton(onClick, modifier, enabled, fill, contentColor, preview) { Text(label.uppercase()) }
+) = ArcadeButton(onClick, modifier, enabled, fill, contentColor, preview) { Text(label.upper()) }
 
 /** Progress blocks: [step] of [total] filled, the rest hollow. */
 @Composable

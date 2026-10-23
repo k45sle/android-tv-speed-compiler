@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.stringResource
 import dev.speedcompiler.tv.R
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -120,7 +121,7 @@ class StarArrow(private val rng: Random = Random.Default) : Game {
     }
 }
 
-object StarArrowDef : GameDef("Star Arrow", "Fly through the rocks") {
+object StarArrowDef : GameDef(R.string.working_game_star_arrow, R.string.working_game_star_arrow_hint) {
     /** Tests set this to make the obstacles repeatable. */
     var seed: Int? = null
 
@@ -139,7 +140,10 @@ object StarArrowDef : GameDef("Star Arrow", "Fly through the rocks") {
             ImageBitmap.imageResource(R.drawable.game_arrow_rock_m),
             ImageBitmap.imageResource(R.drawable.game_arrow_rock_l),
         )
-        return remember(sky, stars, planet, belt, ground, flame, ship, rocks[0], rocks[1], rocks[2]) {
+        val gameOver = stringResource(R.string.working_game_over)
+        val scoreLabel = stringResource(R.string.working_score)
+        val bestLabel = stringResource(R.string.working_best)
+        return remember(sky, stars, planet, belt, ground, flame, ship, rocks[0], rocks[1], rocks[2], gameOver, scoreLabel, bestLabel) {
             GameRenderer { s, g, best ->
                 g as StarArrow
                 s.shake = shakeX(g.dead)
@@ -174,9 +178,9 @@ object StarArrowDef : GameDef("Star Arrow", "Fly through the rocks") {
                 }
                 for (i in 0 until g.pops.size) { val p = g.pops[i]; s.text("+1", p.x.toInt(), (p.y - p.t * 20f).roundToInt(), GameColors.cream) }
                 s.shake = 0
-                s.hud(g.score, best, dark = false)
+                s.hud(g.score, best, dark = false, bestLabel = bestLabel)
                 shieldBar(s, g)
-                if (g.canRestart) s.banner("GAME OVER", "SCORE ", g.score, GameColors.pink)
+                if (g.canRestart) s.banner(gameOver, scoreLabel, g.score, GameColors.pink)
             }
         }
     }

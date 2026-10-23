@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.help
 
+import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,22 +31,24 @@ import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.adb.Fix
-import dev.speedcompiler.tv.ui.home.FIX_LABEL
+import dev.speedcompiler.tv.R
+import androidx.compose.ui.res.stringResource
 import dev.speedcompiler.tv.ui.home.fixRoute
+import androidx.annotation.StringRes
 
 /** One failure reason: what happened, what to do, and an optional route that fixes it. */
-data class HelpEntry(val title: String, val body: String, val fix: Fix? = null)
+data class HelpEntry(@StringRes val title: Int, @StringRes val body: Int, val fix: Fix? = null)
 
 val helpEntries = listOf(
-    HelpEntry("The TV forgot this app", "Approve it again on the TV.", Fix.QuickRepair),
-    HelpEntry("Wireless debugging is off", "Turn it on in Developer options on the TV, then reconnect.", Fix.TurnOnWirelessDebugging),
-    HelpEntry("The TV is waiting for you", "Press Allow on the prompt on the TV, then reconnect.", Fix.AllowPrompt),
-    HelpEntry("The TV did not answer", "Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.", Fix.Retry),
-    HelpEntry("Optimizing did not finish", "The TV stopped or refused the job. Try again when the TV is idle."),
-    HelpEntry("Optimized, but not checked", "This TV does not report the result. The app may still start faster."),
-    HelpEntry("What speed compile changes", "It uses more storage. The first launch after an app update is slower again until the app is optimized again. Results vary by app and TV."),
-    HelpEntry("How to undo it", "Open the app in Apps and choose Reset. Uninstalling Speed Compile does not undo it."),
-    HelpEntry("The pairing code did not work", "Pairing codes expire. Get a new code on the TV and type all 6 digits."),
+    HelpEntry(R.string.help_forgot_title, R.string.help_forgot_body, Fix.QuickRepair),
+    HelpEntry(R.string.help_wireless_title, R.string.help_wireless_body, Fix.TurnOnWirelessDebugging),
+    HelpEntry(R.string.help_waiting_title, R.string.help_waiting_body, Fix.AllowPrompt),
+    HelpEntry(R.string.help_no_answer_title, R.string.help_no_answer_body, Fix.Retry),
+    HelpEntry(R.string.help_not_finished_title, R.string.help_not_finished_body),
+    HelpEntry(R.string.help_not_checked_title, R.string.help_not_checked_body),
+    HelpEntry(R.string.help_changes_title, R.string.help_changes_body),
+    HelpEntry(R.string.help_undo_title, R.string.help_undo_body),
+    HelpEntry(R.string.help_pairing_title, R.string.help_pairing_body),
 )
 
 @Composable
@@ -56,21 +59,25 @@ fun HelpScreen(go: (String) -> Unit, onBack: () -> Unit) {
 
 @Composable
 fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
-    val mem = rememberFocusMemory(helpEntries.first { it.fix != null }.title)
+    val mem = rememberFocusMemory(helpEntries.first { it.fix != null }.title.toString())
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
-        Marquee("Help", compact = true, onBack = onBack)
+        Marquee(stringResource(R.string.help_title), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {
-        item { PixelText("Problems and fixes", color = LocalSpeedColors.current.accent, size = 36.sp) }
+        item { PixelText(stringResource(R.string.help_problems_title), color = LocalSpeedColors.current.accent, size = 36.sp) }
         items(helpEntries) { e ->
-            ListRow(e.title, Modifier.semantics { contentDescription = "${e.title}. ${e.body}" }, e.body) {
+            val title = stringResource(e.title)
+            val body = stringResource(e.body)
+            val desc = stringResource(R.string.help_entry_desc, title, body)
+            val fixLabel = stringResource(R.string.common_fix_connection)
+            ListRow(title, Modifier.semantics { contentDescription = desc }, body) {
                 if (e.fix != null) {
-                    Button(onClick = { go(fixRoute(e.fix)) }, modifier = Modifier.remembersFocus(mem, e.title).semantics { contentDescription = FIX_LABEL }) { Text(FIX_LABEL.uppercase()) }
+                    Button(onClick = { go(fixRoute(e.fix)) }, modifier = Modifier.remembersFocus(mem, e.title.toString()).semantics { contentDescription = fixLabel }) { Text(fixLabel.upper()) }
                 }
             }
         }

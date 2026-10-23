@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.theme
 
+import dev.speedcompiler.tv.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -140,7 +142,7 @@ fun ListRow(
 fun StepHeader(step: Int, total: Int, title: String, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.x1 / 2)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-            PixelText("Step $step of $total", color = LocalSpeedColors.current.accent)
+            PixelText(stringResource(R.string.setup_step_of, step, total), color = LocalSpeedColors.current.accent)
             StageMeter(step, total)
         }
         Text(title, style = MaterialTheme.typography.headlineMedium)

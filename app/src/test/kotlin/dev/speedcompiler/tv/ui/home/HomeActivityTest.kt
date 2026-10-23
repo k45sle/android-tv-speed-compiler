@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.home
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import dev.speedcompiler.tv.ComposeTestBase
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -38,6 +40,7 @@ import org.junit.Test
 
 class HomeActivityTest : ComposeTestBase() {
     private val utc = ZoneId.of("UTC")
+    private val res = ApplicationProvider.getApplicationContext<Context>().resources
     private val now = Instant.parse("2026-01-01T00:30:00Z")
     private val look: (String) -> AppLook = { AppLook(it.substringAfterLast('.').replaceFirstChar(Char::uppercase)) }
     private fun queued(id: Long, pkg: String, state: QueueState = QueueState.QUEUED) =
@@ -187,13 +190,13 @@ class HomeActivityTest : ComposeTestBase() {
     @Test
     fun etaRules() {
         val zone = utc
-        assertEquals("Starts at 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z")), now, zone))
-        assertEquals("Starts tomorrow 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-02T02:00:00Z")), now, zone))
-        assertEquals("Starts Sat Jan 3 02:00", etaText(Eta.StartsAt(Instant.parse("2026-01-03T02:00:00Z")), now, zone))
-        assertEquals("Waiting for the TV to be idle", etaText(Eta.WaitingForIdle))
-        assertEquals("Waiting for playback to stop", etaText(Eta.WaitingForPlayback))
-        assertEquals("#2 in queue, about 4 min", etaText(Eta.InQueue(1, 240_000)))
-        assertEquals("Auto-optimize is off", etaText(Eta.Paused))
+        assertEquals("Starts at 02:00", etaText(res, Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z")), now, zone))
+        assertEquals("Starts tomorrow 02:00", etaText(res, Eta.StartsAt(Instant.parse("2026-01-02T02:00:00Z")), now, zone))
+        assertEquals("Starts Sat Jan 3 02:00", etaText(res, Eta.StartsAt(Instant.parse("2026-01-03T02:00:00Z")), now, zone))
+        assertEquals("Waiting for the TV to be idle", etaText(res, Eta.WaitingForIdle))
+        assertEquals("Waiting for playback to stop", etaText(res, Eta.WaitingForPlayback))
+        assertEquals("#2 in queue, about 4 min", etaText(res, Eta.InQueue(1, 240_000)))
+        assertEquals("Auto-optimize is off", etaText(res, Eta.Paused))
     }
 
     @Test
@@ -234,12 +237,12 @@ class HomeActivityTest : ComposeTestBase() {
     @Test
     fun aggregateLineCases() {
         val three = inQueue(Eta.None, Eta.InQueue(1, 120_000), Eta.InQueue(2, 240_000))
-        assertEquals("0 of 3, about 6 min left", aggregateLine(0, three))
-        assertEquals("1 of 3, about 4 min left", aggregateLine(1, three.drop(1)))
-        assertEquals(null, aggregateLine(3, emptyList()))
-        assertEquals("1 of 3", aggregateLine(1, inQueue(Eta.None, Eta.WaitingForIdle)))
-        assertEquals(null, aggregateLine(0, three.take(1)))
-        assertEquals(null, aggregateLine(0, emptyList()))
+        assertEquals("0 of 3, about 6 min left", aggregateLine(res, 0, three))
+        assertEquals("1 of 3, about 4 min left", aggregateLine(res, 1, three.drop(1)))
+        assertEquals(null, aggregateLine(res, 3, emptyList()))
+        assertEquals("1 of 3", aggregateLine(res, 1, inQueue(Eta.None, Eta.WaitingForIdle)))
+        assertEquals(null, aggregateLine(res, 0, three.take(1)))
+        assertEquals(null, aggregateLine(res, 0, emptyList()))
         val done = listOf(queued(9, "x").copy(state = QueueState.DONE, finishedAt = 2_000), queued(8, "y").copy(state = QueueState.DONE, finishedAt = 500))
         assertEquals(1, batchDone(three, done))
         assertEquals(0, batchDone(three, done.map { it.copy(state = QueueState.SKIPPED) }))

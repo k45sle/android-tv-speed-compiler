@@ -1,12 +1,15 @@
 package dev.speedcompiler.tv.ui.setup
 
+import androidx.compose.ui.platform.LocalResources
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.res.Resources
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
@@ -88,25 +91,28 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
 }
 
 /** The connect failure in plain words. */
-fun reasonText(e: Throwable) = when (e) {
-    is AdbFailure.NotPaired -> "The TV does not trust this app yet."
-    is AdbFailure.DebuggingOff -> "Wireless debugging is off."
-    is AdbFailure.NotAuthorized -> "The TV did not allow this app."
-    is AdbFailure.Timeout -> "The TV did not answer in time."
-    else -> "Could not connect."
-}
+fun reasonText(res: Resources, e: Throwable): String = res.getString(
+    when (e) {
+        is AdbFailure.NotPaired -> R.string.setup_reason_not_paired
+        is AdbFailure.DebuggingOff -> R.string.setup_reason_debugging_off
+        is AdbFailure.NotAuthorized -> R.string.setup_reason_not_allowed
+        is AdbFailure.Timeout -> R.string.setup_reason_timeout
+        else -> R.string.setup_reason_could_not_connect
+    },
+)
 
 @Composable
 fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
-    return remember {
+    val res = LocalResources.current
+    return remember(res) {
         val graph = (context.applicationContext as SpeedApp).graph
         val prefs = context.applicationContext.getSharedPreferences("setup", Context.MODE_PRIVATE)
         SetupDeps(
             AndroidSetupEnv(context.applicationContext, graph.connectionMonitor),
             graph.connectionMonitor.state,
             PairingService.url,
-            graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(f.reason) } },
+            graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(res, f.reason) } },
             holdsPairing = { prefs.getBoolean("paired", false) }, // kept by AppGraph
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job

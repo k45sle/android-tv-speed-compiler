@@ -248,5 +248,5 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     /** Needed for expedited work below API 31. */
-    override suspend fun getForegroundInfo(): ForegroundInfo = foregroundInfo(applicationContext, 3, "optimize", "Optimizing")
+    override suspend fun getForegroundInfo(): ForegroundInfo = foregroundInfo(applicationContext, 3, "optimize", applicationContext.getString(dev.speedcompiler.tv.R.string.notif_optimizing))
 }

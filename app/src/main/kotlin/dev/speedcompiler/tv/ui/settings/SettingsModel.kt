@@ -1,9 +1,11 @@
 package dev.speedcompiler.tv.ui.settings
 
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import kotlinx.coroutines.flow.Flow
@@ -20,10 +22,11 @@ class SettingsDeps(
 fun rememberSettingsDeps(): SettingsDeps {
     val graph = rememberGraph()
     val context = LocalContext.current.applicationContext
-    return remember(graph) {
+    val res = LocalResources.current
+    return remember(graph, res) {
         SettingsDeps(
             graph.settings.values, graph.settings::update, graph.connectionKeeper.status,
-            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "unknown",
+            runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: res.getString(R.string.settings_version_unknown),
         )
     }
 }

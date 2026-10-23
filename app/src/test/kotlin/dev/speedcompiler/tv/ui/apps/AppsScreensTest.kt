@@ -25,6 +25,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.test.core.app.ApplicationProvider
+import android.content.Context
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.theme.SpeedTheme
@@ -357,16 +359,17 @@ class AppsScreensTest : ComposeTestBase() {
     @Test
     fun statusWordsComeFromTheResultEnum() {
         val zone = java.time.ZoneOffset.UTC
-        assertEquals("Optimized" to dev.speedcompiler.tv.theme.Tone.Ok, pillFor(null, "Optimized (checked)", 1, 0, zone))
-        assertEquals("Compiled" to dev.speedcompiler.tv.theme.Tone.Warn, pillFor(null, "Optimized", 1, 0, zone))
-        assertEquals("Compiled", pillFor(null, null, 1, 0, zone)?.first) // finished job, no stored result
-        assertEquals("Didn't finish", pillFor(null, "Failed: x", null, 0, zone)?.first)
-        assertEquals(null, pillFor(null, null, null, 0, zone))
+        val res = ApplicationProvider.getApplicationContext<Context>().resources
+        assertEquals("Optimized" to dev.speedcompiler.tv.theme.Tone.Ok, pillFor(res, null, "Optimized (checked)", 1, 0, zone))
+        assertEquals("Compiled" to dev.speedcompiler.tv.theme.Tone.Warn, pillFor(res, null, "Optimized", 1, 0, zone))
+        assertEquals("Compiled", pillFor(res, null, null, 1, 0, zone)?.first) // finished job, no stored result
+        assertEquals("Didn't finish", pillFor(res, null, "Failed: x", null, 0, zone)?.first)
+        assertEquals(null, pillFor(res, null, null, null, 0, zone))
         val run = dev.speedcompiler.tv.watch.QueueEntry(
             dev.speedcompiler.tv.watch.QueueItem(1, "a", dev.speedcompiler.tv.watch.QueueSource.MANUAL, dev.speedcompiler.tv.watch.QueueState.RUNNING, enqueuedAt = 1),
             0, dev.speedcompiler.tv.watch.Eta.None,
         )
-        assertEquals("Running", pillFor(run, "Optimized (checked)", 1, 0, zone)?.first)
+        assertEquals("Running", pillFor(res, run, "Optimized (checked)", 1, 0, zone)?.first)
     }
 
     @Test

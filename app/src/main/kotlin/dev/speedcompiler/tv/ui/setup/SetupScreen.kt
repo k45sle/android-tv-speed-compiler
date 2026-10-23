@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.setup
 
+import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -39,10 +40,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.LocalSpeedColors
@@ -143,21 +147,21 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     val pageBack = { if (help) help = false else if (step > first) back() else onBack() }
     CompositionLocalProvider(LocalPageBack provides pageBack) {
     if (help) HelpPage(step) { help = false } else when (step) {
-        1 -> Page(null, "Compile your apps ahead of time.") {
-            Body("Android can fully compile apps ahead of time. This app does it for the apps you pick and redoes it after each update. Results vary, and each app uses a little more storage.")
-            PrimaryButton("Start", onClick = ::advance)
+        1 -> Page(null, stringResource(R.string.setup_intro_title)) {
+            Body(stringResource(R.string.setup_intro_body))
+            PrimaryButton(stringResource(R.string.setup_start), onClick = ::advance)
         }
-        2 -> Page(2, "Turn on Developer options.") {
-            Body("Open Settings > System > About > Build, and press it 7 times.")
-            PrimaryButton("Open Settings", onClick = debounced(env::openSettings))
+        2 -> Page(2, stringResource(R.string.setup_dev_title)) {
+            Body(stringResource(R.string.setup_dev_body))
+            PrimaryButton(stringResource(R.string.setup_open_settings), onClick = debounced(env::openSettings))
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
             FailWhenStuck(::fail)
             AutoAdvance({ env.developerOptionsOn() }, ::advance)
         }
-        3 -> Page(3, "Turn on Wireless debugging.") {
-            Body("In Developer options, switch on Wireless debugging.")
-            PrimaryButton("Open Developer options", onClick = debounced(env::openDeveloperOptions))
+        3 -> Page(3, stringResource(R.string.setup_wifi_title)) {
+            Body(stringResource(R.string.setup_wifi_body))
+            PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
             FailWhenStuck(::fail)
@@ -176,13 +180,13 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             }
             val lifecycle = LocalLifecycleOwner.current.lifecycle
             LaunchedEffect(attempt) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(NoProgressMs); stalled = true; fail() } }
-            val problem = if (denied) reason ?: "The TV did not allow this app." else if (stalled) "No answer from the TV yet." else null
-            Page(5, "Allow this app.") {
-                Body("Your TV will ask to allow debugging. Choose Always allow from this computer.")
+            val problem = if (denied) reason ?: stringResource(R.string.setup_reason_not_allowed) else if (stalled) stringResource(R.string.setup_no_answer) else null
+            Page(5, stringResource(R.string.setup_allow_title)) {
+                Body(stringResource(R.string.setup_allow_body))
                 if (problem != null) {
                     Body(problem)
-                    PrimaryButton("Retry") { env.reconnect(); denied = false; stalled = false; sawConnecting = false; attempt++ }
-                } else StatusPill(if (conn == ConnectionState.Connecting) "Connecting" else "Waiting for you", Tone.Info)
+                    PrimaryButton(stringResource(R.string.common_retry)) { env.reconnect(); denied = false; stalled = false; sawConnecting = false; attempt++ }
+                } else StatusPill(stringResource(if (conn == ConnectionState.Connecting) R.string.setup_connecting else R.string.setup_waiting_for_you), Tone.Info)
                 helpOffer?.let { ShowMeHow(it, grab = problem == null) }
                 AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
             }
@@ -190,18 +194,15 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
         6 -> AppPicker(apps, picked, onContinue = { step = 7 })
         else -> {
             val chosen = apps.filter { it.packageName in picked }
-            val name = chosen.firstOrNull()?.label ?: "Your apps"
+            val name = chosen.firstOrNull()?.label ?: stringResource(R.string.setup_your_apps)
             val others = chosen.size - 1
-            val subject = when {
-                others <= 0 -> name
-                else -> "$name and $others other${if (others == 1) "" else "s"}"
-            }
+            val subject = if (others <= 0) name else pluralStringResource(R.plurals.setup_subject_others, others, name, others)
             val finish = { now: Boolean -> scope.launch { deps.onFinish(picked.toList(), now); onBack() }; Unit }
-            Page(null, "Setup is done.") {
-                Body("$subject will be optimized when nothing is playing. It takes a minute or two each.")
+            Page(null, stringResource(R.string.setup_done_title)) {
+                Body(stringResource(R.string.setup_done_body, subject))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                    PrimaryButton("Optimize now") { finish(true) }
-                    Button(onClick = { finish(false) }) { Text("Done".uppercase()) }
+                    PrimaryButton(stringResource(R.string.setup_optimize_now)) { finish(true) }
+                    Button(onClick = { finish(false) }) { Text(stringResource(R.string.common_done).upper()) }
                 }
             }
         }
@@ -243,18 +244,18 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     if (repair) return QuickRepairScreen(onBack, deps)
     if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3) { help = false } }
     CompositionLocalProvider(LocalPageBack provides onBack) {
-        Page(null, "Reconnect") {
+        Page(null, stringResource(R.string.setup_reconnect_title)) {
             if (stuck) {
-                Body(reason ?: if (env.wirelessDebuggingOn()) "The TV did not answer in time." else "Wireless debugging is off.")
+                Body(reason ?: stringResource(if (env.wirelessDebuggingOn()) R.string.setup_reason_timeout else R.string.setup_reason_debugging_off))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                    PrimaryButton("Try again") { attempt++ }
-                    Button(onClick = { repair = true }) { Text("Pair again".uppercase()) }
+                    PrimaryButton(stringResource(R.string.setup_try_again)) { attempt++ }
+                    Button(onClick = { repair = true }) { Text(stringResource(R.string.setup_pair_again).upper()) }
                     ShowMeHow({ help = true })
                 }
             } else {
-                Body("Turn Wireless debugging back on and this app reconnects by itself.")
-                if (waiting) StatusPill("Connecting", Tone.Info)
-                else PrimaryButton("Open Developer options", onClick = debounced(env::openDeveloperOptions))
+                Body(stringResource(R.string.setup_reconnect_body))
+                if (waiting) StatusPill(stringResource(R.string.setup_connecting), Tone.Info)
+                else PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
             }
         }
     }
@@ -296,14 +297,14 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
             lifecycle.awaitStarted(); deps.env.startPairing()
         }
     }
-    Page(4, "Use your phone.", side = {
-        PixelText("Scan me", color = LocalSpeedColors.current.accent, size = 36.sp)
+    Page(4, stringResource(R.string.setup_pair_title), side = {
+        PixelText(stringResource(R.string.setup_scan_me), color = LocalSpeedColors.current.accent, size = 36.sp)
         Column(Modifier.background(Color(Cabinet.BLUE)).padding(Space.x2)) {
             QrCard {
                 val u = url
                 if (u != null) {
                     val bitmap = remember(u) { qrImageBitmap(u) }
-                    Image(bitmap, "QR code for the pairing page", Modifier.size(180.dp))
+                    Image(bitmap, stringResource(R.string.setup_qr_pair), Modifier.size(180.dp))
                 } else Box(Modifier.size(180.dp))
             }
         }
@@ -314,10 +315,10 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
             for (c in listOf(Cabinet.ORANGE, Cabinet.LOGO, Cabinet.BLUE)) Box(Modifier.size(14.dp).background(Color(c)))
         }
     }) {
-        Body("On your phone, scan this code and keep the page open. It asks for 6 digits.")
-        Body("On the TV, open Wireless debugging and choose Pair device with pairing code.")
-        PrimaryButton("Open Developer options", onClick = debounced(deps.env::openDeveloperOptions))
-        Text(url ?: "Starting...", style = MonoStyle, color = LocalSpeedColors.current.accent)
+        Body(stringResource(R.string.setup_pair_body_phone))
+        Body(stringResource(R.string.setup_pair_body_tv))
+        PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(deps.env::openDeveloperOptions))
+        Text(url ?: stringResource(R.string.setup_starting), style = MonoStyle, color = LocalSpeedColors.current.accent)
         Waiting()
         helpOffer?.let { ShowMeHow(it) }
     }
@@ -328,8 +329,8 @@ private suspend fun Lifecycle.awaitStarted() { currentStateFlow.first { it.isAtL
 @Composable
 private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onContinue: () -> Unit) {
     val firstRow = remember { FocusRequester() }
-    Page(6, "Pick apps to optimize.") {
-        if (apps.isEmpty()) Body("No apps found.")
+    Page(6, stringResource(R.string.setup_pick_title)) {
+        if (apps.isEmpty()) Body(stringResource(R.string.setup_no_apps))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(apps.size, key = { apps[it].packageName }) { i ->
                 val app = apps[i]
@@ -341,28 +342,30 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
                         .semantics { role = Role.Checkbox; toggleableState = ToggleableState(on) },
                     subtitle = app.packageName,
                     onClick = { if (on) picked.remove(app.packageName) else picked.add(app.packageName) },
-                ) { if (on) StatusPill("Selected", Tone.Ok) else StatusPill("Not selected", Tone.Neutral) }
+                ) { if (on) StatusPill(stringResource(R.string.setup_selected), Tone.Ok) else StatusPill(stringResource(R.string.setup_not_selected), Tone.Neutral) }
             }
         }
-        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue (${picked.size} selected)".uppercase()) }
+        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text(pluralStringResource(R.plurals.setup_continue, picked.size, picked.size).upper()) }
     }
 }
 
 @Composable
 private fun HelpPage(step: Int, onClose: () -> Unit) {
-    val text = when (step) {
-        2 -> "Open Settings, go to System, then About. Find the line named Build and press OK on it 7 times. A message says you are now a developer."
-        3 -> "In Developer options, scroll to Wireless debugging and switch it on. If the TV asks about Wi-Fi, choose Allow."
-        4 -> "Keep the phone on the same Wi-Fi as the TV. If the QR will not scan, type the short address into the phone's browser. If the TV's pairing code times out, open Pair device with pairing code again."
-        else -> "Choose Always allow from this computer on the TV's prompt, then OK. If no prompt appears, switch Wireless debugging off and on again."
-    }
-    Page(null, "Show me how") {
+    val text = stringResource(
+        when (step) {
+            2 -> R.string.setup_help_settings
+            3 -> R.string.setup_help_wireless
+            4 -> R.string.setup_help_pair
+            else -> R.string.setup_help_allow
+        },
+    )
+    Page(null, stringResource(R.string.setup_show_me_how)) {
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Space.x4), verticalAlignment = Alignment.CenterVertically) {
-            QrCard { Image(remember { qrImageBitmap(HelpUrl) }, "QR code for the help page", Modifier.size(180.dp)) }
+            QrCard { Image(remember { qrImageBitmap(HelpUrl) }, stringResource(R.string.setup_qr_help), Modifier.size(180.dp)) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
                 Body(text)
                 Text(HelpUrl, style = MonoStyle, color = LocalSpeedColors.current.accent)
-                PrimaryButton("Back", onClick = onClose)
+                PrimaryButton(stringResource(R.string.common_back), onClick = onClose)
             }
         }
     }
@@ -391,10 +394,10 @@ private fun Page(
     val c = LocalSpeedColors.current
     RoomBackdrop {
         Column(Modifier.fillMaxSize().padding(horizontal = Space.x4, vertical = Space.x1), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
-            Marquee("Setup", compact = true, onBack = LocalPageBack.current, trailing = step?.let {
+            Marquee(stringResource(R.string.setup_title), compact = true, onBack = LocalPageBack.current, trailing = step?.let {
                 {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                        PixelText("Step ${it - 1} of $Total", color = c.accent)
+                        PixelText(stringResource(R.string.setup_step_of, it - 1, Total), color = c.accent)
                         StageMeter(it - 1, Total)
                     }
                 }
@@ -435,16 +438,17 @@ private fun debounced(onClick: () -> Unit): () -> Unit {
 private fun Waiting() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
         Lamp(LocalSpeedColors.current.accent, waiting = true)
-        PixelText("Waiting for you...", color = LocalSpeedColors.current.accent)
+        PixelText(stringResource(R.string.setup_waiting_dots), color = LocalSpeedColors.current.accent)
     }
 }
 
 @Composable
 // grab only where it is the page's sole action; otherwise the step's main button keeps initial focus.
 private fun ShowMeHow(onClick: () -> Unit, grab: Boolean = false) =
-    if (grab) PrimaryButton("Show me how", Color(Cabinet.BLUE), Color(Cabinet.CREAM), onClick)
+    if (grab) PrimaryButton(stringResource(R.string.setup_show_me_how), Color(Cabinet.BLUE), Color(Cabinet.CREAM), onClick)
     else ArcadeButton(onClick, fill = Color(Cabinet.BLUE), contentColor = Color(Cabinet.CREAM)) {
-        Text("Show me how".uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString("Show me how") })
+        val label = stringResource(R.string.setup_show_me_how)
+        Text(label.upper(), Modifier.clearAndSetSemantics { text = AnnotatedString(label) })
     }
 
 @Composable
@@ -455,6 +459,6 @@ private fun PrimaryButton(label: String, fill: Color = Color.Unspecified, ink: C
     LaunchedEffect(Unit) { focusManager.clearFocus(); focus.requestFocus() }
     // Shown uppercase; the semantics keep the original string so text matchers outside this screen still find it.
     ArcadeButton(onClick, Modifier.focusRequester(focus), fill = fill, contentColor = ink) {
-        Text(label.uppercase(), Modifier.clearAndSetSemantics { text = AnnotatedString(label) })
+        Text(label.upper(), Modifier.clearAndSetSemantics { text = AnnotatedString(label) })
     }
 }

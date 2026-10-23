@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import dev.speedcompiler.tv.adb.Pairing
 import dev.speedcompiler.tv.engine.FakeClock
 import dev.speedcompiler.tv.web.PairingSession
@@ -19,7 +21,12 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.ConscryptMode
 
+@RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 class PairingTest {
     private val clock = FakeClock(1_000L)
     private var server: PairingWebServer? = null
@@ -72,7 +79,7 @@ class PairingTest {
     }
 
     private fun start(p: Pairing, discovered: Int? = 4242, finished: () -> Unit = {}): PairingWebServer {
-        val s = PairingWebServer(PairingSession(clock), p, { "<tv-ip>" }, { discovered }, finished)
+        val s = PairingWebServer(ApplicationProvider.getApplicationContext<Context>().resources, PairingSession(clock), p, { "<tv-ip>" }, { discovered }, finished)
         s.start()
         server = s
         return s

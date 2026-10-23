@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.home
 
+import dev.speedcompiler.tv.theme.upper
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,10 +24,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.SettingsValues
@@ -90,25 +95,26 @@ fun HomeScreen(go: (String) -> Unit) {
 fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()) {
     val waiting = s.queue.count { it.state != QueueState.RUNNING }
     val mem = rememberFocusMemory(if (!s.setupDone || s.connection == ConnectionState.Disconnected || s.connection == ConnectionState.Unpaired) "status" else "apps")
-    val onOff = if (s.autoOn) "Auto-optimize is on" else "Auto-optimize is off"
+    val res = LocalResources.current
+    val onOff = stringResource(if (s.autoOn) R.string.home_auto_on else R.string.home_auto_off)
     val online = s.setupDone && (s.connection == ConnectionState.Connected || s.connection == ConnectionState.Connecting)
-    val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(it.eta, now, zone).ifEmpty { null } }.orEmpty()
-    val batch = aggregateLine(batchDone(s.queue, s.history), s.queue)
+    val next = s.queue.filter { it.state != QueueState.RUNNING }.firstNotNullOfOrNull { etaText(res, it.eta, now, zone).ifEmpty { null } }.orEmpty()
+    val batch = aggregateLine(res, batchDone(s.queue, s.history), s.queue)
     val queueLine = when {
-        waiting == 0 -> batch ?: "Nothing waiting"
-        next.isEmpty() -> "$waiting waiting"
-        else -> "$waiting waiting · next: $next"
-    }.let { if (batch == null || waiting == 0) it else "$it · $batch" }
+        waiting == 0 -> batch ?: stringResource(R.string.home_nothing_waiting)
+        next.isEmpty() -> pluralStringResource(R.plurals.home_waiting_count, waiting, waiting)
+        else -> pluralStringResource(R.plurals.home_waiting_next, waiting, waiting, next)
+    }.let { if (batch == null || waiting == 0) it else stringResource(R.string.common_join, it, batch) }
     // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
     val (title, subtitle) = when {
         !s.loaded -> "" to null
-        !s.setupDone -> "Not set up yet" to null
-        s.connection == ConnectionState.Disconnected -> "Disconnected" to if (waiting == 0) "Nothing waiting" else "$waiting waiting"
-        s.connection == ConnectionState.Unpaired -> "Not paired" to "The TV forgot this app. Approve it again."
+        !s.setupDone -> stringResource(R.string.home_not_set_up) to null
+        s.connection == ConnectionState.Disconnected -> stringResource(R.string.home_disconnected) to if (waiting == 0) stringResource(R.string.home_nothing_waiting) else pluralStringResource(R.plurals.home_waiting_count, waiting, waiting)
+        s.connection == ConnectionState.Unpaired -> stringResource(R.string.home_not_paired) to stringResource(R.string.home_forgot_subtitle)
         else -> onOff to queueLine
     }
-    val action = if (!s.loaded) null else if (!s.setupDone) "Set up" else when (s.connection) {
-        ConnectionState.Disconnected, ConnectionState.Unpaired -> FIX_LABEL
+    val action = if (!s.loaded) null else if (!s.setupDone) stringResource(R.string.home_set_up) else when (s.connection) {
+        ConnectionState.Disconnected, ConnectionState.Unpaired -> stringResource(R.string.common_fix_connection)
         else -> null
     }
     RoomBackdrop {
@@ -117,10 +123,10 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 if (action != null) Button(
                     { go(if (!s.setupDone) Routes.Setup else fixRoute(if (s.connection == ConnectionState.Unpaired) Fix.QuickRepair else Fix.Retry)) },
                     Modifier.remembersFocus(mem, "status"),
-                ) { Text(action.uppercase()) }
+                ) { Text(action.upper()) }
                 else if (s.loaded && online) {
                     val connected = s.connection == ConnectionState.Connected
-                    StatusChip(if (connected) "Connected" else "Connecting", if (connected) Tone.Ok else Tone.Info)
+                    StatusChip(stringResource(if (connected) R.string.home_connected else R.string.home_connecting), if (connected) Tone.Ok else Tone.Info)
                 }
             })
             if (s.watched.isNotEmpty()) LazyRow(
@@ -130,31 +136,31 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 items(s.watched, key = { it.packageName }) { app ->
                     val look = s.look(app.packageName)
                     val result = appResult(app, s.queue)
-                    BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), result?.label ?: "Not optimized yet", { go(Routes.appDetail(app.packageName)) }, result?.tone ?: Tone.Neutral) {
+                    BannerCard(look.label, Modifier.width(200.dp).remembersFocus(mem, app.packageName), result?.let { stringResource(it.label) } ?: stringResource(R.string.home_not_optimized), { go(Routes.appDetail(app.packageName)) }, result?.tone ?: Tone.Neutral) {
                         look.banner?.let { Cartridge { Image(it, null, Modifier.size(64.dp, 36.dp)) } }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                 if (s.events.isNotEmpty()) ScoreTable(
-                    "Recent activity",
+                    stringResource(R.string.home_recent_activity),
                     s.events.take(2).map { e ->
                         val (word, tone) = when {
-                            "fail" in e.kind -> "Failed" to Tone.Error
-                            "verified" in e.kind -> "Optimized" to Tone.Ok
-                            else -> "Note" to Tone.Neutral
+                            "fail" in e.kind -> stringResource(R.string.home_failed) to Tone.Error
+                            "verified" in e.kind -> stringResource(R.string.home_optimized) to Tone.Ok
+                            else -> stringResource(R.string.home_note) to Tone.Neutral
                         }
-                        ScoreRow(clockText(e.timeMillis, zone), e.packageName?.let { s.look(it).label } ?: e.message, word, tone)
+                        ScoreRow(clockText(e.timeMillis, zone), e.packageName?.let { s.look(it).label } ?: storedText(LocalResources.current, e.message), word, tone)
                     },
                     Modifier.weight(1f),
                 ) else Spacer(Modifier.weight(1f))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                        HomeButton("Apps", Cabinet.BLUE, mem, "apps") { go(Routes.Apps) }
-                        HomeButton("Activity", Cabinet.ORANGE, mem, "activity") { go(Routes.Activity) }
+                        HomeButton(stringResource(R.string.nav_apps), Cabinet.BLUE, mem, "apps") { go(Routes.Apps) }
+                        HomeButton(stringResource(R.string.nav_activity), Cabinet.ORANGE, mem, "activity") { go(Routes.Activity) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                        HomeButton("Settings", Cabinet.PLUM, mem, "settings") { go(Routes.Settings) }
+                        HomeButton(stringResource(R.string.nav_settings), Cabinet.PLUM, mem, "settings") { go(Routes.Settings) }
                         Spacer(Modifier.weight(1f))
                     }
                 }
