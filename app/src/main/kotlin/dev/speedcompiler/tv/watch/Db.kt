@@ -73,6 +73,10 @@ interface QueueDao {
     @Query("SELECT * FROM queue_item WHERE packageName = :packageName AND state IN ('QUEUED', 'WAITING_GATE', 'RUNNING') LIMIT 1")
     suspend fun activeFor(packageName: String): QueueItem?
 
+    /** Drops finished rows that ended before [before]. */
+    @Query("DELETE FROM queue_item WHERE state IN ('DONE', 'FAILED', 'SKIPPED') AND finishedAt < :before")
+    suspend fun pruneFinished(before: Long)
+
     @Query("SELECT * FROM queue_item WHERE id = :id")
     suspend fun get(id: Long): QueueItem?
 
@@ -116,6 +120,9 @@ interface EventDao {
 
     @Insert
     suspend fun insert(event: Event)
+
+    @Query("DELETE FROM event WHERE timeMillis < :before")
+    suspend fun pruneBefore(before: Long)
 }
 
 @Dao

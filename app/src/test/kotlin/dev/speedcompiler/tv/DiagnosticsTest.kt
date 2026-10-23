@@ -11,6 +11,7 @@ import dev.speedcompiler.tv.web.DiagnosticsServer
 import dev.speedcompiler.tv.web.PairingSession
 import dev.speedcompiler.tv.web.buildCappedJson
 import dev.speedcompiler.tv.web.buildDiagnosticsJson
+import dev.speedcompiler.tv.web.scrub
 import java.net.HttpURLConnection
 import java.net.URL
 import org.junit.After
@@ -53,6 +54,15 @@ class DiagnosticsTest {
         }
         assertTrue(out.contains("lost the connection"))
         assertTrue(out.contains("com.example.app"))
+    }
+
+    @Test fun scrubHandlesMacsClockTimesAndNames() {
+        val out = scrub(
+            "mac AA-BB-CC-DD-EE-FF and aa:bb:cc:dd:ee:ff finished at 12:30:45 or 9:05, ssid \"HomeNet\" " +
+                "build google/codename/codename:14/AP1A/1234:user/release-keys on port 5555 host:7777 pkg com.example.app",
+        )!!
+        for (secret in listOf("AA-BB", "aa:bb", "HomeNet", "codename", "5555", "7777")) assertFalse("leaked $secret in $out", out.contains(secret))
+        assertTrue(out, out.contains("12:30:45") && out.contains("9:05") && out.contains("com.example.app"))
     }
 
     @Test fun cappedJsonTrimsOldEventsAndSaysSo() {

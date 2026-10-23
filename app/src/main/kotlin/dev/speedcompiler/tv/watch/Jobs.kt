@@ -20,7 +20,9 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -31,6 +33,7 @@ private const val KEY_BUILD = "build_fingerprint"
 private const val KEY_PACKAGE = "package"
 private const val RETRY_DELAY_HOURS = 6L
 private const val MAX_CONNECTION_TRIES = 5
+private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(90)
 
 private val Context.graph get() = (applicationContext as SpeedApp).graph
 
@@ -79,6 +82,9 @@ suspend fun runDetect(g: AppGraph) {
 
 /** Queues every auto-optimized app the TV no longer reports at `speed`. */
 suspend fun runVerify(g: AppGraph) {
+    val cutoff = g.clock.nowMillis() - RETENTION_MILLIS
+    g.database.events().pruneBefore(cutoff)
+    g.database.queue().pruneFinished(cutoff)
     val installed = g.packageSystem.installed().map { it.packageName }.toSet()
     for (app in g.database.watchedApps().list()) {
         if (!app.autoOptimize || app.packageName !in installed) continue
@@ -170,6 +176,11 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
     private suspend fun run(g: AppGraph, id: Long): Result = try {
         runItem(g, id)
     } catch (e: CancellationException) {
+        // Android stopped the worker mid-compile: WorkManager reruns it later, so the row must not claim RUNNING meanwhile.
+        withContext(NonCancellable) {
+            val dao = g.database.queue()
+            dao.get(id)?.takeIf { it.state == QueueState.RUNNING }?.let { dao.update(it.copy(state = QueueState.QUEUED, startedAt = null)) }
+        }
         throw e
     } catch (e: Exception) {
         val dao = g.database.queue()

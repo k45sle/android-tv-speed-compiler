@@ -29,9 +29,12 @@ data class DiagnosticsInput(
 
 private val SECRET_PATTERNS = listOf(
     Regex("-----BEGIN[\\s\\S]*?(-----END[^-]*-----|$)"), // key material
+    Regex("[\\w.-]+/[\\w.-]+/[\\w.-]+:\\S*-keys"), // build fingerprint (carries the device codename)
+    Regex("(?i)\\bssid\\s*[:=]?\\s*(\"[^\"]*\"|'[^']*'|\\S+)"), // network name after the word SSID
+    Regex("\\b[0-9A-Fa-f]{2}([:-])([0-9A-Fa-f]{2}\\1){4}[0-9A-Fa-f]{2}\\b"), // MAC with colons or dashes
     Regex("\\S+@\\S+"), // adb public key tail (user@host)
     Regex("\\b\\d{1,3}(\\.\\d{1,3}){3}(:\\d{1,5})?\\b"), // IPv4 with optional port
-    Regex("(?<![\\w:])([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}"), // IPv6 (also eats MACs and clock-like times)
+    Regex("(?<![\\w:])([0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?<![\\w:])([0-9A-Fa-f]{1,4}:){0,6}:([0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{0,4}"), // IPv6: eight groups or a "::"
     Regex("\\b[\\w-]+\\.local\\b"), // mDNS host
     Regex("\\bemulator-\\d+"),
     Regex("(?i)\\bport\\s*:?\\s*\\d{1,5}\\b"),
@@ -46,10 +49,17 @@ private val SECRET_PATTERNS = listOf(
  * [known] are exact strings (for example the device name) replaced verbatim first.
  */
 fun scrub(text: String?, known: List<String> = emptyList()): String? = text?.let {
-    SECRET_PATTERNS.fold(known.filter(String::isNotBlank).fold(it) { s, k -> s.replace(k, "[removed]") }) { s, r ->
-        s.replace(r, "[removed]")
+    // Clock times are set aside first: the port pattern would otherwise eat ":30" from "12:30:45".
+    val times = mutableListOf<String>()
+    val masked = TIME.replace(known.filter(String::isNotBlank).fold(it) { s, k -> s.replace(k, "[removed]") }) { m ->
+        times += m.value
+        "\u0001${times.size - 1}\u0001"
     }
+    val clean = SECRET_PATTERNS.fold(masked) { s, r -> s.replace(r, "[removed]") }
+    Regex("\u0001(\\d+)\u0001").replace(clean) { times[it.groupValues[1].toInt()] }
 }
+
+private val TIME = Regex("(?<![\\w.:])([01]?\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?(?![\\w:])")
 
 private fun item(i: QueueItem, k: List<String>) = JSONObject()
     .put("package", i.packageName).put("source", i.source.name).put("state", i.state.name)

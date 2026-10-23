@@ -93,8 +93,17 @@ class SchedulingTest {
 
     private suspend fun state(id: Long) = g.database.queue().get(id)!!.state
 
+    /** Expedited jobs have no delay to skip, but the test driver starts with the storage constraint unmet. */
+    private suspend fun optimizeNow(pkg: String) {
+        g.scheduler.optimizeNow(pkg)
+        infos(pkg).filter { !it.state.isFinished }.forEach { driver.setAllConstraintsMet(it.id) }
+    }
+
     /** Skips the 5 minute debounce of the newest job for [pkg]. */
-    private fun skipDelay(pkg: String) = driver.setInitialDelayMet(infos(pkg).last { !it.state.isFinished }.id)
+    private fun skipDelay(pkg: String) = infos(pkg).last { !it.state.isFinished }.id.let {
+        driver.setInitialDelayMet(it)
+        driver.setAllConstraintsMet(it) // the storage constraint is unmet by default in the test driver
+    }
 
     @Test fun twoUpdatesProduceOneCompile() = runBlocking {
         g.scheduler.enqueue("a", QueueSource.AUTO)
@@ -152,6 +161,7 @@ class SchedulingTest {
         assertEquals(1, backedOff.runAttemptCount) // gate still closed: left in its backoff
         gate.status = GateStatus.Open
         runDetect(g)
+        driver.setAllConstraintsMet(infos("a").single().id)
         await("done") { state(1) == QueueState.DONE }
         val fresh = infos("a").single() // REPLACE dropped the backed-off request
         assertTrue(fresh.id != backedOff.id)
@@ -189,6 +199,39 @@ class SchedulingTest {
         assertEquals(listOf("a"), optimizer.optimized)
     }
 
+    @Test fun weeklyVerifyPrunesOldEventsAndFinishedRows() = runBlocking {
+        val day = 24L * 60 * 60 * 1000
+        (g.clock as FakeClock).now = 200 * day
+        val events = g.database.events()
+        events.insert(dev.speedcompiler.tv.watch.Event(timeMillis = 10 * day, packageName = null, kind = "old", message = "m"))
+        events.insert(dev.speedcompiler.tv.watch.Event(timeMillis = 190 * day, packageName = null, kind = "new", message = "m"))
+        val q = g.database.queue()
+        fun row(state: QueueState, finished: Long?) = dev.speedcompiler.tv.watch.QueueItem(
+            packageName = "a", source = QueueSource.AUTO, state = state, enqueuedAt = 1, finishedAt = finished,
+        )
+        q.insert(row(QueueState.DONE, 10 * day))
+        q.insert(row(QueueState.DONE, 190 * day))
+        q.insert(row(QueueState.QUEUED, null))
+        runVerify(g)
+        assertEquals(listOf("new"), g.database.events().recent(10).first().map { it.kind })
+        assertEquals(listOf(2L, 3L), (q.history().first() + q.activeNow()).map { it.id }.sorted())
+    }
+
+    @Test fun optimizeWorkRequiresStorageNotLow() = runBlocking {
+        g.scheduler.enqueue("a")
+        assertTrue(infos("a").single().constraints.requiresStorageNotLow())
+    }
+
+    @Test fun aStoppedWorkerDoesNotLeaveTheRowRunning() = runBlocking {
+        optimizer.before = { CompletableDeferred<Unit>().await() }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("running") { state(1) == QueueState.RUNNING }
+        wm.cancelUniqueWork(workName("a")).result.get() // what Android does when constraints are lost
+        await("reset") { state(1) == QueueState.QUEUED }
+        assertEquals(null, g.database.queue().get(1)!!.startedAt)
+    }
+
     @Test fun weeklyVerifyRequeuesADowngradedApp() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         g.database.watchedApps().upsert(WatchedApp("b", "1"))
@@ -203,17 +246,18 @@ class SchedulingTest {
         g.scheduler.enqueue("a", QueueSource.AUTO)
         skipDelay("a")
         await("paused") { g.database.queue().get(1)!!.failureReason == "Paused" }
-        g.scheduler.optimizeNow("b")
+        optimizeNow("b")
         await("b done") { state(2) == QueueState.DONE }
         assertEquals(listOf("b"), optimizer.optimized)
     }
 
     @Test fun aFailedJobCanBeRetried() = runBlocking {
         optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")
-        g.scheduler.optimizeNow("a")
+        optimizeNow("a")
         await("failed") { state(1) == QueueState.FAILED }
         assertEquals("nope", g.scheduler.history.first().single().failureReason)
         g.scheduler.retry(1)
+        infos("a").filter { !it.state.isFinished }.forEach { driver.setAllConstraintsMet(it.id) }
         await("second run") { optimizer.optimized.size == 2 }
     }
 
@@ -250,7 +294,7 @@ class SchedulingTest {
         await("a compiling") { state(1) == QueueState.RUNNING }
         g.scheduler.enqueue("b", QueueSource.AUTO)
         skipDelay("b")
-        g.scheduler.optimizeNow("c")
+        optimizeNow("c")
         delay(300) // let b and c reach the lock
         release.complete(Unit)
         await("all done") { state(1) == QueueState.DONE && state(2) == QueueState.DONE && state(3) == QueueState.DONE }
@@ -265,7 +309,7 @@ class SchedulingTest {
     @Test fun anUpdateDuringTheCompileStillDiffersAfterwards() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         optimizer.before = { system.apps["a"] = "2" }
-        g.scheduler.optimizeNow("a")
+        optimizeNow("a")
         await("done") { state(1) == QueueState.DONE }
         assertEquals("1", g.database.watchedApps().get("a")!!.fingerprint) // the pre-compile value
         runDetect(g)
@@ -344,7 +388,7 @@ class SchedulingTest {
     @Test fun anExceptionInTheRunMarksTheRowFailed() = runBlocking {
         g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("lost:a", "3"))
         optimizer.before = { throw IllegalStateException("boom") }
-        g.scheduler.optimizeNow("a")
+        optimizeNow("a")
         await("failed") { state(1) == QueueState.FAILED }
         assertTrue(g.database.queue().get(1)!!.failureReason!!.contains("IllegalStateException"))
         assertEquals("0", g.database.syncState().get("lost:a"))
@@ -353,7 +397,7 @@ class SchedulingTest {
     @Test fun recordingAResultKeepsAConcurrentAutoOptimizeToggle() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         optimizer.before = { g.database.watchedApps().setAutoOptimize("a", false) } // the user flips it mid-compile
-        g.scheduler.optimizeNow("a")
+        optimizeNow("a")
         await("done") { state(1) == QueueState.DONE }
         val app = g.database.watchedApps().get("a")!!
         assertFalse(app.autoOptimize)

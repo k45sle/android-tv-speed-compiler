@@ -2,6 +2,7 @@ package dev.speedcompiler.tv.watch
 
 import android.content.Context
 import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
@@ -133,6 +134,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private fun schedule(item: QueueItem, debounce: Boolean = true) {
         val request = OneTimeWorkRequestBuilder<OptimizeWorker>()
             .setInputData(workDataOf(KEY_ITEM_ID to item.id))
+            .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, BACKOFF_MINUTES, TimeUnit.MINUTES)
         if (item.runNow) request.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
         else if (debounce) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)

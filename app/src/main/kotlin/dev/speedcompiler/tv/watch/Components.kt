@@ -24,15 +24,18 @@ class PairingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val nm = getSystemService(android.app.NotificationManager::class.java)
-        nm.createNotificationChannel(
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(
             android.app.NotificationChannel(CHANNEL, "Pairing", android.app.NotificationManager.IMPORTANCE_LOW),
         )
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(
             1,
             android.app.Notification.Builder(this, CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setSmallIcon(dev.speedcompiler.tv.R.drawable.ic_stat_pairing)
                 .setContentTitle("Pairing in progress")
                 .build(),
         )
@@ -46,7 +49,12 @@ class PairingService : Service() {
                 pairingPort = { d.port },
                 onFinished = { stopSelf() },
             )
-            s.start()
+            try {
+                bind(s)
+            } catch (e: java.io.IOException) { // no socket to serve the page on
+                stopSelf()
+                return START_NOT_STICKY
+            }
             d.start()
             discovery = d
             server = s
@@ -65,6 +73,9 @@ class PairingService : Service() {
 
     companion object {
         private const val CHANNEL = "pairing"
+
+        /** Seam for tests: starts the web server. */
+        internal var bind: (dev.speedcompiler.tv.web.PairingWebServer) -> Unit = { it.start() }
 
         /** Page URL while pairing is running, else null. */
         val url = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
