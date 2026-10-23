@@ -19,6 +19,8 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.performScrollTo
 import com.github.takahirom.roborazzi.captureRoboImage
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.GateMode
@@ -107,9 +109,9 @@ class SettingsScreenTest : ComposeTestBase() {
             gone.clear()
             rule.waitForIdle()
             rule.onNodeWithText("Not connected", ignoreCase = true).assertExists()
-            rule.onNodeWithText(fixText(fix)).assertExists()
+            rule.onNodeWithText(fixText(ApplicationProvider.getApplicationContext<Context>().resources, fix)).assertExists()
             if (fix == Fix.QuickRepair) {
-                rule.onNodeWithText(fixText(fix)).performScrollTo()
+                rule.onNodeWithText(fixText(ApplicationProvider.getApplicationContext<Context>().resources, fix)).performScrollTo()
                 rule.onRoot().captureRoboImage("build/outputs/roborazzi/settings_failed.png")
             }
             click("Fix connection")

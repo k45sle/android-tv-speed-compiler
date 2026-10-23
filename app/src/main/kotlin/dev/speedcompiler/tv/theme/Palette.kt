@@ -1,25 +1,27 @@
 package dev.speedcompiler.tv.theme
 
+import androidx.annotation.StringRes
+import dev.speedcompiler.tv.R
 import com.materialkolor.hct.Hct
 import kotlin.math.max
 import kotlin.math.pow
 
 /** [dark] and [light] are fixed palettes; when absent both are derived from [seed]. */
-class Preset(val name: String, val seed: Int, private val dark: Palette? = null, private val light: Palette? = null) {
+class Preset(val name: String, @StringRes val label: Int, val seed: Int, private val dark: Palette? = null, private val light: Palette? = null) {
     fun palette(isDark: Boolean): Palette = (if (isDark) dark else light) ?: buildPalette(seed, isDark)
 }
 
 val Presets = listOf(
-    Preset("Retro", Retro.GOLD, Retro.Dark, Retro.Light),
-    Preset("Retro neon", Retro.NeonDark.accent, Retro.NeonDark, Retro.NeonLight),
-    Preset("Phthalo green", 0xFF123524.toInt()),
-    Preset("Ink indigo", 0xFF262C6B.toInt()),
-    Preset("Kiln clay", 0xFF6E2E14.toInt()),
-    Preset("Amber ochre", 0xFF8A5A00.toInt()),
-    Preset("Plum", 0xFF5B2A6E.toInt()),
-    Preset("Lagoon teal", 0xFF0F5257.toInt()),
-    Preset("Rose madder", 0xFF8C2F4B.toInt()),
-    Preset("Slate steel", 0xFF3A4A5E.toInt()),
+    Preset("Retro", R.string.preset_retro, Retro.GOLD, Retro.Dark, Retro.Light),
+    Preset("Retro neon", R.string.preset_retro_neon, Retro.NeonDark.accent, Retro.NeonDark, Retro.NeonLight),
+    Preset("Phthalo green", R.string.preset_phthalo_green, 0xFF123524.toInt()),
+    Preset("Ink indigo", R.string.preset_ink_indigo, 0xFF262C6B.toInt()),
+    Preset("Kiln clay", R.string.preset_kiln_clay, 0xFF6E2E14.toInt()),
+    Preset("Amber ochre", R.string.preset_amber_ochre, 0xFF8A5A00.toInt()),
+    Preset("Plum", R.string.preset_plum, 0xFF5B2A6E.toInt()),
+    Preset("Lagoon teal", R.string.preset_lagoon_teal, 0xFF0F5257.toInt()),
+    Preset("Rose madder", R.string.preset_rose_madder, 0xFF8C2F4B.toInt()),
+    Preset("Slate steel", R.string.preset_slate_steel, 0xFF3A4A5E.toInt()),
 )
 
 /** Colors as ARGB ints so the contrast math is testable without Compose. */

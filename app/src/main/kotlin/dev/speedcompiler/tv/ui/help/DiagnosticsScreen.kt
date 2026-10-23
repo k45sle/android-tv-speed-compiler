@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.help
 
+import androidx.compose.ui.platform.LocalResources
+import dev.speedcompiler.tv.theme.upper
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -47,6 +49,8 @@ import dev.speedcompiler.tv.theme.QrCard
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.web.DiagnosticsInput
+import dev.speedcompiler.tv.R
+import androidx.compose.ui.res.stringResource
 import dev.speedcompiler.tv.web.DiagnosticsServer
 import dev.speedcompiler.tv.web.PairingSession
 import dev.speedcompiler.tv.web.buildCappedJson
@@ -81,6 +85,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val graph = rememberGraph()
     val context = LocalContext.current
+    val res = LocalResources.current
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -92,7 +97,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
 
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
-        Marquee("Diagnostics", compact = true, onBack = onBack)
+        Marquee(stringResource(R.string.diag_title), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
         Column(
             Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline)
@@ -101,14 +106,14 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
-        PixelText("Send a report", color = LocalSpeedColors.current.accent, size = 36.sp)
+        PixelText(stringResource(R.string.diag_send_title), color = LocalSpeedColors.current.accent, size = 36.sp)
         Text(
-            "Settings, queue and recent events. It has no keys, codes or addresses.",
+            stringResource(R.string.diag_send_body),
             style = MaterialTheme.typography.bodyMedium,
         )
         ArcadeButton(
             onClick = {
-                note = "Preparing…"
+                note = res.getString(R.string.diag_preparing)
                 scope.launch {
                     val json = buildCappedJson(collect(graph, version), deviceNames(context), SHARE_MAX_CHARS)
                     note = null
@@ -116,16 +121,16 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                         context.startActivity(
                             Intent.createChooser(
                                 Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, json),
-                                "Share diagnostics",
+                                res.getString(R.string.diag_share_diagnostics),
                             ),
                         )
                     } catch (_: RuntimeException) { // no handler, or TransactionTooLargeException
-                        note = "Sharing did not work on this TV. Use the QR code."
+                        note = res.getString(R.string.diag_share_failed)
                     }
                 }
             },
-            modifier = Modifier.focusRequester(share).semantics { contentDescription = "Share diagnostics" },
-        ) { Text("Share".uppercase()) }
+            modifier = Modifier.focusRequester(share).semantics { contentDescription = res.getString(R.string.diag_share_diagnostics) },
+        ) { Text(stringResource(R.string.diag_share).upper()) }
         ArcadeButton(
             onClick = {
                 scope.launch {
@@ -133,7 +138,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     server = null // so the old server's onFinished does not clear the new url
                     old?.stop()
                     url = null
-                    note = "Preparing…"
+                    note = res.getString(R.string.diag_preparing)
                     val json = buildDiagnosticsJson(collect(graph, version), deviceNames(context))
                     val ref = arrayOfNulls<DiagnosticsServer>(1)
                     val made = withContext(Dispatchers.IO) {
@@ -145,22 +150,22 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     }
                     note = null
                     if (made == null) {
-                        note = "Connect the TV to Wi-Fi or Ethernet to use the QR download"
+                        note = res.getString(R.string.diag_connect_network)
                     } else {
                         server = made.first
                         url = made.second
                     }
                 }
             },
-            modifier = Modifier.semantics { contentDescription = "Show QR code to download on a phone" },
-        ) { Text("Download on phone".uppercase()) }
+            modifier = Modifier.semantics { contentDescription = res.getString(R.string.diag_download_desc) },
+        ) { Text(stringResource(R.string.diag_download_phone).upper()) }
         note?.let { Text(it) }
         }
         url?.let {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
-                PixelText("Scan me", color = LocalSpeedColors.current.accent, size = 36.sp)
-                Text("Scan with your phone on the same Wi-Fi. Works once, for 10 minutes.")
-                QrCard { Image(remember(it) { qrImageBitmap(it) }, "QR code to download diagnostics", Modifier.size(200.dp)) }
+                PixelText(stringResource(R.string.setup_scan_me), color = LocalSpeedColors.current.accent, size = 36.sp)
+                Text(stringResource(R.string.diag_scan_body))
+                QrCard { Image(remember(it) { qrImageBitmap(it) }, stringResource(R.string.diag_qr_desc), Modifier.size(200.dp)) }
             }
         }
         }

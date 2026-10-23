@@ -12,6 +12,9 @@ data class OptimizeResult(val ok: Boolean, val detail: String = "", val connecti
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 
+/** Stored when a build cannot reset; storedText() maps it for display. */
+const val RESET_UNSUPPORTED = "Didn't reset: not supported here."
+
 interface Optimizer {
     suspend fun optimize(packageName: String): OptimizeResult
 
@@ -19,7 +22,7 @@ interface Optimizer {
     suspend fun verify(packageName: String): String? = null
 
     /** Puts [packageName] back to the TV's own compile state. */
-    suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, "Didn't reset: not supported here.")
+    suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, RESET_UNSUPPORTED)
 }
 
 /** Why the gate is open or closed. Only [OpensAt] carries a clock time, taken from the user's set hours. */

@@ -27,7 +27,7 @@ class PairingService : Service() {
     override fun onCreate() {
         super.onCreate()
         getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(
-            android.app.NotificationChannel(CHANNEL, "Pairing", android.app.NotificationManager.IMPORTANCE_LOW),
+            android.app.NotificationChannel(CHANNEL, getString(dev.speedcompiler.tv.R.string.notif_pairing_channel), android.app.NotificationManager.IMPORTANCE_LOW),
         )
     }
 
@@ -36,13 +36,14 @@ class PairingService : Service() {
             1,
             android.app.Notification.Builder(this, CHANNEL)
                 .setSmallIcon(dev.speedcompiler.tv.R.drawable.ic_stat_pairing)
-                .setContentTitle("Pairing in progress")
+                .setContentTitle(getString(dev.speedcompiler.tv.R.string.notif_pairing_title))
                 .build(),
         )
         if (server == null) {
             val graph = (application as dev.speedcompiler.tv.SpeedApp).graph
             val d = dev.speedcompiler.tv.web.PairingDiscovery(getSystemService(android.net.nsd.NsdManager::class.java))
             val s = dev.speedcompiler.tv.web.PairingWebServer(
+                res = resources,
                 session = dev.speedcompiler.tv.web.PairingSession(graph.clock),
                 pairing = graph.pairing,
                 host = { d.host ?: localIp() ?: "127.0.0.1" },

@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.stringResource
 import dev.speedcompiler.tv.R
 import kotlin.math.abs
 import kotlin.math.floor
@@ -134,7 +135,7 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     }
 }
 
-object CosmicWormDef : GameDef("Cosmic Worm", "Eat stars, use the gates") {
+object CosmicWormDef : GameDef(R.string.working_game_cosmic_worm, R.string.working_game_cosmic_worm_hint) {
     /** Tests set this to make the food positions repeatable. */
     var seed: Int? = null
 
@@ -147,7 +148,10 @@ object CosmicWormDef : GameDef("Cosmic Worm", "Eat stars, use the gates") {
         val sparkle = ImageBitmap.imageResource(R.drawable.game_worm_sparkle)
         val portalW = ImageBitmap.imageResource(R.drawable.game_worm_portal_w)
         val portalN = ImageBitmap.imageResource(R.drawable.game_worm_portal_n)
-        return remember(board, pad, star, sparkle, portalW, portalN) { WormRenderer(board, pad, star, sparkle, portalW, portalN) }
+        val gameOver = stringResource(R.string.working_game_over)
+        val scoreLabel = stringResource(R.string.working_score)
+        val bestLabel = stringResource(R.string.working_best)
+        return remember(board, pad, star, sparkle, portalW, portalN, gameOver, scoreLabel, bestLabel) { WormRenderer(board, pad, star, sparkle, portalW, portalN, gameOver, scoreLabel, bestLabel) }
     }
 }
 
@@ -155,6 +159,7 @@ object CosmicWormDef : GameDef("Cosmic Worm", "Eat stars, use the gates") {
 private class WormRenderer(
     val board: ImageBitmap, val pad: ImageBitmap, val star: ImageBitmap, val sparkle: ImageBitmap,
     val portalW: ImageBitmap, val portalN: ImageBitmap,
+    val gameOver: String, val scoreLabel: String, val bestLabel: String,
 ) : GameRenderer {
     private lateinit var s: Surface
     private var kx = FloatArray(128); private var ky = FloatArray(128)
@@ -188,8 +193,8 @@ private class WormRenderer(
         if (g.sparkle >= 0f) s.img(sparkle, min(3, (g.sparkle / 0.1f).toInt()) * 11, 0, 11, 11, (20 + 20 * g.sparkleX - 5).toFloat(), (40 + 20 * g.sparkleY - 12).toFloat())
         s.shake = 0
         s.rect(GameColors.outline, 255f, s.hudY - 2f, 63f, 9f) // plate under the HUD, which overlaps the top rail
-        s.hud(g.score, best, dark = false)
-        if (g.canRestart) s.banner("GAME OVER", "SCORE ", g.score, GameColors.pink)
+        s.hud(g.score, best, dark = false, bestLabel = bestLabel)
+        if (g.canRestart) s.banner(gameOver, scoreLabel, g.score, GameColors.pink)
     }
 
     private fun grow(a: FloatArray, need: Int) = if (a.size >= need) a else a.copyOf(max(need, a.size * 2))

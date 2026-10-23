@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.web
 
+import android.content.res.Resources
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.Pairing
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
@@ -11,6 +13,7 @@ import kotlin.concurrent.schedule
  * [host] and [pairingPort] supply the TV's own wireless-debugging endpoint (from NSD discovery).
  */
 class PairingWebServer(
+    private val res: Resources,
     private val session: PairingSession,
     private val pairing: Pairing,
     private val host: () -> String,
@@ -54,20 +57,20 @@ class PairingWebServer(
         }
         if (get) return reply(Response.Status.OK, PAGE)
         if ((s.headers["content-length"]?.toLongOrNull() ?: 0L) > MAX_BODY) {
-            return reply(Response.Status.lookup(413) ?: Response.Status.BAD_REQUEST, msg("Request too large."))
+            return reply(Response.Status.lookup(413) ?: Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_too_large)))
         }
         s.parseBody(HashMap())
         // Malformed codes are rejected before they can use up an attempt.
         val code = PairingSession.cleanCode(s.parms["code"])
-            ?: return reply(Response.Status.BAD_REQUEST, msg("Enter the 6-digit code."))
-        if (!session.tryAttempt()) return reply(Response.Status.FORBIDDEN, msg("Too many attempts. Restart pairing on the TV."))
+            ?: return reply(Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_enter_code)))
+        if (!session.tryAttempt()) return reply(Response.Status.FORBIDDEN, msg(res.getString(R.string.web_pair_too_many)))
         // The discovered port wins; the form port is only a fallback when discovery found nothing.
         val port = pairingPort() ?: s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 }
-            ?: return reply(Response.Status.BAD_REQUEST, msg("Pairing port not found. Enter the port shown on the TV and press Pair."))
+            ?: return reply(Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_no_port)))
         val ok = runBlocking { runCatching { pairing.pair(host(), port, code) }.getOrDefault(false) }
-        if (!ok) return reply(Response.Status.OK, msg("Pairing failed. Check the code on the TV and try again."))
+        if (!ok) return reply(Response.Status.OK, msg(res.getString(R.string.web_pair_failed)))
         Timer(true).schedule(500) { finish() }
-        return reply(Response.Status.OK, msg("Paired. Close this page."))
+        return reply(Response.Status.OK, msg(res.getString(R.string.web_pair_done)))
     }
 
     private fun reply(status: Response.IStatus, body: String) =

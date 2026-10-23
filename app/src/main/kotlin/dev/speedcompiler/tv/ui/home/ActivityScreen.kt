@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.home
 
+import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -28,6 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.collectAsState
@@ -39,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -99,55 +104,59 @@ fun ActivityContent(
     LaunchedEffect(Unit) { runCatching { queueHeader.requestFocus() } }
     val cs = MaterialTheme.colorScheme
     val sc = LocalSpeedColors.current
+    val res = LocalResources.current
     confirmAll?.let { ids ->
         val keep = remember { FocusRequester() }
         LaunchedEffect(Unit) { keep.requestFocus() }
         SimpleDialog({ confirmAll = null }) {
-            Text(if (ids.size == 1) "Cancel the 1 app in the queue?" else "Cancel all ${ids.size} apps in the queue?")
+            Text(pluralStringResource(R.plurals.activity_confirm_cancel, ids.size, ids.size))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
                 // Focus starts on the safe choice.
-                Button({ confirmAll = null }, Modifier.focusRequester(keep)) { Text("Keep".uppercase()) }
-                Button({ confirmAll = null; refocus = queueHeader; ids.forEach(onCancel) }) { Text("Cancel all".uppercase()) }
+                Button({ confirmAll = null }, Modifier.focusRequester(keep)) { Text(stringResource(R.string.activity_keep).upper()) }
+                Button({ confirmAll = null; refocus = queueHeader; ids.forEach(onCancel) }) { Text(stringResource(R.string.activity_cancel_all).upper()) }
             }
         }
     }
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp).padding(top = 12.dp, bottom = 12.dp)) {
-        Marquee("Activity", compact = true, onBack = onBack)
+        Marquee(stringResource(R.string.nav_activity), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth().background(cs.background).border(2.dp, sc.hairline),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {
-        item { PixelText("Queue", Modifier.focusRequester(queueHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
-        aggregateLine(batchDone(queue, history), queue)?.let { line -> item { Text(line, color = cs.onSurfaceVariant) } }
-        if (queue.isNotEmpty()) item { Button({ confirmAll = queue.map { it.item.id } }) { Text("Cancel all".uppercase()) } }
-        if (queue.isEmpty()) item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { PixelText(stringResource(R.string.activity_queue), Modifier.focusRequester(queueHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
+        aggregateLine(res, batchDone(queue, history), queue)?.let { line -> item { Text(line, color = cs.onSurfaceVariant) } }
+        if (queue.isNotEmpty()) item { Button({ confirmAll = queue.map { it.item.id } }) { Text(stringResource(R.string.activity_cancel_all).upper()) } }
+        if (queue.isEmpty()) item { Text(stringResource(R.string.home_nothing_waiting), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)
-            val eta = etaText(e.eta, now, zone)
+            val eta = etaText(res, e.eta, now, zone)
+            val rowDesc = stringResource(R.string.activity_row_desc, l.label, stateText(res, e.state))
+            val cancelDesc = stringResource(R.string.activity_cancel_app, l.label)
             ListRow(
                 l.label,
-                Modifier.semantics { contentDescription = "${l.label}, ${stateText(e.state)}" },
-                subtitle = listOf(stateText(e.state), eta).filter { it.isNotEmpty() }.joinToString(" · "),
+                Modifier.semantics { contentDescription = rowDesc },
+                subtitle = listOf(stateText(res, e.state), eta).filter { it.isNotEmpty() }.joinToString(" · "),
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         Icon(l)
-                        Button({ refocus = queueHeader; onCancel(e.item.id) }, Modifier.semantics { contentDescription = "Cancel ${l.label}" }) { Text("Cancel".uppercase()) }
+                        Button({ refocus = queueHeader; onCancel(e.item.id) }, Modifier.semantics { contentDescription = cancelDesc }) { Text(stringResource(R.string.common_cancel).upper()) }
                     }
                 },
             )
         }
-        item { PixelText("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
-        if (history.isEmpty()) item { Text("Nothing has run yet", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { PixelText(stringResource(R.string.activity_history), Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
+        if (history.isEmpty()) item { Text(stringResource(R.string.activity_nothing_run), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(history, key = { "h${it.id}" }) { h ->
             val l = look(h.packageName)
-            val reason = h.failureReason?.takeIf { h.state == QueueState.FAILED || h.state == QueueState.SKIPPED }
+            val reason = h.failureReason?.takeIf { h.state == QueueState.FAILED || h.state == QueueState.SKIPPED }?.let { storedText(res, it) }
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
+            val retryDesc = stringResource(R.string.activity_retry_app, l.label)
             Column {
                 Row(
-                    Modifier.fillMaxWidth().semantics { contentDescription = listOfNotNull(l.label, stateText(h.state), time, reason).joinToString(", ") }
+                    Modifier.fillMaxWidth().semantics { contentDescription = listOfNotNull(l.label, stateText(res, h.state), time, reason).joinToString(", ") }
                         .focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
                         .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
@@ -157,21 +166,21 @@ fun ActivityContent(
                     Icon(l)
                     Column(Modifier.weight(1f)) {
                         Text(l.label, style = MaterialTheme.typography.titleMedium)
-                        if (reason != null) Text("${stateText(h.state)}: $reason", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                        if (reason != null) Text(stringResource(R.string.activity_failure_reason, stateText(res, h.state), reason), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
-                    PixelText(stateText(h.state).uppercase(), color = toneColor(when (h.state) {
+                    PixelText(stateText(res, h.state).upper(), color = toneColor(when (h.state) {
                         QueueState.DONE -> Tone.Ok
                         QueueState.FAILED -> Tone.Error
                         QueueState.SKIPPED -> Tone.Warn
                         else -> Tone.Neutral
                     }))
-                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = "Retry ${l.label}" }) { Text("Retry".uppercase()) }
+                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
                 }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt
                     val to = h.finishedAt ?: Long.MAX_VALUE
                     val out = events.filter { it.packageName == h.packageName && it.timeMillis in from..to }
-                        .joinToString("\n") { it.message }.ifEmpty { reason ?: "No output recorded" }
+                        .joinToString("\n") { storedText(res, it.message) }.ifEmpty { reason ?: stringResource(R.string.activity_no_output) }
                     Text(out, style = MonoStyle.copy(fontSize = 14.sp), modifier = Modifier.padding(horizontal = Space.x2, vertical = Space.x1))
                 }
             }

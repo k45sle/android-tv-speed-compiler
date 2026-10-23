@@ -84,7 +84,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
     }
 
     /** Needed for expedited work below API 31. */
-    override suspend fun getForegroundInfo() = foregroundInfo(applicationContext, 2, "reconnect", "Reconnecting")
+    override suspend fun getForegroundInfo() = foregroundInfo(applicationContext, 2, "reconnect", applicationContext.getString(dev.speedcompiler.tv.R.string.notif_reconnecting))
 }
 
 /** Notification for expedited work below API 31. */

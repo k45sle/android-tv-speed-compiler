@@ -21,6 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.focusProperties
 import dev.speedcompiler.tv.ui.home.JobResult
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import dev.speedcompiler.tv.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -54,6 +57,7 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import java.time.Instant
 import java.time.ZoneId
 import dev.speedcompiler.tv.ui.home.etaText
+import dev.speedcompiler.tv.ui.home.storedText
 import kotlinx.coroutines.launch
 
 @Composable
@@ -68,6 +72,8 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val optimizeNow = rememberOptimizeNow(deps, go)
     var resetNote by remember(packageName) { mutableStateOf<String?>(null) }
     val mine = watched.firstOrNull { it.packageName == packageName }
+    val res = LocalResources.current
+    val resetting = stringResource(R.string.detail_resetting)
     AppDetailContent(
         loaded ?: AppInfo(packageName, packageName),
         mine, optimizedAtMap(watched, history, resets)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
@@ -75,14 +81,14 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
         onReset = {
-            if (resetNote != RESETTING) scope.launch {
-                resetNote = RESETTING
+            if (resetNote != resetting) scope.launch {
+                resetNote = resetting
                 // Unwatch first so a queued compile cannot redo speed after the reset; NonCancellable so Back does not stop it halfway.
                 resetNote = try {
-                    withContext(NonCancellable) { deps.scheduler.unwatch(packageName); deps.reset(packageName) }.detail
+                    withContext(NonCancellable) { deps.scheduler.unwatch(packageName); deps.reset(packageName) }.detail.let { storedText(res, it) }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    "Didn't reset: ${e.message ?: "unexpected error"}."
+                    res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))
                 }
             }
         },
@@ -110,28 +116,35 @@ fun AppDetailContent(
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
+    val res = LocalResources.current
     val state = when {
-        result == JobResult.Running -> "Optimizing now"
-        result == JobResult.Queued -> etaText(entry!!.eta, Instant.ofEpochMilli(now), zone).ifEmpty { "Queued" }
-        result == JobResult.Failed -> "Didn't finish"
-        result == JobResult.Verified -> "Optimized for speed · checked ${agoText(optimizedAt ?: now, now)}"
-        result != null -> "${result.label} · ${agoText(optimizedAt ?: now, now)}"
-        else -> "Not optimized yet"
+        result == JobResult.Running -> stringResource(R.string.detail_optimizing_now)
+        result == JobResult.Queued -> etaText(res, entry!!.eta, Instant.ofEpochMilli(now), zone).ifEmpty { stringResource(R.string.home_queued) }
+        result == JobResult.Failed -> stringResource(R.string.home_didnt_finish)
+        result == JobResult.Verified -> stringResource(R.string.detail_optimized_checked, agoText(res, optimizedAt ?: now, now))
+        result != null -> stringResource(R.string.apps_pill_eta, stringResource(result.label), agoText(res, optimizedAt ?: now, now))
+        else -> stringResource(R.string.home_not_optimized)
     }
     val rows = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
         .sortedByDescending { it.finishedAt ?: it.enqueuedAt }.take(3)
         .map {
             val ok = it.state == QueueState.DONE
-            ScoreRow(agoText(it.finishedAt ?: it.enqueuedAt, now), if (it.source == QueueSource.AUTO) "Automatic" else "Manual", if (ok) "Done" else "Failed", if (ok) Tone.Ok else Tone.Error)
+            ScoreRow(
+                agoText(res, it.finishedAt ?: it.enqueuedAt, now),
+                res.getString(if (it.source == QueueSource.AUTO) R.string.detail_run_automatic else R.string.detail_run_manual),
+                res.getString(if (ok) R.string.common_done else R.string.home_failed),
+                if (ok) Tone.Ok else Tone.Error,
+            )
         }
     val tone = if (result == JobResult.Queued) Tone.Warn else result?.tone ?: Tone.Neutral // matches the Apps list pill
-    val word = result?.label ?: "New"
+    val word = result?.let { stringResource(it.label) } ?: stringResource(R.string.detail_new)
+    val cardDesc = stringResource(R.string.activity_row_desc, app.label, word)
     RoomBackdrop {
         Column(Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             Marquee(app.label, compact = true, onBack = onBack)
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
                 // Display only: the Optimize button beside it is the one control, so the card takes no focus.
-                CabinetCard(app.label, Modifier.width(280.dp).focusProperties { canFocus = false }.clearAndSetSemantics { contentDescription = "${app.label}, $word" }, word, tone, screenHeight = 140.dp) {
+                CabinetCard(app.label, Modifier.width(280.dp).focusProperties { canFocus = false }.clearAndSetSemantics { contentDescription = cardDesc }, word, tone, screenHeight = 140.dp) {
                     // The Apps list cartridge blown up whole: its frame is fixed dp, so a bigger banner alone would widen its shape.
                     Cartridge(Modifier.scale(1.6f)) { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) }
                 }
@@ -140,31 +153,29 @@ fun AppDetailContent(
                     Text(state, style = MaterialTheme.typography.titleMedium)
                     if (app.updatedAt > 0) {
                         Text(
-                            "Version ${app.versionName.ifEmpty { "unknown" }} · Updated ${updatedText(app.updatedAt, zone)}",
+                            stringResource(R.string.detail_version_updated, app.versionName.ifEmpty { stringResource(R.string.detail_version_unknown) }, updatedText(app.updatedAt, zone)),
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
-                        ArcadeButton("Optimize now", onOptimize, Modifier.remembersFocus(mem, "optimize"))
-                        ArcadeButton(if (watched != null) "Stop watching" else "Watch", onToggleWatch, Modifier.remembersFocus(mem, "watch"))
-                        ArcadeButton("Reset", onReset, Modifier.remembersFocus(mem, "reset"))
+                        ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
+                        ArcadeButton(stringResource(if (watched != null) R.string.apps_stop_watching else R.string.apps_watch), onToggleWatch, Modifier.remembersFocus(mem, "watch"))
+                        ArcadeButton(stringResource(R.string.detail_reset), onReset, Modifier.remembersFocus(mem, "reset"))
                     }
                     if (resetNote != null) Text(resetNote, style = MaterialTheme.typography.bodyMedium)
                     if (watched != null) {
                         OperatorRow(
-                            "Auto-optimize this app", onClick = { onAuto(!watched.autoOptimize) },
+                            stringResource(R.string.detail_auto_optimize), onClick = { onAuto(!watched.autoOptimize) },
                             modifier = Modifier.semantics {
                                 role = Role.Switch
                                 toggleableState = ToggleableState(watched.autoOptimize)
                             },
-                            sublabel = "Optimize again after each update",
+                            sublabel = stringResource(R.string.detail_auto_sublabel),
                         ) { DipSwitch(watched.autoOptimize) }
                     }
-                    if (rows.isNotEmpty()) ScoreTable("Runs", rows, Modifier.fillMaxWidth())
+                    if (rows.isNotEmpty()) ScoreTable(stringResource(R.string.detail_runs), rows, Modifier.fillMaxWidth())
                 }
             }
         }
     }
 }
-
-private const val RESETTING = "Resetting..."

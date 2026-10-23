@@ -1,15 +1,23 @@
 package dev.speedcompiler.tv.ui.apps
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import dev.speedcompiler.tv.ui.home.etaText
 import dev.speedcompiler.tv.watch.Eta
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.ConscryptMode
 
+@RunWith(RobolectricTestRunner::class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 class EtaTextTest {
     private val now = Instant.parse("2026-01-01T20:00:00Z").toEpochMilli()
-    private fun text(e: Eta) = etaText(e, Instant.ofEpochMilli(now), ZoneOffset.UTC)
+    private val res = ApplicationProvider.getApplicationContext<Context>().resources
+    private fun text(e: Eta) = etaText(res, e, Instant.ofEpochMilli(now), ZoneOffset.UTC)
 
     @Test
     fun startTimeSaysTodayOrTomorrow() {

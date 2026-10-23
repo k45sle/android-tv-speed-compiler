@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.settings
 
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -63,9 +64,11 @@ import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.theme.seedForHue
 import dev.speedcompiler.tv.ui.Routes
-import dev.speedcompiler.tv.ui.home.FIX_LABEL
 import dev.speedcompiler.tv.ui.home.fixRoute
 import dev.speedcompiler.tv.ui.home.fixText
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
+import dev.speedcompiler.tv.R
 import kotlinx.coroutines.launch
 
 private const val STEP_MINUTES = 30
@@ -81,11 +84,14 @@ fun clockText(minute: Int) = "%02d:%02d".format(minute / 60, minute % 60)
 
 private fun <T> List<T>.cycle(cur: T, d: Int) = this[(indexOf(cur) + d + size) % size]
 
-private fun gateText(g: GateMode) = when (g) {
-    GateMode.Idle -> "When the TV is idle"
-    GateMode.NothingPlaying -> "When nothing is playing"
-    GateMode.Window -> "During set hours"
-}
+@Composable
+private fun gateLabel(g: GateMode) = stringResource(
+    when (g) {
+        GateMode.Idle -> R.string.settings_gate_idle
+        GateMode.NothingPlaying -> R.string.settings_gate_nothing_playing
+        GateMode.Window -> R.string.settings_gate_window
+    },
+)
 
 @Composable
 fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = rememberSettingsDeps()) {
@@ -95,44 +101,51 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
     val set: ((SettingsValues) -> SettingsValues) -> Unit = { f -> scope.launch { deps.update(f) } }
     val mem = rememberFocusMemory("auto")
     val c = LocalSpeedColors.current
+    val runJobs = stringResource(R.string.settings_run_jobs)
+    val theme = stringResource(R.string.settings_theme)
+    val themeName = when (v.theme) {
+        ThemeChoice.System -> stringResource(R.string.settings_theme_system)
+        ThemeChoice.Light -> stringResource(R.string.settings_theme_light)
+        ThemeChoice.Dark -> stringResource(R.string.settings_theme_dark)
+    }
     RoomBackdrop {
         Column(Modifier.padding(horizontal = 48.dp).padding(top = 16.dp, bottom = 8.dp), Arrangement.spacedBy(Space.x1)) {
-            Marquee("Settings", compact = true, onBack = back) { PixelText("Version ${deps.version}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Marquee(stringResource(R.string.nav_settings), compact = true, onBack = back) { PixelText(stringResource(R.string.settings_version, deps.version), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Column(
                 Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, c.hairline)
                     .verticalScroll(rememberScrollState()).padding(horizontal = Space.x2, vertical = Space.x1),
             ) {
-                Heading("When to optimize")
+                Heading(stringResource(R.string.settings_heading_when))
                 SwitchRow(
-                    "Auto-optimize", "Off means no automatic jobs; you can still optimize an app by hand", !v.paused && v.mode == Mode.Auto,
+                    stringResource(R.string.settings_auto_title), stringResource(R.string.settings_auto_subtitle), !v.paused && v.mode == Mode.Auto,
                     Modifier.remembersFocus(mem, "auto"),
                 ) { on -> set { if (on) it.copy(mode = Mode.Auto, paused = false) else it.copy(paused = true) } }
                 val gates = GateMode.entries
                 OperatorRow(
-                    "Run jobs", Modifier.hint("Run jobs", gateText(v.gateMode)), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
+                    runJobs, hint(runJobs, gateLabel(v.gateMode)), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
                     onLeft = { set { it.copy(gateMode = gates.cycle(it.gateMode, -1)) } },
                     onRight = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
-                ) { Selector(gateText(v.gateMode), it) }
+                ) { Selector(gateLabel(v.gateMode), it) }
                 if (v.gateMode == GateMode.Window) {
-                    TimeRow("Start time", v.windowStartMinute) { d -> set { it.copy(windowStartMinute = stepMinute(it.windowStartMinute, d, it.windowEndMinute)) } }
-                    TimeRow("End time", v.windowEndMinute) { d -> set { it.copy(windowEndMinute = stepMinute(it.windowEndMinute, d, it.windowStartMinute)) } }
+                    TimeRow(stringResource(R.string.settings_start_time), v.windowStartMinute) { d -> set { it.copy(windowStartMinute = stepMinute(it.windowStartMinute, d, it.windowEndMinute)) } }
+                    TimeRow(stringResource(R.string.settings_end_time), v.windowEndMinute) { d -> set { it.copy(windowEndMinute = stepMinute(it.windowEndMinute, d, it.windowStartMinute)) } }
                 }
 
-                Heading("Appearance")
+                Heading(stringResource(R.string.settings_heading_appearance))
                 val themes = ThemeChoice.entries
                 // Down from Theme lands on the picked swatch, not the geometrically nearest one.
                 val picked = remember { FocusRequester() }
                 OperatorRow(
-                    "Theme", Modifier.hint("Theme", v.theme.name).focusProperties { if (v.customHue == null && v.accentPreset in Presets.indices) down = picked }, onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
+                    theme, hint(theme, themeName).focusProperties { if (v.customHue == null && v.accentPreset in Presets.indices) down = picked }, onClick = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
                     onLeft = { set { it.copy(theme = themes.cycle(it.theme, -1)) } },
                     onRight = { set { it.copy(theme = themes.cycle(it.theme, 1)) } },
-                ) { Selector(v.theme.name, it) }
+                ) { Selector(themeName, it) }
                 Row(Modifier.padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2), Alignment.CenterVertically) {
                     Presets.forEachIndexed { i, p ->
                         val sel = v.customHue == null && v.accentPreset == i
                         Swatch(p, sel, if (sel) Modifier.focusRequester(picked) else Modifier) { set { it.copy(accentPreset = i, customHue = null) } }
                     }
-                    Chip("Custom", v.customHue != null) { set { it.copy(customHue = it.customHue ?: 150f) } }
+                    Chip(stringResource(R.string.settings_custom), v.customHue != null) { set { it.copy(customHue = it.customHue ?: 150f) } }
                 }
                 v.customHue?.let { hue ->
                     BlockMeter(
@@ -141,27 +154,27 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                     )
                 }
 
-                Heading("Connection")
-                SwitchRow("Keep this TV trusting the app", "Off by default. Stops the TV asking to allow debugging again", v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
+                Heading(stringResource(R.string.settings_heading_connection))
+                SwitchRow(stringResource(R.string.settings_keep_trusting_title), stringResource(R.string.settings_keep_trusting_subtitle), v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
                 val failed = status as? KeeperStatus.Failed
-                val (text, tone) = when (status) {
-                    KeeperStatus.Connected -> "Connected" to Tone.Ok
-                    KeeperStatus.Reconnecting -> "Connecting" to Tone.Info
-                    is KeeperStatus.Failed -> "Not connected" to Tone.Error
+                val (textRes, tone) = when (status) {
+                    KeeperStatus.Connected -> R.string.home_connected to Tone.Ok
+                    KeeperStatus.Reconnecting -> R.string.home_connecting to Tone.Info
+                    is KeeperStatus.Failed -> R.string.settings_not_connected to Tone.Error
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2), Alignment.CenterVertically) {
                     Column(Modifier.padding(start = 28.dp).weight(1f)) {
-                        Text("Status", style = MaterialTheme.typography.titleLarge)
-                        failed?.let { Text(fixText(it.fix), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Text(stringResource(R.string.settings_status), style = MaterialTheme.typography.titleLarge)
+                        failed?.let { Text(fixText(LocalResources.current, it.fix), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
-                    StatusPill(text, tone)
-                    ArcadeButton(FIX_LABEL, { go(fixRoute(failed?.fix ?: Fix.Retry)) }, Modifier.remembersFocus(mem, "fix"))
+                    StatusPill(stringResource(textRes), tone)
+                    ArcadeButton(stringResource(R.string.common_fix_connection), { go(fixRoute(failed?.fix ?: Fix.Retry)) }, Modifier.remembersFocus(mem, "fix"))
                 }
 
-                Heading("About and help")
+                Heading(stringResource(R.string.settings_heading_about))
                 Row(Modifier.padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2)) {
-                    ArcadeButton("Export diagnostics", { go(Routes.Diagnostics) }, Modifier.remembersFocus(mem, "diag"))
-                    ArcadeButton("Help", { go(Routes.Help) }, Modifier.remembersFocus(mem, "help"))
+                    ArcadeButton(stringResource(R.string.settings_export_diagnostics), { go(Routes.Diagnostics) }, Modifier.remembersFocus(mem, "diag"))
+                    ArcadeButton(stringResource(R.string.help_title), { go(Routes.Help) }, Modifier.remembersFocus(mem, "help"))
                 }
             }
         }
@@ -185,10 +198,11 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun Swatch(preset: Preset, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = LocalSpeedColors.current
+    val label = stringResource(preset.label)
     val color = remember(preset, c.dark) { Color(preset.palette(c.dark).accent) }
     Box(
         modifier.size(Space.x4 + Space.x1).focusFx(1.15f, RowRadius, onClick)
-            .semantics { role = Role.RadioButton; this.selected = selected; contentDescription = preset.name }
+            .semantics { role = Role.RadioButton; this.selected = selected; contentDescription = label }
             .background(color)
             .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.onSurface else c.hairline),
     )
@@ -199,9 +213,10 @@ private fun Swatch(preset: Preset, selected: Boolean, modifier: Modifier, onClic
 private fun BlockMeter(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Modifier) {
     val c = LocalSpeedColors.current
     val cur = (hue / 15f).toInt() % 24
+    val hueDesc = pluralStringResource(R.plurals.settings_hue_desc, hue.toInt(), hue.toInt())
     Row(
         modifier.focusFx(1.025f, RowRadius)
-            .semantics { contentDescription = "Custom accent hue, ${hue.toInt()} degrees" }
+            .semantics { contentDescription = hueDesc }
             .onKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (it.key) {
@@ -223,11 +238,15 @@ private fun BlockMeter(hue: Float, onHueChange: (Float) -> Unit, modifier: Modif
 }
 
 /** D-pad left/right moves by 30 minutes, wrapping around midnight. */
-private fun Modifier.hint(label: String, value: String) = semantics { contentDescription = "$label, $value. Press left or right to change" }
+@Composable
+private fun hint(label: String, value: String): Modifier {
+    val desc = stringResource(R.string.settings_hint, label, value)
+    return Modifier.semantics { contentDescription = desc }
+}
 
 @Composable
 private fun TimeRow(label: String, minute: Int, onStep: (Int) -> Unit) =
-    OperatorRow(label, Modifier.hint(label, clockText(minute)), onClick = { onStep(STEP_MINUTES) }, onLeft = { onStep(-STEP_MINUTES) }, onRight = { onStep(STEP_MINUTES) }) { Selector(clockText(minute), it) }
+    OperatorRow(label, hint(label, clockText(minute)), onClick = { onStep(STEP_MINUTES) }, onLeft = { onStep(-STEP_MINUTES) }, onRight = { onStep(STEP_MINUTES) }) { Selector(clockText(minute), it) }
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) =

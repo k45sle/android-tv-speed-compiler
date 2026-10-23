@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.working.games
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -13,6 +14,7 @@ import androidx.compose.ui.unit.IntSize
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import dev.speedcompiler.tv.R
 import kotlin.math.roundToInt
 
 /** D-pad input as the games see it; the views map key events onto this. */
@@ -33,7 +35,7 @@ fun interface GameRenderer {
 }
 
 /** One entry per playable game, so each game lives in its own file. [ticksPerStep] is how many 30 Hz ticks one [Game.step] takes. */
-abstract class GameDef(val title: String, val hint: String, val ticksPerStep: Int = 1) {
+abstract class GameDef(@StringRes val title: Int, @StringRes val hint: Int, val ticksPerStep: Int = 1) {
     abstract fun create(): Game
     /** Loads the game's sheets; called from composition. */
     @Composable abstract fun renderer(): GameRenderer
@@ -168,9 +170,9 @@ class Surface {
     }
 
     /** Score top right and best to its left, with [dark] text for light backgrounds. */
-    fun hud(score: Int, best: Int, dark: Boolean) {
+    fun hud(score: Int, best: Int, dark: Boolean, bestLabel: String) {
         val y = hudY.roundToInt()
-        text("BEST ", 258, y, if (dark) GameColors.logo else GameColors.gold)
+        text(bestLabel, 258, y, if (dark) GameColors.logo else GameColors.gold)
         number(best, 4, 258 + 20, y, if (dark) GameColors.logo else GameColors.gold)
         number(score, 4, 301, y, if (dark) GameColors.outline else GameColors.cream)
     }

@@ -1,6 +1,8 @@
 package dev.speedcompiler.tv
 
+import android.content.Context
 import android.graphics.Bitmap
+import androidx.test.core.app.ApplicationProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -226,12 +228,13 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @OptIn(ExperimentalTestApi::class)
     private fun gameShot(name: String, kind: GameKind, play: (press: () -> Unit) -> Unit = {}) {
         CosmicWormDef.seed = 7; AlienRunDef.seed = 7; StarArrowDef.seed = 7
+        val res = ApplicationProvider.getApplicationContext<Context>().resources
         try {
             shoot(name, true, act = {
-                rule.onNodeWithContentDescription("Play ${kind.title}. ${kind.hint}").performSemanticsAction(SemanticsActions.OnClick)
+                rule.onNodeWithContentDescription(res.getString(R.string.working_play_game, res.getString(kind.title), res.getString(kind.hint))).performSemanticsAction(SemanticsActions.OnClick)
                 rule.mainClock.advanceTimeBy(100)
                 play {
-                    rule.onNodeWithContentDescription("${kind.title} game. Arrow keys move, Select to act or restart, Back to stop playing.")
+                    rule.onNodeWithContentDescription(res.getString(R.string.working_game_desc, res.getString(kind.title)))
                         .performKeyInput { pressKey(Key.DirectionCenter) }
                 }
             }) { WorkingContent(nuvioWorking(), {}) }

@@ -3,6 +3,7 @@ package dev.speedcompiler.tv.ui.working.games
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.speedcompiler.tv.R
 import kotlin.math.floor
@@ -83,7 +84,7 @@ class AlienRun(private val rng: Random = Random.Default) : Game {
     }
 }
 
-object AlienRunDef : GameDef("Alien Run", "Jump the cacti") {
+object AlienRunDef : GameDef(R.string.working_game_alien_run, R.string.working_game_alien_run_hint) {
     /** Tests set this to make the obstacles repeatable. */
     var seed: Int? = null
 
@@ -101,7 +102,10 @@ object AlienRunDef : GameDef("Alien Run", "Jump the cacti") {
         val runner = ImageBitmap.imageResource(R.drawable.game_runner)
         val hearts = ImageBitmap.imageResource(R.drawable.game_hearts)
         val ufo = ImageBitmap.imageResource(R.drawable.game_ufo)
-        return remember(sky, clouds, mesas, dunes, ground, cacti, shadow, dust, runner, hearts, ufo) {
+        val gameOver = stringResource(R.string.working_game_over)
+        val scoreLabel = stringResource(R.string.working_score)
+        val bestLabel = stringResource(R.string.working_best)
+        return remember(sky, clouds, mesas, dunes, ground, cacti, shadow, dust, runner, hearts, ufo, gameOver, scoreLabel, bestLabel) {
             GameRenderer { s, g, best ->
                 g as AlienRun
                 val gy = AlienRun.GROUND
@@ -130,8 +134,8 @@ object AlienRunDef : GameDef("Alien Run", "Jump the cacti") {
                 }
                 s.shake = 0
                 for (i in 0 until 3) s.img(hearts, if (i < g.lives) 0 else 18, 0, 18, 18, 2f + i * 15, s.hudY - 6f)
-                s.hud(g.score, best, dark = true)
-                if (g.over && g.dead > 0.25f) s.banner("GAME OVER", "SCORE ", g.score, GameColors.pink)
+                s.hud(g.score, best, dark = true, bestLabel = bestLabel)
+                if (g.over && g.dead > 0.25f) s.banner(gameOver, scoreLabel, g.score, GameColors.pink)
             }
         }
     }

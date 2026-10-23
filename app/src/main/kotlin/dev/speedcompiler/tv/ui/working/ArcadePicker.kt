@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.drawscope.draw
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -101,8 +102,10 @@ fun ArcadePicker(
         if (still) return@LaunchedEffect
         while (true) { delay(166); tick++; probe("tick") }
     }
+    val arcadeDesc = stringResource(R.string.working_arcade_desc)
+    val pressSelect = stringResource(R.string.working_press_select)
     Box(Modifier.size(864.dp, 380.dp)) {
-        Image(ImageBitmap.imageResource(R.drawable.game_arcade_room), "Play while you wait", Modifier.size(864.dp, 380.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
+        Image(ImageBitmap.imageResource(R.drawable.game_arcade_room), arcadeDesc, Modifier.size(864.dp, 380.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
         Canvas(Modifier.size(864.dp, 380.dp)) {
             val u = size.width / 432f
             for (x in CAB_X) art(GameColors.outline, x - 2, CAB_Y + 149, 108, 3, u)
@@ -122,7 +125,7 @@ fun ArcadePicker(
             val x = CAB_X[i]
             art(GameColors.gold, x - 3, CAB_Y - 3, 108, 2, u); art(GameColors.gold, x - 3, CAB_Y + 151, 108, 2, u)
             art(GameColors.gold, x - 3, CAB_Y - 3, 2, 156, u); art(GameColors.gold, x + 103, CAB_Y - 3, 2, 156, u)
-            if (tick / 3 % 2 == 0) artText("PRESS SELECT", x + 48 - (12 * 4 - 1) / 2, CAB_Y + 102, GameColors.yellow, u)
+            if (tick / 3 % 2 == 0) artText(pressSelect, x + 48 - (12 * 4 - 1) / 2, CAB_Y + 102, GameColors.yellow, u)
         }
     }
 }
@@ -130,6 +133,7 @@ fun ArcadePicker(
 @Composable
 private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, still: Boolean, probe: (String) -> Unit, requester: FocusRequester?, onFocus: (Boolean) -> Unit, onPlay: () -> Unit) {
     val sheet = ImageBitmap.imageResource(artRes)
+    val playDesc = stringResource(R.string.working_play_game, stringResource(kind.title), stringResource(kind.hint))
     val renderer = kind.def.renderer()
     val surface = remember { Surface() }
     var game by remember(kind, lit) { mutableStateOf(kind.def.create().also { it.step(null); it.step(null) }) }
@@ -161,7 +165,7 @@ private fun Cabinet(kind: GameKind, x: Int, artRes: Int, lit: Boolean, still: Bo
             .focusable()
             .pointerInput(Unit) { detectTapGestures { onPlay() } }
             .semantics(mergeDescendants = true) {
-                role = Role.Button; contentDescription = "Play ${kind.title}. ${kind.hint}"
+                role = Role.Button; contentDescription = playDesc
                 onClick { onPlay(); true }
             },
     ) {
