@@ -2,6 +2,7 @@ package dev.speedcompiler.tv.watch
 
 import android.content.Context
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -151,7 +152,7 @@ class RetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
 }
 
 private val runLock = Mutex()
-private val runNowWaiting = AtomicInteger(0)
+@VisibleForTesting internal val runNowWaiting = AtomicInteger(0)
 
 /** Runs one queue item: waits for the gate unless the user said "now", then compiles. One compile at a time. */
 class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

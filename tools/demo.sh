@@ -6,7 +6,7 @@
 set -eu
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
-DEMO_FLOW_GIF="$out/flow.gif" ./gradlew -q :app:testDebugUnitTest --tests '*ReadmeScreenshotsTest.demoFlow' --rerun -Proborazzi.record
+DEMO_FLOW_GIF="$out/flow.gif" ./gradlew -q :app:testDebugUnitTest --tests '*ReadmeScreenshotsTest.demoFlow' --rerun -Pmedia -Proborazzi.record
 ffmpeg -loglevel error -y -i "$out/flow.gif" -r 30 -pix_fmt yuv420p -c:v libx264 -crf 20 -movflags +faststart docs/media/demo.mp4
 ffmpeg -loglevel error -y -i "$out/flow.gif" \
   -vf "fps=8,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64[p];[b][p]paletteuse=dither=none" \

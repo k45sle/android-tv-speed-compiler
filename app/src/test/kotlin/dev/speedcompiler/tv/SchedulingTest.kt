@@ -22,6 +22,7 @@ import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.toGateConfig
 import dev.speedcompiler.tv.watch.QueueItem
+import dev.speedcompiler.tv.watch.runNowWaiting
 import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -303,7 +304,7 @@ class SchedulingTest {
         g.scheduler.enqueue("b", QueueSource.AUTO)
         skipDelay("b")
         optimizeNow("c")
-        delay(300) // let b and c reach the lock
+        await("c waiting to go first") { runNowWaiting.get() == 1 }
         release.complete(Unit)
         await("all done") { state(1) == QueueState.DONE && state(2) == QueueState.DONE && state(3) == QueueState.DONE }
         assertEquals(listOf("a", "c", "b"), optimizer.optimized)
