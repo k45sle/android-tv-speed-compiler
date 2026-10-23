@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,6 +86,8 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     var note by remember { mutableStateOf<String?>(null) }
     var server by remember { mutableStateOf<DiagnosticsServer?>(null) }
     DisposableEffect(Unit) { onDispose { server?.stop() } }
+    val share = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { share.requestFocus() } }
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
 
     RoomBackdrop {
@@ -95,6 +101,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
+        PixelText("Send a report", color = LocalSpeedColors.current.accent, size = 36.sp)
         Text(
             "Settings, queue and recent events. It has no keys, codes or addresses.",
             style = MaterialTheme.typography.bodyMedium,
@@ -117,7 +124,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     }
                 }
             },
-            modifier = Modifier.semantics { contentDescription = "Share diagnostics" },
+            modifier = Modifier.focusRequester(share).semantics { contentDescription = "Share diagnostics" },
         ) { Text("Share".uppercase()) }
         ArcadeButton(
             onClick = {
@@ -151,6 +158,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
         }
         url?.let {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x2)) {
+                PixelText("Scan me", color = LocalSpeedColors.current.accent, size = 36.sp)
                 Text("Scan with your phone on the same Wi-Fi. Works once, for 10 minutes.")
                 QrCard { Image(remember(it) { qrImageBitmap(it) }, "QR code to download diagnostics", Modifier.size(200.dp)) }
             }

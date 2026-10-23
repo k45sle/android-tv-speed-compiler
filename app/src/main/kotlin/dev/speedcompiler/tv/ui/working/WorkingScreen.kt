@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.stringResource
@@ -204,10 +205,10 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
     }
     RoomBackdrop {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 12.dp, end = 48.dp), // header 96 + gap 8 + room 380 + top 12 fits the 500 dp above the floor bar
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 6.dp, end = 48.dp), // header 104 + gap 6 + room 380 + top 6 fits the 500 dp above the floor bar
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            WorkingHeader(s, back, done)
+            WorkingHeader(s, back, done, first)
             ArcadePicker({ last = it; playing = it }, first, last)
         }
     }
@@ -215,28 +216,28 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
 
 /** Compact marquee: dashed bulb border, logo, banner in a bezel, title, status, timer, usual-duration blocks and Leave. */
 @Composable
-private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequester) {
+private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequester, picker: FocusRequester) {
     val cs = MaterialTheme.colorScheme
     val c = LocalSpeedColors.current
     val phase: State<Float> = rememberInfiniteTransition(label = "bulbs")
         .animateFloat(0f, 1f, infiniteRepeatable(tween(600, easing = LinearEasing)), label = "phase") // read in draw only
-    val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyLarge, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    val line = @Composable { text: String, color: Color -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     Row(
-        Modifier.fillMaxWidth().height(96.dp).background(cs.background).drawBehind {
+        Modifier.fillMaxWidth().height(104.dp).background(cs.background).drawBehind {
             val sw = 4.dp.toPx()
             val period = 12.dp.toPx()
             drawRect(
                 c.accent, Offset(sw, sw), Size(size.width - 2 * sw, size.height - 2 * sw),
                 style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(sw, period - sw), phase.value * period)),
             )
-        }.padding(horizontal = 20.dp),
+        }.padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        PixelBanner(s.job.finished, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 56.dp)
-        val bezel = Modifier.size(112.dp, 63.dp).border(2.dp, c.hairline)
+        PixelBanner(s.job.finished, Modifier.semantics { contentDescription = if (s.job.finished) "Done" else "Working" }, size = 64.dp)
+        val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
         if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
         Column(Modifier.weight(1f)) {
-            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 36.sp)
+            PixelText(if (s.job.finished) s.label else "Optimizing ${s.label}", color = c.accent, size = 30.sp, overflow = TextOverflow.Ellipsis)
             // Without a connection the worker loops running -> retry; say what it is really waiting on.
             if (!s.job.finished && s.connection != ConnectionState.Connected) {
                 line(s.connection?.let(::waitingForConnectionText) ?: "Starting…", cs.onSurface)
@@ -270,7 +271,7 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         }
         ArcadeButton(
             if (s.job.finished) "Done" else "Leave", back,
-            Modifier.focusRequester(done).semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" },
+            Modifier.focusRequester(done).focusProperties { down = picker }.semantics { contentDescription = if (s.job.finished) "Done, leave this screen" else "Leave, optimizing continues" },
         )
     }
 }

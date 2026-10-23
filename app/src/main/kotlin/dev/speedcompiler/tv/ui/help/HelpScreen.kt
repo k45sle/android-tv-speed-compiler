@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.Marquee
+import dev.speedcompiler.tv.theme.PixelText
+import androidx.compose.ui.unit.sp
 import dev.speedcompiler.tv.theme.RoomBackdrop
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -60,6 +62,7 @@ fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {
+        item { PixelText("Problems and fixes", color = LocalSpeedColors.current.accent, size = 36.sp) }
         items(helpEntries) { e ->
             ListRow(e.title, Modifier.semantics { contentDescription = "${e.title}. ${e.body}" }, e.body) {
                 if (e.route != null && e.action != null) {

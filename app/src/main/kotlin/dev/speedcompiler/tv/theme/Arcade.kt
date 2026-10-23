@@ -79,10 +79,10 @@ fun Modifier.hardShadow(d: Dp = 4.dp, color: Color = ShadowColor): Modifier =
 
 /** VT323 text in capitals: 26 sp labels, numbers and status words. An unspecified [color] uses the content color. */
 @Composable
-fun PixelText(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified, size: TextUnit = 26.sp, maxLines: Int = 1) {
+fun PixelText(text: String, modifier: Modifier = Modifier, color: Color = Color.Unspecified, size: TextUnit = 26.sp, maxLines: Int = 1, overflow: TextOverflow = TextOverflow.Clip) {
     Text(
         text.uppercase(), modifier, color, style = PixelLabel.copy(fontSize = size, letterSpacing = 1.sp),
-        maxLines = maxLines, overflow = TextOverflow.Clip,
+        maxLines = maxLines, overflow = overflow,
     )
 }
 

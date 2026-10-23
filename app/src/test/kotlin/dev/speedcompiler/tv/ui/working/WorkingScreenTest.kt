@@ -152,6 +152,21 @@ class WorkingScreenTest : ComposeTestBase() {
     }
 
     @Test
+    fun upFromCabinetsReachesLeaveAndDownComesBack() {
+        show()
+        rule.mainClock.advanceTimeBy(1000)
+        val worm = rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates")
+        val leave = rule.onNodeWithContentDescription("Leave, optimizing continues")
+        worm.assertIsFocused()
+        worm.performKeyInput { keyDown(Key.DirectionUp); keyUp(Key.DirectionUp) }
+        rule.mainClock.advanceTimeBy(100)
+        leave.assertIsFocused()
+        leave.performKeyInput { keyDown(Key.DirectionDown); keyUp(Key.DirectionDown) }
+        rule.mainClock.advanceTimeBy(100)
+        worm.assertIsFocused()
+    }
+
+    @Test
     fun screenFitsWithoutScrolling() {
         show()
         val scroll = rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).fetchSemanticsNode()

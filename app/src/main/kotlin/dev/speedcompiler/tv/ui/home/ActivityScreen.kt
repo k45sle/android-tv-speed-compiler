@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
@@ -93,6 +92,8 @@ fun ActivityContent(
     LaunchedEffect(queue, history) {
         refocus?.let { r -> runCatching { r.requestFocus() }.onFailure { runCatching { queueHeader.requestFocus() } }; refocus = null }
     }
+    // Start inside the board, not on the Marquee BACK chip.
+    LaunchedEffect(Unit) { runCatching { queueHeader.requestFocus() } }
     val cs = MaterialTheme.colorScheme
     val sc = LocalSpeedColors.current
     RoomBackdrop {
@@ -104,7 +105,7 @@ fun ActivityContent(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {
-        item { PixelText("Queue", Modifier.focusRequester(queueHeader).focusable(), sc.accent, 36.sp) }
+        item { PixelText("Queue", Modifier.focusRequester(queueHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
         if (queue.isEmpty()) item { Text("Nothing waiting", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)
@@ -121,7 +122,7 @@ fun ActivityContent(
                 },
             )
         }
-        item { PixelText("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusable(), sc.accent, 36.sp) }
+        item { PixelText("History", Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
         if (history.isEmpty()) item { Text("Nothing has run yet", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(history, key = { "h${it.id}" }) { h ->
             val l = look(h.packageName)
@@ -129,12 +130,13 @@ fun ActivityContent(
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
             Column {
                 Row(
-                    Modifier.fillMaxWidth().focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
+                    Modifier.fillMaxWidth().semantics { contentDescription = "${l.label}, ${stateText(h.state)}" }
+                        .focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
                         .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.x2),
                 ) {
-                    PixelText(time, Modifier.width(80.dp), sc.accent)
+                    PixelText(time, Modifier.width(140.dp), sc.accent)
                     Icon(l)
                     Column(Modifier.weight(1f)) {
                         Text(l.label, style = MaterialTheme.typography.titleMedium)
