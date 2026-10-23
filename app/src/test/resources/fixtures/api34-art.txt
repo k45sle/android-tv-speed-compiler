@@ -1,0 +1,15 @@
+[dev.speedcompiler.tv]
+  path: /data/app/~~AsvJR-cV20jQaYLTSXIvMA==/dev.speedcompiler.tv-Pe83t9xbFjTnbNxHRhQb1Q==/base.apk
+    arm64: [status=speed] [reason=cmdline] [primary-abi]
+      [location is /data/dalvik-cache/arm64/data@app@~~AsvJR-cV20jQaYLTSXIvMA==@dev.speedcompiler.tv-Pe83t9xbFjTnbNxHRhQb1Q==@base.apk@classes.dex]
+[qa.wifihold]
+  path: /data/app/~~vMlv3Oy4q9aKNw5pGt4IUg==/qa.wifihold-DcIDrbo1tJxDFUQvUAIwfg==/base.apk
+    arm64: [status=speed] [reason=cmdline] [primary-abi]
+      [location is /data/dalvik-cache/arm64/data@app@~~vMlv3Oy4q9aKNw5pGt4IUg==@qa.wifihold-DcIDrbo1tJxDFUQvUAIwfg==@base.apk@classes.dex]
+  path: /data/app/~~vMlv3Oy4q9aKNw5pGt4IUg==/qa.wifihold-DcIDrbo1tJxDFUQvUAIwfg==/split_extra.apk
+    arm64: [status=speed] [reason=cmdline] [primary-abi]
+      [location is /data/dalvik-cache/arm64/data@app@~~vMlv3Oy4q9aKNw5pGt4IUg==@qa.wifihold-DcIDrbo1tJxDFUQvUAIwfg==@split_extra.apk@classes.dex]
+[com.google.android.youtube.tv]
+  path: /product/app/YouTubeLeanback/YouTubeLeanback.apk
+    arm64: [status=speed] [reason=cmdline] [primary-abi]
+      [location is /data/dalvik-cache/arm64/product@app@YouTubeLeanback@YouTubeLeanback.apk@classes.dex]

@@ -29,8 +29,10 @@ fun compileSucceeded(text: String): Boolean {
 
 /**
  * Reads the compiler filter of exactly [pkg] from `pm art dump` (Android 14+) or `dumpsys package dexopt`
- * (Android 11-13) output. Both list `[package.id]` headers followed by `[status=...]` lines.
- * Returns null when the TV does not report it; "mixed" when entries disagree.
+ * (Android 11-13) output. Both list `[package.id]` headers, then `path:` lines each followed by `[status=...]` lines.
+ * Returns "speed" only when every base and split entry, for every instruction set, reads speed; otherwise
+ * "not fully compiled: <file> (<isa>) is <filter>" naming the first entry that does not. Null when the TV does not
+ * report it. Secondary-dex and `[location is ...]` lines are skipped: `compile -m speed` does not touch them.
  */
 fun parseCompilerFilter(text: String, pkg: String): String? {
     var inPackage = false
@@ -44,8 +46,19 @@ fun parseCompilerFilter(text: String, pkg: String): String? {
         }
         if (inPackage) lines += line
     }
-    val filters = lines.mapNotNull { FILTER.find(it)?.groupValues?.get(1)?.lowercase() }
-    val expected = lines.count { "status=" in it.lowercase() || "filter=" in it.lowercase() }
-    if (filters.isEmpty() || filters.size != expected) return null
-    return filters.distinct().singleOrNull() ?: "mixed"
+    var file = "?"
+    var notSpeed: String? = null
+    var found = false
+    for (raw in lines) {
+        val line = raw.trim()
+        if (line.startsWith("path:")) { file = line.substringAfter(":").trim().substringAfterLast('/'); continue }
+        if (line.startsWith("[location is") || "secondary-dex" in line) continue
+        val isStatus = "status=" in line.lowercase() || "filter=" in line.lowercase()
+        val filter = FILTER.find(line)?.groupValues?.get(1)?.lowercase()
+        if (isStatus && filter == null) return null
+        if (filter == null) continue
+        found = true
+        if (filter != "speed" && notSpeed == null) notSpeed = "not fully compiled: $file (${line.substringBefore(':')}) is $filter"
+    }
+    return if (!found) null else notSpeed ?: "speed"
 }

@@ -1,0 +1,4 @@
+Dexopt state:
+  [dev.speedcompiler.tv]
+    path: /data/app/~~uGou7aXqBoTFeM1qG0Tufw==/dev.speedcompiler.tv-txq5N5aVTzG2_YNeWFMHnQ==/base.apk
+      arm64: [status=run-from-apk] [reason=unknown]
