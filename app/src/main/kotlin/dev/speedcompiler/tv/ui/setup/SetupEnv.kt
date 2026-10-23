@@ -9,10 +9,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.ConnectionMonitor
+import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SetupApp(val packageName: String, val label: String)
 
@@ -35,6 +42,12 @@ class SetupDeps(
     val env: SetupEnv,
     val connection: Flow<ConnectionState>,
     val pairingUrl: Flow<String?>,
+    /** Why the last connect failed, in words for the user; null when it did not. */
+    val reason: Flow<String?> = flowOf(null),
+    /** Whether this app already holds a pairing the TV trusts; a fresh install does not. */
+    val holdsPairing: () -> Boolean = { true },
+    /** Called once the app is connected, so [holdsPairing] turns true. */
+    val markPaired: () -> Unit = {},
     /** Called when the user finishes: saves the picks and starts the run. */
     val onFinish: suspend (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
 )
@@ -68,17 +81,21 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
     override fun reconnect() = monitor.connectNow()
 
     override suspend fun recentApps(): List<SetupApp> {
-        val pm = context.packageManager
         val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        return pm.queryIntentActivities(launch, 0)
-            .map { it.activityInfo.packageName }.distinct().filter { it != context.packageName }
-            .mapNotNull { p ->
-                runCatching {
-                    pm.getPackageInfo(p, 0).lastUpdateTime to SetupApp(p, pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString())
-                }.getOrNull()
-            }
-            .sortedByDescending { it.first }.map { it.second }
+        val packages = withContext(Dispatchers.IO) {
+            context.packageManager.queryIntentActivities(launch, 0).map { it.activityInfo.packageName }.distinct()
+        }
+        return loadUserApps(context, packages).sortedByDescending { it.updatedAt }.map { SetupApp(it.packageName, it.label) }
     }
+}
+
+/** The connect failure in plain words. */
+fun reasonText(e: Throwable) = when (e) {
+    is AdbFailure.NotPaired -> "The TV does not trust this app yet."
+    is AdbFailure.DebuggingOff -> "Wireless debugging is off."
+    is AdbFailure.NotAuthorized -> "The TV did not allow this app."
+    is AdbFailure.Timeout -> "The TV did not answer in time."
+    else -> "Could not connect."
 }
 
 @Composable
@@ -86,10 +103,15 @@ fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
     return remember {
         val graph = (context.applicationContext as SpeedApp).graph
+        val prefs = context.applicationContext.getSharedPreferences("setup", Context.MODE_PRIVATE)
         SetupDeps(
             AndroidSetupEnv(context.applicationContext, graph.connectionMonitor),
             graph.connectionMonitor.state,
             PairingService.url,
+            graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(f.reason) } },
+            // The TV keeps the trust, so the only local trace is that we once connected.
+            holdsPairing = { prefs.getBoolean("paired", false) },
+            markPaired = { prefs.edit().putBoolean("paired", true).apply() },
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
                 graph.settings.update { it.copy(setupDone = true) } // awaited, so Home never sees the old value

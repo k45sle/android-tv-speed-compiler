@@ -69,9 +69,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.web.qrImageBitmap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.coroutineContext
 
 enum class SetupMode { Full, Repair }
 
@@ -81,6 +93,9 @@ const val HelpUrl = "https://github.com/k45sle/android-tv-speed-compiler#setup-h
 private const val PollMs = 500L
 private const val Total = 5
 private const val PairGraceMs = 2000L
+private const val NoProgressMs = 45_000L
+private const val ReconnectMs = 30_000L
+private const val DebounceMs = 1000L
 
 private val LocalPageBack = compositionLocalOf<() -> Unit> { {} }
 
@@ -100,10 +115,13 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     var apps by remember { mutableStateOf(emptyList<SetupApp>()) }
     val picked = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
 
+    LaunchedEffect(conn) { if (conn == ConnectionState.Connected) deps.markPaired() }
+
+    // Disconnected only counts as paired when this app once connected; on a fresh install it is just "not on yet".
     fun done(s: Int) = when (s) {
         2 -> env.developerOptionsOn()
         3 -> env.wirelessDebuggingOn()
-        4 -> conn != ConnectionState.Unpaired
+        4 -> conn == ConnectionState.Connecting || conn == ConnectionState.Connected || (conn == ConnectionState.Disconnected && deps.holdsPairing())
         5 -> conn == ConnectionState.Connected
         else -> false
     }
@@ -114,7 +132,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     }
     fun back() {
         var p = step - 1
-        while (p > 1 && done(p)) p--
+        while (p > first && done(p)) p--
         step = p
     }
     fun fail() { failures[step] = (failures[step] ?: 0) + 1 }
@@ -131,30 +149,41 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             PrimaryButton("Start", onClick = ::advance)
         }
         2 -> Page(2, "Turn on Developer options.") {
-            Body("Open Settings > System > About > Build, and press it 7 times.", 0)
-            PrimaryButton("Open Settings") { fail(); env.openSettings() }
+            Body("Open Settings > System > About > Build, and press it 7 times.")
+            PrimaryButton("Open Settings", onClick = debounced(env::openSettings))
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
+            FailWhenStuck(::fail)
             AutoAdvance({ env.developerOptionsOn() }, ::advance)
         }
         3 -> Page(3, "Turn on Wireless debugging.") {
-            Body("In Developer options, switch on Wireless debugging.", 0)
-            PrimaryButton("Open Developer options") { fail(); env.openDeveloperOptions() }
+            Body("In Developer options, switch on Wireless debugging.")
+            PrimaryButton("Open Developer options", onClick = debounced(env::openDeveloperOptions))
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
+            FailWhenStuck(::fail)
             AutoAdvance({ env.wirelessDebuggingOn() }, ::advance)
         }
         4 -> PairStep(deps, helpOffer, onPaired = ::advance, onFail = ::fail)
         5 -> {
             var sawConnecting by remember { mutableStateOf(false) }
+            var denied by remember { mutableStateOf(false) }
+            var stalled by remember { mutableStateOf(false) }
+            var attempt by remember { mutableIntStateOf(0) }
+            val reason by deps.reason.collectAsState(null)
             LaunchedEffect(conn) {
                 if (conn == ConnectionState.Connecting) sawConnecting = true
-                else if (conn == ConnectionState.Disconnected && sawConnecting) { sawConnecting = false; fail() }
+                else if (conn == ConnectionState.Disconnected && sawConnecting) { sawConnecting = false; denied = true; fail() }
             }
+            LaunchedEffect(attempt) { delay(NoProgressMs); stalled = true; fail() }
+            val problem = if (denied) reason ?: "The TV did not allow this app." else if (stalled) "No answer from the TV yet." else null
             Page(5, "Allow this app.") {
-                Body("Your TV will ask to allow debugging. Choose Always allow from this computer.", 0)
-                StatusPill(if (conn == ConnectionState.Connecting) "Connecting" else "Waiting for you", Tone.Info)
-                helpOffer?.let { ShowMeHow(it, grab = true) }
+                Body("Your TV will ask to allow debugging. Choose Always allow from this computer.")
+                if (problem != null) {
+                    Body(problem)
+                    PrimaryButton("Retry") { env.reconnect(); denied = false; stalled = false; sawConnecting = false; attempt++ }
+                } else StatusPill(if (conn == ConnectionState.Connecting) "Connecting" else "Waiting for you", Tone.Info)
+                helpOffer?.let { ShowMeHow(it, grab = problem == null) }
                 AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
             }
         }
@@ -193,18 +222,37 @@ fun QuickRepairScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps())
 fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     val env = deps.env
     var waiting by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        while (!env.wirelessDebuggingOn()) delay(PollMs)
-        waiting = true
-        if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
-        deps.connection.first { it == ConnectionState.Connected }
-        onBack()
+    var stuck by remember { mutableStateOf(false) }
+    var help by remember { mutableStateOf(false) }
+    var repair by remember { mutableStateOf(false) }
+    var attempt by remember { mutableIntStateOf(0) }
+    val reason by deps.reason.collectAsState(null)
+    LaunchedEffect(attempt) {
+        stuck = false
+        val ok = withTimeoutOrNull(ReconnectMs) {
+            while (!env.wirelessDebuggingOn()) delay(PollMs)
+            waiting = true
+            if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
+            deps.connection.first { it == ConnectionState.Connected }
+        }
+        if (ok != null) onBack() else { waiting = false; stuck = true }
     }
+    if (repair) return QuickRepairScreen(onBack, deps)
+    if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3) { help = false } }
     CompositionLocalProvider(LocalPageBack provides onBack) {
         Page(null, "Reconnect") {
-            Body("Turn Wireless debugging back on and this app reconnects by itself.")
-            if (waiting) StatusPill("Connecting", Tone.Info)
-            else PrimaryButton("Open Developer options") { env.openDeveloperOptions() }
+            if (stuck) {
+                Body(reason ?: if (env.wirelessDebuggingOn()) "The TV did not answer in time." else "Wireless debugging is off.")
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                    PrimaryButton("Try again") { attempt++ }
+                    Button(onClick = { repair = true }) { Text("Pair again".uppercase()) }
+                    ShowMeHow({ help = true })
+                }
+            } else {
+                Body("Turn Wireless debugging back on and this app reconnects by itself.")
+                if (waiting) StatusPill("Connecting", Tone.Info)
+                else PrimaryButton("Open Developer options", onClick = debounced(env::openDeveloperOptions))
+            }
         }
     }
 }
@@ -214,6 +262,7 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
     val url by deps.pairingUrl.collectAsState(null)
     var seen by remember { mutableStateOf(false) }
     var start by remember { mutableStateOf(ConnectionState.Unpaired) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val paired by rememberUpdatedState(onPaired)
     val failed by rememberUpdatedState(onFail)
     DisposableEffect(Unit) {
@@ -223,16 +272,27 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
     LaunchedEffect(url) {
         if (url != null) { seen = true; start = deps.connection.first(); return@LaunchedEffect }
         if (!seen) return@LaunchedEffect
-        // The session ended: it worked if the connection layer moved on shortly after. From an Unpaired start any
-        // other state counts; from Disconnected/Connecting (re-pair) only a new Connecting or Connected does.
-        val ok = withTimeoutOrNull(PairGraceMs) {
-            deps.connection.first {
-                it == ConnectionState.Connected ||
-                    (it != start && it != ConnectionState.Unpaired &&
-                        (start == ConnectionState.Unpaired || it == ConnectionState.Connecting))
+        // The session ended: it worked if the connection layer moved on shortly after, even while the user is away in
+        // Settings. From an Unpaired start any other state counts; from Disconnected/Connecting (re-pair) only a new
+        // Connecting or Connected does. The grace only runs while the app is in front.
+        val ok = coroutineScope {
+            val moved = async {
+                deps.connection.first {
+                    it == ConnectionState.Connected ||
+                        (it != start && it != ConnectionState.Unpaired &&
+                            (start == ConnectionState.Unpaired || it == ConnectionState.Connecting))
+                }
+                true
             }
-        } != null
-        if (ok) paired() else { seen = false; failed(); deps.env.startPairing() }
+            val quiet = async { lifecycle.awaitStarted(); delay(PairGraceMs); false }
+            select { moved.onAwait { it }; quiet.onAwait { it } }.also { coroutineContext.cancelChildren() }
+        }
+        if (ok) paired()
+        else {
+            seen = false; failed()
+            // A background app may not start a foreground service (Android 12+); wait for the next resume.
+            lifecycle.awaitStarted(); deps.env.startPairing()
+        }
     }
     Page(4, "Use your phone.", side = {
         PixelText("Scan me", color = LocalSpeedColors.current.accent, size = 36.sp)
@@ -252,18 +312,21 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
             for (c in listOf(Cabinet.ORANGE, Cabinet.LOGO, Cabinet.BLUE)) Box(Modifier.size(14.dp).background(Color(c)))
         }
     }) {
-        Body("Scan this, then on the TV open Wireless debugging > Pair device with pairing code, and type the 6 digits on your phone.", 0)
+        Body("On your phone, scan this code and keep the page open. It asks for 6 digits.")
+        Body("On the TV, open Wireless debugging and choose Pair device with pairing code.")
+        PrimaryButton("Open Developer options", onClick = debounced(deps.env::openDeveloperOptions))
         Text(url ?: "Starting...", style = MonoStyle, color = LocalSpeedColors.current.accent)
         Waiting()
-        helpOffer?.let { ShowMeHow(it, grab = true) }
+        helpOffer?.let { ShowMeHow(it) }
     }
 }
+
+private suspend fun Lifecycle.awaitStarted() { currentStateFlow.first { it.isAtLeast(Lifecycle.State.STARTED) } }
 
 @Composable
 private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onContinue: () -> Unit) {
     val firstRow = remember { FocusRequester() }
     Page(6, "Pick apps to optimize.") {
-        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue".uppercase()) }
         if (apps.isEmpty()) Body("No apps found.")
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(apps.size, key = { apps[it].packageName }) { i ->
@@ -272,12 +335,14 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
                 if (i == 0) LaunchedEffect(Unit) { firstRow.requestFocus() }
                 ListRow(
                     app.label,
-                    if (i == 0) Modifier.focusRequester(firstRow) else Modifier,
+                    (if (i == 0) Modifier.focusRequester(firstRow) else Modifier)
+                        .semantics { role = Role.Checkbox; toggleableState = ToggleableState(on) },
                     subtitle = app.packageName,
                     onClick = { if (on) picked.remove(app.packageName) else picked.add(app.packageName) },
                 ) { if (on) StatusPill("Selected", Tone.Ok) }
             }
         }
+        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text("Continue (${picked.size} selected)".uppercase()) }
     }
 }
 
@@ -341,20 +406,24 @@ private fun Page(
     }
 }
 
-/** Sentence in a bordered panel; [n] >= 0 adds a small numbered square (Cabinet colors) in front. */
 @Composable
-private fun Body(text: String, n: Int = -1) {
-    val sentence = @Composable {
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    if (n < 0) return sentence()
-    Row(
-        Modifier.fillMaxWidth().border(2.dp, LocalSpeedColors.current.hairline).padding(Space.x2),
-        horizontalArrangement = Arrangement.spacedBy(Space.x2),
-    ) {
-        val color = listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.LOGO)[n % 3]
-        Box(Modifier.size(28.dp).background(Color(color)), Alignment.Center) { PixelText("${n + 1}", color = Color(Cabinet.CREAM)) }
-        Box(Modifier.weight(1f)) { sentence() }
+private fun Body(text: String) =
+    Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+/** Counts one failure each time [NoProgressMs] pass on the step without it finishing. */
+@Composable
+private fun FailWhenStuck(onFail: () -> Unit) {
+    val fail by rememberUpdatedState(onFail)
+    LaunchedEffect(Unit) { while (true) { delay(NoProgressMs); fail() } }
+}
+
+/** Ignores presses within [DebounceMs] of the last one, so an impatient double press opens Settings once. */
+@Composable
+private fun debounced(onClick: () -> Unit): () -> Unit {
+    var last by remember { mutableStateOf<Long?>(null) }
+    return {
+        val now = System.nanoTime() / 1_000_000
+        if (last.let { it == null || now - it >= DebounceMs }) { last = now; onClick() }
     }
 }
 

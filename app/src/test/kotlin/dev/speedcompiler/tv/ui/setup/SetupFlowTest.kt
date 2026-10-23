@@ -7,7 +7,14 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.assertCountEquals
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -94,7 +101,7 @@ class SetupFlowTest : ComposeTestBase() {
         enter() // list starts focused on Alpha
         press(Key.DirectionDown); press(Key.DirectionDown); enter() // Gamma
         shot("6_apps")
-        press(Key.DirectionUp); press(Key.DirectionUp); press(Key.DirectionUp) // Beta, Alpha, Continue
+        press(Key.DirectionDown) // Continue (2 selected), below the list
         enter()
         see("Alpha and 1 other will be optimized when nothing is playing. It takes a minute or two each.")
         shot("7_done")
@@ -113,11 +120,11 @@ class SetupFlowTest : ComposeTestBase() {
         enter()
         see("Pick apps to optimize."); tick()
         enter() // picks Alpha, the focused row
-        rule.onNodeWithText("Continue", ignoreCase = true).assertIsEnabled()
+        rule.onNodeWithText("Continue (1 selected)", ignoreCase = true).assertIsEnabled()
         restorer.emulateSavedInstanceStateRestore()
         rule.waitForIdle()
         see("Pick apps to optimize.")
-        rule.onNodeWithText("Continue", ignoreCase = true).assertIsEnabled()
+        rule.onNodeWithText("Continue (1 selected)", ignoreCase = true).assertIsEnabled()
     }
 
     @Test
@@ -130,7 +137,7 @@ class SetupFlowTest : ComposeTestBase() {
         enter()
         see("Pick apps to optimize."); tick()
         enter() // picks Alpha, the focused row
-        press(Key.DirectionUp); enter() // Continue
+        press(Key.DirectionDown); press(Key.DirectionDown); press(Key.DirectionDown); enter() // Continue
         see("Setup is done.")
         restorer.emulateSavedInstanceStateRestore()
         rule.waitForIdle()
@@ -165,7 +172,9 @@ class SetupFlowTest : ComposeTestBase() {
         show { SetupScreen({ backs++ }, deps = deps) }
         enter(); enter()
         rule.onNodeWithText("Show me how").assertDoesNotExist()
-        enter()
+        tick(45_000)
+        rule.onNodeWithText("Show me how").assertDoesNotExist()
+        tick(45_000) // no progress twice
         press(Key.DirectionDown); enter()
         see("Show me how")
         see("Open Settings, go to System, then About. Find the line named Build and press OK on it 7 times. A message says you are now a developer.")
@@ -184,7 +193,6 @@ class SetupFlowTest : ComposeTestBase() {
         }
         assertEquals(3, env.calls.count { it == "startPairing" })
         see("Show me how")
-        rule.onNodeWithText("Show me how").assertIsFocused() // the pair page's only action
     }
 
     @Test
@@ -242,5 +250,135 @@ class SetupFlowTest : ComposeTestBase() {
         tick()
         assertEquals(1, backs)
         assertEquals(0, presses)
+    }
+
+    @Test
+    fun pickerRowsAreCheckboxesAndContinueSitsBelowTheList() {
+        env.developerOptions = true; env.wireless = true
+        monitor.flow.value = ConnectionState.Connected
+        show { SetupScreen({ backs++ }, deps = deps) }
+        enter(); tick()
+        rule.onAllNodes(isToggleable()).assertCountEquals(3)
+        see("Continue (0 selected)")
+        enter() // Alpha
+        see("Continue (1 selected)")
+    }
+
+    @Test
+    fun finding_B08_repairBackStaysInRepair() {
+        env.developerOptions = true; env.wireless = true
+        show { QuickRepairScreen({ backs++ }, deps) }
+        see("Use your phone.")
+        url.value = pairUrl; tick()
+        url.value = null; monitor.flow.value = ConnectionState.Connecting; tick()
+        see("Allow this app.")
+        back()
+        see("Use your phone.")
+        rule.onNodeWithText("Compile your apps ahead of time.").assertDoesNotExist()
+    }
+
+    @Test
+    fun finding_B14_clicksAreNotFailuresButTimeoutsAre() {
+        show { SetupScreen({}, deps = deps) }
+        enter() // Start
+        see("Turn on Developer options.")
+        enter(); enter() // Open Settings, twice
+        assertEquals(1, env.calls.count { it == "openSettings" }) // debounced
+        rule.onNodeWithText("Show me how").assertDoesNotExist()
+        tick(45_000); tick(45_000) // about 45 s without progress, twice
+        see("Show me how")
+    }
+
+    private class Owner : LifecycleOwner {
+        val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
+        override val lifecycle: Lifecycle get() = registry
+    }
+
+    private fun setLifecycle(owner: Owner, state: Lifecycle.State) {
+        rule.runOnUiThread { owner.registry.currentState = state }
+        rule.waitForIdle()
+    }
+
+    private fun showInLifecycle(owner: Owner) =
+        show { CompositionLocalProvider(LocalLifecycleOwner provides owner) { QuickRepairScreen({ backs++ }, deps) } }
+
+    @Test
+    fun r10_neverStartsPairingInTheBackgroundAndRestartsOnResume() {
+        val owner = Owner()
+        showInLifecycle(owner)
+        assertEquals(1, env.calls.count { it == "startPairing" })
+        url.value = pairUrl; tick()
+        setLifecycle(owner, Lifecycle.State.CREATED) // user is in TV Settings
+        url.value = null; tick(5000)
+        assertEquals(1, env.calls.count { it == "startPairing" })
+        setLifecycle(owner, Lifecycle.State.RESUMED); tick(2500)
+        assertEquals(2, env.calls.count { it == "startPairing" })
+    }
+
+    @Test
+    fun r10_aSessionThatEndedInTheBackgroundCountsAsPairedWhenTheKeeperConnected() {
+        val owner = Owner()
+        showInLifecycle(owner)
+        url.value = pairUrl; tick()
+        setLifecycle(owner, Lifecycle.State.CREATED)
+        url.value = null; tick(500)
+        monitor.flow.value = ConnectionState.Connecting; tick(500)
+        setLifecycle(owner, Lifecycle.State.RESUMED); tick(500)
+        see("Allow this app.")
+        assertEquals(1, env.calls.count { it == "startPairing" })
+    }
+
+    @Test
+    fun r11_freshInstallReachesThePairingStepWhileDisconnected() {
+        env.developerOptions = true; env.wireless = true
+        monitor.flow.value = ConnectionState.Disconnected // connect failed before Wireless debugging was on
+        val fresh = SetupDeps(env, monitor.state, url, holdsPairing = { false })
+        show { SetupScreen({ backs++ }, deps = fresh) }
+        enter()
+        see("Use your phone."); shot("4_pair_fresh")
+        rule.onNodeWithText("Allow this app.").assertDoesNotExist()
+    }
+
+    private fun allowStep(reason: MutableStateFlow<String?>) {
+        env.developerOptions = true; env.wireless = true
+        monitor.flow.value = ConnectionState.Disconnected
+        val d = SetupDeps(env, monitor.state, url, reason)
+        show { SetupScreen({ backs++ }, deps = d) }
+        enter()
+        see("Allow this app.")
+    }
+
+    @Test
+    fun b16_allowStepShowsDeniedAndRetries() {
+        val reason = MutableStateFlow<String?>("The TV did not allow this app.")
+        allowStep(reason)
+        monitor.flow.value = ConnectionState.Connecting; tick()
+        monitor.flow.value = ConnectionState.Disconnected; tick()
+        rule.onAllNodesWithText("The TV did not allow this app.").assertCountEquals(1); shot("5_allow_denied")
+        enter() // Retry, focused
+        assertTrue("reconnect" in env.calls)
+        rule.onNodeWithText("Retry").assertDoesNotExist()
+    }
+
+    @Test
+    fun b16_allowStepShowsTimeoutAndRetries() {
+        allowStep(MutableStateFlow(null))
+        tick(46_000)
+        see("No answer from the TV yet."); shot("5_allow_timeout")
+        enter() // Retry
+        rule.onNodeWithText("No answer from the TV yet.").assertDoesNotExist()
+    }
+
+    @Test
+    fun b02_reconnectTimesOutWithReasonPairAgainAndHelp() {
+        monitor.flow.value = ConnectionState.Disconnected
+        val d = SetupDeps(env, monitor.state, url, MutableStateFlow("Wireless debugging is off."))
+        show { ReconnectScreen({ backs++ }, d) }
+        see("Open Developer options")
+        tick(31_000)
+        see("Wireless debugging is off."); see("Pair again"); see("Show me how"); shot("reconnect_timeout")
+        assertEquals(0, backs)
+        press(Key.DirectionRight); enter() // Pair again
+        see("Use your phone.")
     }
 }
