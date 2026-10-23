@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GateCacheTest {
@@ -20,7 +21,7 @@ class GateCacheTest {
         cache.refreshIfStale()
         assertNull(cache.status.value)
         assertEquals(null, withTimeout(100) { cache.status.first() })
-        assert((System.nanoTime() - start) / 1_000_000 < 100)
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 100)
     }
 
     @Test
