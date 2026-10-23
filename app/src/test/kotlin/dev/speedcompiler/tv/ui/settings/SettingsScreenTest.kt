@@ -17,7 +17,9 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.performScrollTo
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.GateMode
 import dev.speedcompiler.tv.engine.Mode
@@ -25,6 +27,8 @@ import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.ui.Routes
+import dev.speedcompiler.tv.ui.home.fixRoute
+import dev.speedcompiler.tv.ui.home.fixText
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -75,22 +79,42 @@ class SettingsScreenTest : ComposeTestBase() {
     }
 
     @Test
-    fun modeAndGateChangesPersist() {
+    fun gateChangesPersist() {
         show()
-        click("Mode")
         click("Run jobs")
-        assertEquals(Mode.Manual, state.value.mode)
         assertEquals(GateMode.NothingPlaying, state.value.gateMode)
         rule.onNodeWithText("Start time").assertDoesNotExist()
     }
 
     @Test
-    fun pauseSwitchToggles() {
+    fun autoSwitchTogglesPauseAndRestoresAutoMode() {
+        state.value = SettingsValues(mode = Mode.Manual)
         show()
-        click("Pause auto-optimize")
-        assertTrue(state.value.paused)
-        click("Pause auto-optimize")
+        rule.onNodeWithText("Mode").assertDoesNotExist()
+        click("Auto-optimize")
+        assertEquals(Mode.Auto, state.value.mode)
         assertEquals(false, state.value.paused)
+        click("Auto-optimize")
+        assertTrue(state.value.paused)
+    }
+
+    @Test
+    fun failedConnectionShowsFixAndRoutesByIt() {
+        status.value = KeeperStatus.Failed(RuntimeException(), Fix.Retry)
+        show()
+        Fix.entries.forEach { fix ->
+            status.value = KeeperStatus.Failed(RuntimeException(), fix)
+            gone.clear()
+            rule.waitForIdle()
+            rule.onNodeWithText("Not connected", ignoreCase = true).assertExists()
+            rule.onNodeWithText(fixText(fix)).assertExists()
+            if (fix == Fix.QuickRepair) {
+                rule.onNodeWithText(fixText(fix)).performScrollTo()
+                rule.onRoot().captureRoboImage("build/outputs/roborazzi/settings_failed.png")
+            }
+            click("Fix connection")
+            assertEquals(listOf(fixRoute(fix)), gone)
+        }
     }
 
     @Test
@@ -147,8 +171,8 @@ class SettingsScreenTest : ComposeTestBase() {
     @Test
     fun buttonsNavigate() {
         show()
-        click("Reconnect"); click("Pair again"); click("Export diagnostics"); click("Help")
-        assertEquals(listOf(Routes.Reconnect, Routes.QuickRepair, Routes.Diagnostics, Routes.Help), gone)
+        click("Fix connection"); click("Export diagnostics"); click("Help")
+        assertEquals(listOf(Routes.Reconnect, Routes.Diagnostics, Routes.Help), gone)
         click("Keep this TV trusting the app")
         assertEquals(true, state.value.keepTrusting)
     }

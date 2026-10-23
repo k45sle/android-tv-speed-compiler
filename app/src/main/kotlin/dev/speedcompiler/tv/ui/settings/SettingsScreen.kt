@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.GateMode
 import dev.speedcompiler.tv.engine.Mode
@@ -62,6 +63,9 @@ import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.theme.seedForHue
 import dev.speedcompiler.tv.ui.Routes
+import dev.speedcompiler.tv.ui.home.FIX_LABEL
+import dev.speedcompiler.tv.ui.home.fixRoute
+import dev.speedcompiler.tv.ui.home.fixText
 import kotlinx.coroutines.launch
 
 private const val STEP_MINUTES = 30
@@ -99,13 +103,10 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                     .verticalScroll(rememberScrollState()).padding(horizontal = Space.x2, vertical = Space.x1),
             ) {
                 Heading("When to optimize")
-                val modes = Mode.entries
-                OperatorRow(
-                    "Mode", Modifier.remembersFocus(mem, "auto").hint("Mode", v.mode.name),
-                    onClick = { set { it.copy(mode = modes.cycle(it.mode, 1)) } },
-                    onLeft = { set { it.copy(mode = modes.cycle(it.mode, -1)) } },
-                    onRight = { set { it.copy(mode = modes.cycle(it.mode, 1)) } },
-                ) { Selector(v.mode.name, it) }
+                SwitchRow(
+                    "Auto-optimize", "Off means no automatic jobs; you can still optimize an app by hand", !v.paused && v.mode == Mode.Auto,
+                    Modifier.remembersFocus(mem, "auto"),
+                ) { on -> set { if (on) it.copy(mode = Mode.Auto, paused = false) else it.copy(paused = true) } }
                 val gates = GateMode.entries
                 OperatorRow(
                     "Run jobs", Modifier.hint("Run jobs", gateText(v.gateMode)), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
@@ -116,7 +117,6 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                     TimeRow("Start time", v.windowStartMinute) { d -> set { it.copy(windowStartMinute = stepMinute(it.windowStartMinute, d, it.windowEndMinute)) } }
                     TimeRow("End time", v.windowEndMinute) { d -> set { it.copy(windowEndMinute = stepMinute(it.windowEndMinute, d, it.windowStartMinute)) } }
                 }
-                SwitchRow("Pause auto-optimize", "No automatic jobs until you turn this off", v.paused) { on -> set { it.copy(paused = on) } }
 
                 Heading("Appearance")
                 val themes = ThemeChoice.entries
@@ -143,16 +143,19 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
                 Heading("Connection")
                 SwitchRow("Keep this TV trusting the app", "Off by default. Stops the TV asking to allow debugging again", v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
+                val failed = status as? KeeperStatus.Failed
                 val (text, tone) = when (status) {
                     KeeperStatus.Connected -> "Connected" to Tone.Ok
                     KeeperStatus.Reconnecting -> "Connecting" to Tone.Info
                     is KeeperStatus.Failed -> "Not connected" to Tone.Error
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2), Alignment.CenterVertically) {
-                    Text("Status", Modifier.padding(start = 28.dp).weight(1f), style = MaterialTheme.typography.titleLarge)
+                    Column(Modifier.padding(start = 28.dp).weight(1f)) {
+                        Text("Status", style = MaterialTheme.typography.titleLarge)
+                        failed?.let { Text(fixText(it.fix), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
                     StatusPill(text, tone)
-                    ArcadeButton("Reconnect", { go(Routes.Reconnect) }, Modifier.remembersFocus(mem, "reconnect"))
-                    ArcadeButton("Pair again", { go(Routes.QuickRepair) }, Modifier.remembersFocus(mem, "pair"))
+                    ArcadeButton(FIX_LABEL, { go(fixRoute(failed?.fix ?: Fix.Retry)) }, Modifier.remembersFocus(mem, "fix"))
                 }
 
                 Heading("About and help")
@@ -227,8 +230,8 @@ private fun TimeRow(label: String, minute: Int, onStep: (Int) -> Unit) =
     OperatorRow(label, Modifier.hint(label, clockText(minute)), onClick = { onStep(STEP_MINUTES) }, onLeft = { onStep(-STEP_MINUTES) }, onRight = { onStep(STEP_MINUTES) }) { Selector(clockText(minute), it) }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) =
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) =
     OperatorRow(
-        title, Modifier.semantics { role = Role.Switch; toggleableState = ToggleableState(checked) },
+        title, modifier.semantics { role = Role.Switch; toggleableState = ToggleableState(checked) },
         sublabel = subtitle, onClick = { onChange(!checked) },
     ) { DipSwitch(checked) }

@@ -4,9 +4,12 @@ import dev.speedcompiler.tv.ComposeTestBase
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
+import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.theme.SpeedTheme
+import dev.speedcompiler.tv.ui.home.fixRoute
 import dev.speedcompiler.tv.ui.Routes
 import org.junit.Assert.assertEquals
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -23,10 +26,16 @@ class HelpScreenTest : ComposeTestBase() {
         rule.setContent { SpeedTheme { HelpContent(go = { went += it }) } }
         rule.onNodeWithText("The TV forgot this app").assertIsDisplayed()
         rule.onNodeWithText("The pairing code did not work").assertIsDisplayed()
-        rule.onNodeWithText("Repair", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
+        rule.onAllNodesWithText("Fix connection", ignoreCase = true)[0].performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Routes.QuickRepair), went)
-        rule.onNode(hasContentDescription("Repair")).assertIsDisplayed()
+        rule.onAllNodes(hasContentDescription("Fix connection"))[0].assertIsDisplayed()
         rule.onNodeWithText("Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.").assertIsDisplayed()
+    }
+
+    @Test fun everyFixRoutesToItsDestination() {
+        assertEquals(Routes.QuickRepair, fixRoute(Fix.QuickRepair))
+        listOf(Fix.TurnOnWirelessDebugging, Fix.AllowPrompt, Fix.Retry).forEach { assertEquals(Routes.Reconnect, fixRoute(it)) }
+        assertEquals(setOf(Fix.QuickRepair, Fix.TurnOnWirelessDebugging, Fix.AllowPrompt, Fix.Retry), helpEntries.mapNotNull { it.fix }.toSet())
     }
 
     @Test fun shots() {

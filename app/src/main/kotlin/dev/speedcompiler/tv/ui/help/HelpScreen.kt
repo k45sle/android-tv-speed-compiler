@@ -29,16 +29,18 @@ import dev.speedcompiler.tv.theme.ListRow
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
-import dev.speedcompiler.tv.ui.Routes
+import dev.speedcompiler.tv.adb.Fix
+import dev.speedcompiler.tv.ui.home.FIX_LABEL
+import dev.speedcompiler.tv.ui.home.fixRoute
 
 /** One failure reason: what happened, what to do, and an optional route that fixes it. */
-data class HelpEntry(val title: String, val body: String, val route: String? = null, val action: String? = null)
+data class HelpEntry(val title: String, val body: String, val fix: Fix? = null)
 
 val helpEntries = listOf(
-    HelpEntry("The TV forgot this app", "Approve it again on the TV.", Routes.QuickRepair, "Repair"),
-    HelpEntry("Wireless debugging is off", "Turn it on in Developer options on the TV, then reconnect.", Routes.Reconnect, "Reconnect"),
-    HelpEntry("The TV is waiting for you", "Press Allow on the prompt on the TV, then reconnect.", Routes.Reconnect, "Reconnect"),
-    HelpEntry("The TV did not answer", "Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.", Routes.Reconnect, "Reconnect"),
+    HelpEntry("The TV forgot this app", "Approve it again on the TV.", Fix.QuickRepair),
+    HelpEntry("Wireless debugging is off", "Turn it on in Developer options on the TV, then reconnect.", Fix.TurnOnWirelessDebugging),
+    HelpEntry("The TV is waiting for you", "Press Allow on the prompt on the TV, then reconnect.", Fix.AllowPrompt),
+    HelpEntry("The TV did not answer", "Wireless debugging may have switched off. Reconnect, and if that fails turn it on again in Developer options.", Fix.Retry),
     HelpEntry("Optimizing did not finish", "The TV stopped or refused the job. Try again when the TV is idle."),
     HelpEntry("Optimized, but not checked", "This TV does not report the result. The app may still start faster."),
     HelpEntry("The pairing code did not work", "Pairing codes expire. Get a new code on the TV and type all 6 digits."),
@@ -52,7 +54,7 @@ fun HelpScreen(go: (String) -> Unit, onBack: () -> Unit) {
 
 @Composable
 fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
-    val mem = rememberFocusMemory(helpEntries.first { it.route != null }.title)
+    val mem = rememberFocusMemory(helpEntries.first { it.fix != null }.title)
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
         Marquee("Help", compact = true, onBack = onBack)
@@ -65,8 +67,8 @@ fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
         item { PixelText("Problems and fixes", color = LocalSpeedColors.current.accent, size = 36.sp) }
         items(helpEntries) { e ->
             ListRow(e.title, Modifier.semantics { contentDescription = "${e.title}. ${e.body}" }, e.body) {
-                if (e.route != null && e.action != null) {
-                    Button(onClick = { go(e.route) }, modifier = Modifier.remembersFocus(mem, e.title).semantics { contentDescription = e.action }) { Text(e.action.uppercase()) }
+                if (e.fix != null) {
+                    Button(onClick = { go(fixRoute(e.fix)) }, modifier = Modifier.remembersFocus(mem, e.title).semantics { contentDescription = FIX_LABEL }) { Text(FIX_LABEL.uppercase()) }
                 }
             }
         }
