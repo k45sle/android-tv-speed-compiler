@@ -112,7 +112,7 @@ suspend fun systemUpdated(state: SyncStateDao, current: String): Boolean {
 class DetectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val g = applicationContext.graph
-        // Unconditional: the keeper can still say Connected after Wireless debugging was switched off.
+        // Not gated on the keeper: it can still say Connected after Wireless debugging was switched off.
         if (g.settings.values.first().keepWifiDebugging) enableWifiAdb(applicationContext)
         if (g.connectionKeeper.status.value != KeeperStatus.Connected) g.connectionKeeper.reconnect()
         runDetect(g)
