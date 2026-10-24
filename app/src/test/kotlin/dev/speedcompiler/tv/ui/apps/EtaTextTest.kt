@@ -31,6 +31,7 @@ class EtaTextTest {
         assertEquals("Waiting for playback to stop", text(Eta.WaitingForPlayback))
         assertEquals("Auto-optimize is off", text(Eta.Paused))
         assertEquals("Waiting for free storage", text(Eta.WaitingForStorage))
+        assertEquals("Waiting for you to open the app once", text(Eta.WaitingForLaunch))
         assertEquals("Waiting for the connection", text(Eta.WaitingForConnection))
         assertEquals("Connecting to the TV", text(Eta.Connecting))
         assertEquals("Checking the TV", text(Eta.Checking))

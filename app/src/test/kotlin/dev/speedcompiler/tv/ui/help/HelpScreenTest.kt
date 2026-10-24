@@ -34,7 +34,7 @@ class HelpScreenTest : ComposeTestBase() {
 
     @Test fun explainsWhatSpeedCompileChangesAndHowToUndoIt() {
         rule.setContent { SpeedTheme { HelpContent(go = {}) } }
-        rule.onNodeWithText("What speed compile changes").assertIsDisplayed()
+        rule.onNodeWithText("What optimizing changes").assertIsDisplayed()
         rule.onNodeWithText("How to undo it").assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/help_speed_compile.png")
     }

@@ -1,6 +1,7 @@
 package dev.speedcompiler.tv.engine
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.provider.Settings
 import dev.speedcompiler.tv.watch.SyncState
@@ -21,6 +22,9 @@ interface PackageSystem {
     /** Fingerprint of [packageName], or null when it is not installed. */
     fun fingerprint(packageName: String): String?
 
+    /** True for a debug build: ART never compiles those past verify. False when not installed. */
+    fun isDebuggable(packageName: String): Boolean
+
     /** Null when nothing changed since [sequence]. */
     fun changedSince(sequence: Int): PackageChanges?
 }
@@ -38,6 +42,12 @@ class AndroidPackageSystem(private val context: Context) : PackageSystem {
         pm.getPackageInfo(packageName, 0).let { fingerprintOf(it.longVersionCode, it.lastUpdateTime) }
     } catch (e: PackageManager.NameNotFoundException) {
         null
+    }
+
+    override fun isDebuggable(packageName: String) = try {
+        pm.getApplicationInfo(packageName, 0).flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
     }
 
     override fun changedSince(sequence: Int) =

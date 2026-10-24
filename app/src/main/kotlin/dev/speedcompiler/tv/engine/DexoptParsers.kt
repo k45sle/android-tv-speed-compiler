@@ -8,10 +8,11 @@ private val RC = Regex("__rc=(\\d+)")
 
 fun isValidPackageId(id: String) = PACKAGE_ID.matches(id)
 
-/** The only compile command this app ever sends. Throws on an invalid id. */
-fun compileCommand(pkg: String): String {
+/** The only compile command this app ever sends. Throws on an invalid id or a filter other than speed-profile or speed. */
+fun compileCommand(pkg: String, filter: String = "speed-profile"): String {
     require(isValidPackageId(pkg)) { "invalid package id" }
-    return "cmd package compile -m speed -f $pkg"
+    require(filter == "speed-profile" || filter == "speed") { "invalid filter" }
+    return "cmd package compile -m $filter -f $pkg"
 }
 
 /** Undoes [compileCommand]: the TV goes back to its own compile choice for the app. Throws on an invalid id. */
@@ -38,9 +39,10 @@ fun compileSucceeded(text: String): Boolean {
 /**
  * Reads the compiler filter of exactly [pkg] from `pm art dump` (Android 14+) or `dumpsys package dexopt`
  * (Android 11-13) output. Both list `[package.id]` headers, then `path:` lines each followed by `[status=...]` lines.
- * Returns "speed" only when every base and split entry, for every instruction set, reads speed; otherwise
+ * Returns "speed" when every base and split entry, for every instruction set, reads speed, and "speed-profile"
+ * when every entry reads speed-profile or speed (mixed counts as speed-profile); otherwise
  * "not fully compiled: <file> (<isa>) is <filter>" naming the first entry that does not. Null when the TV does not
- * report it. Secondary-dex and `[location is ...]` lines are skipped: `compile -m speed` does not touch them.
+ * report it. Secondary-dex and `[location is ...]` lines are skipped: `compile -m` does not touch them.
  */
 fun parseCompilerFilter(text: String, pkg: String): String? {
     var inPackage = false
@@ -57,6 +59,7 @@ fun parseCompilerFilter(text: String, pkg: String): String? {
     var file = "?"
     var notSpeed: String? = null
     var found = false
+    var anyProfile = false
     for (raw in lines) {
         val line = raw.trim()
         if (line.startsWith("path:")) { file = line.substringAfter(":").trim().substringAfterLast('/'); continue }
@@ -67,7 +70,8 @@ fun parseCompilerFilter(text: String, pkg: String): String? {
         if (isStatus && filter == null) return null
         if (filter == null) continue
         found = true
-        if (filter != "speed" && notSpeed == null) notSpeed = "not fully compiled: $file (${line.substringBefore(':')}) is $filter"
+        if (filter == "speed-profile") anyProfile = true
+        else if (filter != "speed" && notSpeed == null) notSpeed = "not fully compiled: $file (${line.substringBefore(':')}) is $filter"
     }
-    return if (!found) null else notSpeed ?: "speed"
+    return if (!found) null else notSpeed ?: if (anyProfile) "speed-profile" else "speed"
 }

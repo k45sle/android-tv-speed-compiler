@@ -1,4 +1,4 @@
-Android normally compiles an app bit by bit, based on how you use it. Speed Compile asks the TV to compile the apps you choose fully, with Android's speed profile, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging, so you don't need a computer once it is set up.
+Android normally compiles an app bit by bit, based on how you use it. Speed Compile asks the TV to compile the apps you choose ahead of time, with Android's speed-profile filter, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging, so you don't need a computer once it is set up.
 
 Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes a bit more storage.
 

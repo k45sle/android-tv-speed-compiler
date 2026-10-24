@@ -187,7 +187,7 @@ class AppsScreensTest : ComposeTestBase() {
         watched.value = listOf(WatchedApp("a.alpha", "f", lastResult = "Optimized (checked)", lastOptimizedAt = 1_800_000_000_000 - 2 * 3_600_000))
         detailScreen()
         rule.onNodeWithText("a.alpha").assertIsDisplayed()
-        rule.onNodeWithText("Optimized for speed · checked 2 h ago").assertIsDisplayed()
+        rule.onNodeWithText("Optimized · checked 2 h ago").assertIsDisplayed()
         rule.onNodeWithText("Version 1.0", substring = true).assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail.png")
         click("Stop watching")

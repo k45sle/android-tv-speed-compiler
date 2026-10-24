@@ -272,6 +272,10 @@ class WorkingScreenTest : ComposeTestBase() {
         shot("waiting", JobView.Waiting(Eta.None), text = "Waiting for its turn", title = "Waiting to optimize Alpha", bar = "Time estimate, 0 of 10 blocks")
 
     @Test
+    fun waitingForALaunchShowsNoTimeEstimate() =
+        shot("waiting_launch", JobView.Waiting(Eta.WaitingForLaunch), text = "Waiting for you to open the app once", title = "Waiting to optimize Alpha", bar = null)
+
+    @Test
     fun startingShowsWaitingTitleAndEmptyBar() =
         shot("starting", JobView.Starting, text = "Starting…", title = "Waiting to optimize Alpha", bar = "Time estimate, 0 of 10 blocks")
 

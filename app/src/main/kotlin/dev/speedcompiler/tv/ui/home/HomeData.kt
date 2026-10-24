@@ -6,6 +6,8 @@ import dev.speedcompiler.tv.engine.INVALID_APP_TAIL
 import dev.speedcompiler.tv.engine.LOST_TAIL
 import dev.speedcompiler.tv.engine.NOT_ALLOWED_TAIL
 import dev.speedcompiler.tv.engine.NOT_INSTALLED
+import dev.speedcompiler.tv.engine.DEBUG_BUILD
+import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import dev.speedcompiler.tv.engine.NOT_PAIRED_TAIL
 import dev.speedcompiler.tv.engine.OPTIMIZED_CHECKED
 import dev.speedcompiler.tv.engine.OPTIMIZED_UNVERIFIED
@@ -97,6 +99,7 @@ fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId
     Eta.WaitingForPlayback -> res.getString(R.string.home_eta_waiting_playback)
     Eta.Paused -> res.getString(R.string.home_auto_off)
     Eta.WaitingForStorage -> res.getString(R.string.home_eta_waiting_storage)
+    Eta.WaitingForLaunch -> res.getString(R.string.home_eta_waiting_launch)
     Eta.WaitingForConnection -> res.getString(R.string.home_eta_waiting_connection)
     Eta.Connecting -> res.getString(R.string.home_connecting_to_tv)
     Eta.Checking -> res.getString(R.string.home_eta_checking)
@@ -187,7 +190,9 @@ private val StoredFixed = mapOf(
     OPTIMIZED_UNVERIFIED to R.string.stored_optimized_unverified,
     OPTIMIZED_CHECKED to R.string.stored_optimized_checked,
     VERIFY_UNKNOWN to R.string.stored_verify_unknown,
+    NO_PROFILE_YET to R.string.stored_no_profile,
     NOT_INSTALLED to R.string.stored_not_installed,
+    DEBUG_BUILD to R.string.stored_debug_build,
 )
 
 private val StoredDynamic = listOf(

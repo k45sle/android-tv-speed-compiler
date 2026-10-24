@@ -98,7 +98,7 @@ class OptimizerTest {
     @Test fun failedCompileAndWrongFilterAndBadId() = runTest {
         val ev = Events()
         assertFalse(impl(Shell(compile = "Failure\n__rc=1\n"), ev).optimize("dev.speedcompiler.tv").ok)
-        assertFalse(impl(Shell(dexopt = v1), ev).optimize("com.google.android.youtube.tv").ok)
+        assertFalse(impl(Shell(dexopt = v1), ev).optimize("com.google.android.youtube.tv", "speed").ok)
         val shell = Shell()
         assertFalse(impl(shell, ev).optimize("com.x; rm -rf /").ok)
         assertEquals(0, shell.compiles)
@@ -123,16 +123,19 @@ class OptimizerTest {
         }
     }
 
-    @Test fun oneSplitLeftAtSpeedProfileIsNotFullyCompiledAndNamesTheEntry() {
-        assertEquals("not fully compiled: split_extra.apk (arm64) is speed-profile", parseCompilerFilter(artSplitProfile, "qa.wifihold"))
+    @Test fun mixedSpeedAndSpeedProfileReadsSpeedProfile() {
+        assertEquals("speed-profile", parseCompilerFilter(artSplitProfile, "qa.wifihold"))
         assertEquals("speed", parseCompilerFilter(artSplitProfile, "dev.speedcompiler.tv"))
     }
 
     @Test fun incrementalInstallStaysRunFromApkAfterSuccess() = runTest {
         assertEquals("not fully compiled: base.apk (arm64) is run-from-apk", parseCompilerFilter(incremental, "dev.speedcompiler.tv"))
-        val r = impl(Shell(dexopt = incremental), Events(), sdk = 33).optimize("dev.speedcompiler.tv")
+        val r = impl(Shell(dexopt = incremental), Events(), sdk = 33).optimize("dev.speedcompiler.tv", "speed")
         assertFalse(r.ok)
         assertEquals("Didn't finish: base.apk (arm64) is run-from-apk, not speed.", r.detail)
+        // The default speed-profile compile treats it as a failure too, not as a wait for the first launch.
+        val p = impl(Shell(dexopt = incremental), Events(), sdk = 33).optimize("dev.speedcompiler.tv")
+        assertFalse(p.ok || p.noProfile)
     }
 
     // Shapes from the Android 13 emulator dump: a one-app "used by other apps" list and a secondary dex list.
@@ -161,13 +164,42 @@ class OptimizerTest {
     @Test fun sectionsDoNotLeakAndEveryIsaCountsButSecondaryDexDoesNot() {
         assertEquals("speed", parseCompilerFilter(v1Extras, "a.tethering"))
         assertEquals("not fully compiled: base.apk (arm64) is verify", parseCompilerFilter(v1Extras, "b.stack"))
-        assertEquals("not fully compiled: base.apk (arm) is speed-profile", parseCompilerFilter(v1Extras, "c.store"))
+        assertEquals("speed-profile", parseCompilerFilter(v1Extras, "c.store"))
         assertEquals("speed", parseCompilerFilter(v1Extras, "d.gms"))
         assertEquals("speed", parseCompilerFilter(artSplitProfile, "com.google.android.youtube.tv"))
     }
 
+    @Test fun allSpeedProfileReadsSpeedProfile() {
+        val dump = "[a.b]\n  path: /x/base.apk\n    arm64: [status=speed-profile] [reason=cmdline]\n    arm: [status=speed-profile] [reason=cmdline]\n"
+        assertEquals("speed-profile", parseCompilerFilter(dump, "a.b"))
+    }
+
+    @Test fun speedProfileCompileThenVerifyDecidesNoProfileOrOk() = runTest {
+        fun dump(f: String) = "[dev.speedcompiler.tv]\n  path: /x/base.apk\n    arm64: [status=$f] [reason=cmdline]\n"
+        val none = impl(Shell(art = dump("verify")), Events()).optimize("dev.speedcompiler.tv")
+        assertFalse(none.ok)
+        assertTrue(none.noProfile)
+        assertEquals("Waiting for the app's first launch.", none.detail)
+        for (f in listOf("speed-profile", "speed")) {
+            val r = impl(Shell(art = dump(f)), Events()).optimize("dev.speedcompiler.tv")
+            assertTrue(f, r.ok)
+            assertFalse(f, r.noProfile)
+        }
+    }
+
+    @Test fun speedFilterStillNeedsSpeed() = runTest {
+        val dump = "[dev.speedcompiler.tv]\n  path: /x/base.apk\n    arm64: [status=speed-profile] [reason=cmdline]\n"
+        val shell = Shell(art = dump)
+        val r = impl(shell, Events()).optimize("dev.speedcompiler.tv", "speed")
+        assertFalse(r.ok)
+        assertFalse(r.noProfile)
+        assertEquals("Didn't finish: speed-profile, not speed.", r.detail)
+    }
+
     @Test fun rejectsBadIdInCommand() {
-        assertEquals("cmd package compile -m speed -f com.a_b", compileCommand("com.a_b"))
+        assertEquals("cmd package compile -m speed-profile -f com.a_b", compileCommand("com.a_b"))
+        assertEquals("cmd package compile -m speed -f com.a_b", compileCommand("com.a_b", "speed"))
+        listOf("verify", "everything", "speed; id", "").forEach { assertTrue(it, runCatching { compileCommand("com.a_b", it) }.isFailure) }
         assertTrue(runCatching { compileCommand("a b") }.isFailure)
     }
 

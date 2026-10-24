@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.TestDriver
 import androidx.work.testing.WorkManagerTestInitHelper
+import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.FakeClock
 import dev.speedcompiler.tv.engine.FakeGate
 import dev.speedcompiler.tv.engine.FakeOptimizer
@@ -54,6 +55,8 @@ private class FakeSystem(var apps: MutableMap<String, String>) : PackageSystem {
     override fun bootCount() = 1
     override fun installed() = apps.map { InstalledPackage(it.key, it.value) }
     override fun fingerprint(packageName: String) = apps[packageName]
+    val debuggable = mutableSetOf<String>()
+    override fun isDebuggable(packageName: String) = packageName in debuggable
     override fun changedSince(sequence: Int): PackageChanges? = null
 }
 
@@ -256,6 +259,22 @@ class SchedulingTest {
         assertEquals(listOf("b"), g.database.queue().activeNow().map { it.packageName })
     }
 
+    @Test fun weeklyVerifySkipsADebuggableApp() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        optimizer.filters["a"] = "verify"
+        system.debuggable += "a"
+        runVerify(g)
+        assertTrue(g.database.queue().activeNow().isEmpty())
+    }
+
+    @Test fun aDebuggableAppFailsWithoutCompiling() = runBlocking {
+        system.debuggable += "a"
+        optimizeNow("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        assertEquals(DEBUG_BUILD, g.database.queue().get(1)!!.failureReason)
+        assertTrue(optimizer.optimized.isEmpty())
+    }
+
     @Test fun pauseStopsAutomaticJobsButNotOptimizeNow() = runBlocking {
         gate.status = GateStatus.Paused
         g.scheduler.enqueue("a", QueueSource.AUTO)
@@ -383,6 +402,82 @@ class SchedulingTest {
         runRefusedRetry(id)
         await("done") { state(1) == QueueState.DONE }
         assertEquals("0", g.database.syncState().get("refused:a"))
+    }
+
+    private val noProfile = dev.speedcompiler.tv.engine.OptimizeResult(false, dev.speedcompiler.tv.engine.NO_PROFILE_YET, noProfile = true)
+
+    private suspend fun waitForLaunch(): java.util.UUID {
+        optimizer.resultFor = { if (it == "speed") dev.speedcompiler.tv.engine.OptimizeResult(true) else noProfile }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("requeued") { wm.getWorkInfosForUniqueWork("launch:1").get().isNotEmpty() }
+        assertEquals(QueueState.WAITING_GATE, state(1))
+        assertEquals(dev.speedcompiler.tv.engine.NO_PROFILE_YET, g.database.queue().get(1)!!.failureReason)
+        val retry = wm.getWorkInfosForUniqueWork("launch:1").get().single()
+        assertEquals(60 * 60_000L, retry.initialDelayMillis)
+        return retry.id
+    }
+
+    @Test fun noProfileWaitsAndRequeuesTheSameRow() = runBlocking {
+        val id = waitForLaunch()
+        assertEquals(listOf("speed-profile"), optimizer.usedFilters)
+        assertEquals("1|1000", g.database.syncState().get("noprofile:a"))
+        runRefusedRetry(id)
+        await("second try") { optimizer.usedFilters.size == 2 }
+        assertEquals(listOf("speed-profile", "speed-profile"), optimizer.usedFilters)
+    }
+
+    @Test fun afterSevenDaysNoProfileCompilesWithSpeed() = runBlocking {
+        val id = waitForLaunch()
+        (g.clock as FakeClock).now += 7 * 24 * 60 * 60 * 1000L
+        runRefusedRetry(id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("speed-profile", "speed-profile", "speed"), optimizer.usedFilters)
+        assertEquals("", g.database.syncState().get("noprofile:a"))
+    }
+
+    @Test fun aNewFingerprintRestartsTheSevenDayClock() = runBlocking {
+        val id = waitForLaunch()
+        (g.clock as FakeClock).now += 8 * 24 * 60 * 60 * 1000L
+        g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("noprofile:a", "old|0"))
+        runRefusedRetry(id)
+        await("second try") { optimizer.usedFilters.size == 2 }
+        assertEquals("speed-profile", optimizer.usedFilters[1])
+        // The row is written after the compile returns, so wait for it instead of reading it at once.
+        await("waiting again") { state(1) == QueueState.WAITING_GATE && g.database.syncState().get("noprofile:a") != "old|0" }
+        assertEquals("1|${g.clock.nowMillis()}", g.database.syncState().get("noprofile:a"))
+    }
+
+    @Test fun detectLeavesALaunchWaitAlone() = runBlocking {
+        waitForLaunch()
+        gate.status = GateStatus.Open
+        runDetect(g)
+        assertTrue(infos("a").all { it.state.isFinished })
+        assertEquals(1, optimizer.usedFilters.size)
+    }
+
+    @Test fun cancelStopsThePendingLaunchTry() = runBlocking {
+        waitForLaunch()
+        g.scheduler.cancel(1)
+        assertEquals(WorkInfo.State.CANCELLED, wm.getWorkInfosForUniqueWork("launch:1").get().single().state)
+        assertEquals(QueueState.SKIPPED, state(1))
+    }
+
+    @Test fun optimizeNowOnAWaitingRowKeepsTheSevenDayClock() = runBlocking {
+        waitForLaunch()
+        (g.clock as FakeClock).now += 60_000
+        optimizeNow("a")
+        await("second try") { optimizer.usedFilters.size == 2 }
+        await("waiting again") { state(1) == QueueState.WAITING_GATE }
+        assertEquals("1|1000", g.database.syncState().get("noprofile:a"))
+    }
+
+    @Test fun aSuccessClearsTheNoProfileKey() = runBlocking {
+        val id = waitForLaunch()
+        optimizer.resultFor = { dev.speedcompiler.tv.engine.OptimizeResult(true) }
+        runRefusedRetry(id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals("", g.database.syncState().get("noprofile:a"))
     }
 
     @Test fun aNonGenericFailureIsNotRequeued() = runBlocking {
