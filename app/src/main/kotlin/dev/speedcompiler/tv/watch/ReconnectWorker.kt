@@ -14,11 +14,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -26,28 +26,21 @@ const val RECONNECT_WORK = "reconnect"
 private const val NETWORK_WAIT_MS = 60_000L
 private val BACKOFF_MS = listOf(5_000L, 10_000L, 20_000L, 40_000L)
 
-private const val FROM_BOOT = "fromBoot"
-
-/**
- * The one entry point for boot, app open and the periodic job. Does nothing if a reconnect is already queued.
- * Only the boot path ([fromBoot]) may turn Wireless debugging on, so it replaces a queued app-open reconnect.
- */
-fun enqueueReconnect(context: Context, fromBoot: Boolean = false) {
+/** The one entry point for boot, app open and the periodic job. Does nothing if a reconnect is already queued. */
+fun enqueueReconnect(context: Context) {
     val request = OneTimeWorkRequestBuilder<ReconnectWorker>()
         .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-        .setInputData(workDataOf(FROM_BOOT to fromBoot))
         .build()
-    val policy = if (fromBoot) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
-    WorkManager.getInstance(context).enqueueUniqueWork(RECONNECT_WORK, policy, request)
+    WorkManager.getInstance(context).enqueueUniqueWork(RECONNECT_WORK, ExistingWorkPolicy.KEEP, request)
 }
 
 /**
  * Waits for the network, then tries [reconnect] up to `backoff.size + 1` times, pausing between tries.
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
- * Calls [enableWifiAdb] only when [fromBoot].
+ * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).
  */
 suspend fun reconnectWithRetry(
-    fromBoot: Boolean,
+    turnOnWifiAdb: Boolean,
     waitForNetwork: suspend () -> Boolean,
     enableWifiAdb: () -> Unit,
     reconnect: suspend () -> KeeperStatus,
@@ -55,7 +48,7 @@ suspend fun reconnectWithRetry(
     backoff: List<Long> = BACKOFF_MS,
 ) {
     waitForNetwork()
-    if (fromBoot) enableWifiAdb()
+    if (turnOnWifiAdb) enableWifiAdb()
     for (i in 0..backoff.size) {
         val s = reconnect()
         if (s == KeeperStatus.Connected) return
@@ -67,9 +60,9 @@ suspend fun reconnectWithRetry(
 /** Reconnects the app's ADB link; the keeper's status carries any failure to the UI. */
 class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val keeper = (applicationContext as SpeedApp).graph.connectionKeeper
+        val graph = (applicationContext as SpeedApp).graph
         reconnectWithRetry(
-            fromBoot = inputData.getBoolean(FROM_BOOT, false),
+            turnOnWifiAdb = graph.settings.values.first().keepWifiDebugging,
             waitForNetwork = { awaitNetwork(applicationContext, NETWORK_WAIT_MS) },
             enableWifiAdb = {
                 // Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on.
@@ -78,7 +71,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 } catch (_: SecurityException) {
                 }
             },
-            reconnect = keeper::reconnect,
+            reconnect = graph.connectionKeeper::reconnect,
         )
         return Result.success()
     }

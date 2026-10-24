@@ -11,7 +11,7 @@ import dev.speedcompiler.tv.web.localIp
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            enqueueReconnect(context, fromBoot = true)
+            enqueueReconnect(context)
             enqueueDetectNow(context)
         }
     }

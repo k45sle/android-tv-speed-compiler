@@ -156,6 +156,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
                 Heading(stringResource(R.string.settings_heading_connection))
                 SwitchRow(stringResource(R.string.settings_keep_trusting_title), stringResource(R.string.settings_keep_trusting_subtitle), v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
+                SwitchRow(stringResource(R.string.settings_keep_wifi_title), stringResource(R.string.settings_keep_wifi_subtitle), v.keepWifiDebugging) { on -> set { it.copy(keepWifiDebugging = on) } }
                 val failed = status as? KeeperStatus.Failed
                 val (textRes, tone) = when (status) {
                     KeeperStatus.Connected -> R.string.home_connected to Tone.Ok

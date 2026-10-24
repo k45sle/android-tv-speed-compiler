@@ -240,7 +240,9 @@
         <item quantity="other">Custom accent hue, %1$d degrees</item>
     </plurals>
     <string name="settings_keep_trusting_title">Keep this TV trusting the app</string>
-    <string name="settings_keep_trusting_subtitle">Off by default. Stops the TV asking to allow debugging again</string>
+    <string name="settings_keep_trusting_subtitle">Stops the TV asking to allow debugging again. If off, you may need to approve the app again later</string>
+    <string name="settings_keep_wifi_title">Keep Wireless debugging on</string>
+    <string name="settings_keep_wifi_subtitle">Turns it back on after a restart, when you open the app, or when a job loses its connection. If off, optimizing stops until you turn it on again</string>
     <string name="settings_not_connected">Not connected</string>
     <string name="settings_status">Status</string>
     <string name="settings_export_diagnostics">Export diagnostics</string>

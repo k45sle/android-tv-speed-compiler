@@ -21,7 +21,8 @@ data class SettingsValues(
     val windowEndMinute: Int = 360,
     val gateMode: GateMode = GateMode.Idle,
     val paused: Boolean = false,
-    val keepTrusting: Boolean = false,
+    val keepTrusting: Boolean = true,
+    val keepWifiDebugging: Boolean = true,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
     val accentPreset: Int = 0,
@@ -44,6 +45,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val gateMode = stringPreferencesKey("gate_mode")
     private val paused = booleanPreferencesKey("paused")
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
+    private val keepWifiDebugging = booleanPreferencesKey("keep_wifi_debugging")
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
     private val customHue = floatPreferencesKey("custom_hue")
@@ -59,6 +61,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             gateMode = p[gateMode]?.let { runCatching { GateMode.valueOf(it) }.getOrNull() } ?: d.gateMode,
             paused = p[paused] ?: d.paused,
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
+            keepWifiDebugging = p[keepWifiDebugging] ?: d.keepWifiDebugging,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
             customHue = p[customHue],
@@ -79,6 +82,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[gateMode] = new.gateMode.name
             p[paused] = new.paused
             p[keepTrusting] = new.keepTrusting
+            p[keepWifiDebugging] = new.keepWifiDebugging
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset
             p[setupDone] = new.setupDone
