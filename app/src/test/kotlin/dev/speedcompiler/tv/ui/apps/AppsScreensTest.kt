@@ -382,8 +382,8 @@ class AppsScreensTest : ComposeTestBase() {
         val zone = java.time.ZoneOffset.UTC
         val res = ApplicationProvider.getApplicationContext<Context>().resources
         assertEquals("Optimized" to dev.speedcompiler.tv.theme.Tone.Ok, pillFor(res, null, "Optimized (checked)", 1, 0, zone))
-        assertEquals("Compiled" to dev.speedcompiler.tv.theme.Tone.Warn, pillFor(res, null, "Optimized", 1, 0, zone))
-        assertEquals("Compiled", pillFor(res, null, null, 1, 0, zone)?.first) // finished job, no stored result
+        assertEquals("Optimized" to dev.speedcompiler.tv.theme.Tone.Warn, pillFor(res, null, "Optimized", 1, 0, zone))
+        assertEquals("Optimized", pillFor(res, null, null, 1, 0, zone)?.first) // finished job, no stored result
         assertEquals("Didn't finish", pillFor(res, null, "Failed: x", null, 0, zone)?.first)
         assertEquals(null, pillFor(res, null, null, null, 0, zone))
         val run = dev.speedcompiler.tv.watch.QueueEntry(

@@ -170,7 +170,7 @@ class HomeActivityTest : ComposeTestBase() {
 
     @Test
     fun homeCardsShowLiveResultLabels() = cards(
-        "home_results_live", "Running", "Queued", "Compiled",
+        "home_results_live", "Running", "Queued", "Optimized",
         apps = listOf(
             WatchedApp("a.alpha", "1"), WatchedApp("b.beta", "1", lastResult = "Optimized (checked)"),
             WatchedApp("c.gamma", "1", lastResult = "Optimized (this TV doesn't report the result)"),

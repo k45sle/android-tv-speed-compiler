@@ -126,7 +126,8 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         val item = queueDao.get(id)?.takeIf { it.state.isActive } ?: return
         work.cancelUniqueWork(workName(item.packageName))
         resetConnectionTries(graph, item.packageName)
-        queueDao.update(item.copy(state = QueueState.SKIPPED, finishedAt = graph.clock.nowMillis()))
+        // Drop any waiting reason, so the row reads as cancelled.
+        queueDao.update(item.copy(state = QueueState.SKIPPED, finishedAt = graph.clock.nowMillis(), failureReason = null))
     }
 
     override suspend fun retry(id: Long) = lock.withLock { doRetry(id) }

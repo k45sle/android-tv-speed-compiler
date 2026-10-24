@@ -79,7 +79,7 @@ class SetupFlowTest : ComposeTestBase() {
     @Test
     fun walksAllSevenScreensWithDpad() {
         show { SetupScreen({ backs++ }, deps = deps) }
-        see("Compile your apps ahead of time."); shot("1_intro")
+        see("Optimize your apps ahead of time."); shot("1_intro")
         enter()
         see("Turn on Developer options."); see("Step 1 of 5"); shot("2_developer_options")
         enter()
@@ -163,7 +163,7 @@ class SetupFlowTest : ComposeTestBase() {
         enter()
         see("Turn on Developer options.")
         back()
-        see("Compile your apps ahead of time.")
+        see("Optimize your apps ahead of time.")
         assertEquals(0, backs)
     }
 
@@ -274,7 +274,7 @@ class SetupFlowTest : ComposeTestBase() {
         see("Allow this app.")
         back()
         see("Use your phone.")
-        rule.onNodeWithText("Compile your apps ahead of time.").assertDoesNotExist()
+        rule.onNodeWithText("Optimize your apps ahead of time.").assertDoesNotExist()
     }
 
     @Test

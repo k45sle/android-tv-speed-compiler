@@ -41,6 +41,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -395,8 +396,11 @@ class SchedulingTest {
         g.scheduler.enqueue("a")
         skipDelay("a")
         await("one try counted") { g.database.syncState().get("lost:a") == "1" }
+        await("waiting with a reason") { g.database.queue().get(1)?.failureReason != null }
         g.scheduler.cancel(1)
         assertEquals("0", g.database.syncState().get("lost:a"))
+        assertEquals(QueueState.SKIPPED, state(1))
+        assertNull(g.database.queue().get(1)!!.failureReason) // reads as cancelled, not as the old waiting reason
     }
 
     @Test fun anExceptionInTheRunMarksTheRowFailed() = runBlocking {

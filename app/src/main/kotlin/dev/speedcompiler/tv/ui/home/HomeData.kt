@@ -118,7 +118,7 @@ fun stateText(res: Resources, state: QueueState): String = res.getString(
         QueueState.RUNNING -> R.string.home_running
         QueueState.QUEUED -> R.string.home_queued
         QueueState.WAITING_GATE -> R.string.home_waiting
-        QueueState.DONE -> R.string.common_done
+        QueueState.DONE -> R.string.home_optimized
         QueueState.FAILED -> R.string.home_failed
         QueueState.SKIPPED -> R.string.home_skipped
     },
@@ -189,7 +189,7 @@ fun storedText(res: Resources, text: String): String {
     StoredFixed[text]?.let { return res.getString(it) }
     for ((re, id) in StoredDynamic) {
         val arg = re.matchEntire(text)?.groupValues?.get(1) ?: continue
-        return if (id == R.string.stored_finish_timeout) res.getString(id, arg.toInt()) else res.getString(id, arg)
+        return res.getString(id, arg)
     }
     return text
 }

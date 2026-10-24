@@ -217,7 +217,7 @@ class WorkingScreenTest : ComposeTestBase() {
 
         finish(item(1, QueueState.DONE).copy(finishedAt = base + 20_000))
         rule.mainClock.advanceTimeBy(2_000)
-        rule.onNodeWithText("Alpha compiled").assertIsDisplayed() // status line turns to the result; the game stays frozen behind DONE
+        rule.onNodeWithText("Alpha optimized").assertIsDisplayed() // status line turns to the result; the game stays frozen behind DONE
         rule.onNodeWithText("Back to leave").assertIsDisplayed()
         rule.onNodeWithText("00:20").assertIsDisplayed() // the clock stopped with the job
         assertEquals(0, left) // not auto-closed
@@ -286,7 +286,7 @@ class WorkingScreenTest : ComposeTestBase() {
 
     @Test
     fun finishedUnverifiedSaysCompiled() =
-        shot("compiled", JobView.Done, text = "Compiled. You can leave now.", title = "Alpha", bar = null)
+        shot("compiled", JobView.Done, text = "Optimized. This TV doesn't report the result, so it couldn't be double-checked. You can leave now.", title = "Alpha", bar = null)
 
     @Test
     fun finishedVerifiedSaysOptimized() =

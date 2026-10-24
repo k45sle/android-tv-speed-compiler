@@ -15,7 +15,7 @@
     <string name="home_eta_waiting_connection">Waiting for the connection</string>
     <string name="home_connecting_to_tv">Connecting to the TV</string>
     <string name="home_eta_checking">Checking the TV</string>
-    <string name="home_eta_unknown">Unknown</string>
+    <string name="home_eta_unknown">Start time unknown. Check the connection.</string>
     <string name="home_eta_in_queue">#%1$d in queue, about %2$d min</string>
     <string name="home_auto_on">Auto-optimize is on</string>
     <string name="home_auto_off">Auto-optimize is off</string>
@@ -31,7 +31,7 @@
     <string name="home_fix_allow">Press Allow on the prompt on the TV.</string>
     <string name="home_fix_retry">The TV did not answer. Try again.</string>
     <string name="home_optimized">Optimized</string>
-    <string name="home_compiled">Compiled</string>
+    <string name="home_compiled">Optimized</string>
     <string name="home_didnt_finish">Didn\'t finish</string>
     <string name="home_nothing_waiting">Nothing waiting</string>
     <plurals name="home_waiting_count">
@@ -75,8 +75,8 @@
     <string name="setup_reason_not_allowed">The TV did not allow this app.</string>
     <string name="setup_reason_timeout">The TV did not answer in time.</string>
     <string name="setup_reason_could_not_connect">Could not connect.</string>
-    <string name="setup_intro_title">Compile your apps ahead of time.</string>
-    <string name="setup_intro_body">Android can fully compile apps ahead of time. This app does it for the apps you pick and redoes it after each update. Results vary, and each app uses a little more storage.</string>
+    <string name="setup_intro_title">Optimize your apps ahead of time.</string>
+    <string name="setup_intro_body">Android can fully optimize apps ahead of time. This app does it for the apps you pick and redoes it after each update. Results vary, and each app uses a little more storage.</string>
     <string name="setup_start">Start</string>
     <string name="setup_dev_title">Turn on Developer options.</string>
     <string name="setup_dev_body">Open Settings &gt; System &gt; About &gt; Build, and press it 7 times.</string>
@@ -89,7 +89,7 @@
     <string name="setup_no_answer">No answer from the TV yet.</string>
     <string name="setup_connecting">Connecting</string>
     <string name="setup_waiting_for_you">Waiting for you</string>
-    <string name="setup_waiting_dots">Waiting for you...</string>
+    <string name="setup_waiting_dots">Waiting for you…</string>
     <string name="setup_show_me_how">Show me how</string>
     <string name="setup_your_apps">Your apps</string>
     <plurals name="setup_subject_others">
@@ -110,7 +110,7 @@
     <string name="setup_qr_help">QR code for the help page</string>
     <string name="setup_qr_pair">QR code for the pairing page</string>
     <string name="setup_scan_me">Scan me</string>
-    <string name="setup_starting">Starting...</string>
+    <string name="setup_starting">Starting…</string>
     <string name="setup_step_of">Step %1$d of %2$d</string>
     <string name="setup_pair_title">Use your phone.</string>
     <string name="setup_pair_body_phone">On your phone, scan this code and keep the page open. It asks for 6 digits.</string>
@@ -166,9 +166,9 @@
     <string name="apps_pill_eta">%1$s · %2$s</string>
     <string name="detail_optimizing_now">Optimizing now</string>
     <string name="detail_optimized_checked">Optimized for speed · checked %1$s</string>
-    <string name="detail_resetting">Resetting...</string>
+    <string name="detail_resetting">Resetting…</string>
     <string name="detail_didnt_reset">Didn\'t reset: %1$s.</string>
-    <string name="detail_unexpected_error">unexpected error</string>
+    <string name="detail_unexpected_error">something went wrong. Try again</string>
     <string name="detail_new">New</string>
     <string name="detail_version_updated">Version %1$s · Updated %2$s</string>
     <string name="detail_version_unknown">unknown</string>
@@ -185,7 +185,7 @@
     <string name="working_waiting_debugging">Waiting for the TV\'s debugging connection. It retries on its own.</string>
     <string name="working_waiting_turn">Waiting for its turn</string>
     <string name="working_optimized_leave">Optimized. You can leave now.</string>
-    <string name="working_compiled_leave">Compiled. You can leave now.</string>
+    <string name="working_compiled_leave">Optimized. This TV doesn\'t report the result, so it couldn\'t be double-checked. You can leave now.</string>
     <string name="working_failed">Didn\'t finish: %1$s</string>
     <string name="working_cancelled">It was cancelled.</string>
     <string name="working_no_reason">No reason was recorded.</string>
@@ -202,7 +202,7 @@
     <string name="working_leave_desc">Leave, optimizing continues</string>
     <string name="working_done_leave_desc">Done, leave this screen</string>
     <string name="working_status_optimized">%1$s optimized</string>
-    <string name="working_status_compiled">%1$s compiled</string>
+    <string name="working_status_compiled">%1$s optimized</string>
     <string name="working_status_failed">%1$s didn\'t finish</string>
     <string name="working_back_leave">Back to leave</string>
     <string name="working_back_stop">Back to stop</string>
@@ -241,7 +241,7 @@
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_custom">Custom</string>
     <plurals name="settings_hue_desc">
-        <item quantity="one">Custom accent hue, %1$d degrees</item>
+        <item quantity="one">Custom accent hue, %1$d degree</item>
         <item quantity="other">Custom accent hue, %1$d degrees</item>
     </plurals>
     <string name="settings_keep_trusting_title">Keep this TV trusting the app</string>
@@ -320,18 +320,17 @@
     <string name="stored_reset_refused_said">Didn\'t reset: the TV refused. It said: %1$s</string>
     <string name="stored_reset_unsupported">Didn\'t reset: not supported here.</string>
     <string name="stored_reset_done">Reset done. The TV chooses how to run this app again.</string>
-    <!-- Must equal the stored English text exactly, so no plural. -->
-    <string name="stored_finish_timeout" tools:ignore="PluralsCandidate">Didn\'t finish: the TV took more than %1$d minutes.</string>
+    <string name="stored_finish_timeout">Didn\'t finish: the TV took too long. Try again when nothing is playing.</string>
     <string name="stored_finish_not_paired">Didn\'t finish: the TV no longer trusts this app. Choose Fix connection in Settings.</string>
     <string name="stored_finish_not_allowed">Didn\'t finish: the TV has not allowed this app. Accept the debugging prompt on the TV.</string>
     <string name="stored_finish_lost">Didn\'t finish: lost the connection to the TV.</string>
-    <string name="stored_finish_refused">Didn\'t finish: the TV refused to optimize this app.</string>
-    <string name="stored_finish_refused_said">Didn\'t finish: the TV refused to optimize this app. It said: %1$s</string>
-    <string name="stored_finish_not_speed">Didn\'t finish: %1$s, not speed.</string>
-    <string name="stored_finish_unexpected">Didn\'t finish: unexpected error (%1$s).</string>
+    <string name="stored_finish_refused">Didn\'t finish: the TV refused to optimize this app. Try again when the TV is idle.</string>
+    <string name="stored_finish_refused_said">Didn\'t finish: the TV refused to optimize this app. Try again when the TV is idle. It said: %1$s</string>
+    <string name="stored_finish_not_speed">Didn\'t finish: the TV only partly optimized this app. Try again when the TV is idle.</string>
+    <string name="stored_finish_unexpected">Didn\'t finish: something went wrong. Try again from the app.</string>
     <string name="stored_optimized_unverified">Optimized (this TV doesn\'t report the result)</string>
     <string name="stored_optimized_checked">Optimized (checked)</string>
-    <string name="stored_verify_unknown">The TV did not report this app\'s compiler filter.</string>
+    <string name="stored_verify_unknown">The TV did not report the result for this app.</string>
     <string name="stored_not_installed">Not installed</string>
     <!-- review fixes -->
     <string name="common_footer_hint">"▲▼ choose  ● select  ◀ back"</string>
