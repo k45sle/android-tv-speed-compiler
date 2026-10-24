@@ -15,6 +15,8 @@ import dev.speedcompiler.tv.ui.working.WorkingHost
 import dev.speedcompiler.tv.ui.Routes
 import com.github.takahirom.roborazzi.recordRoboVideo
 import com.github.takahirom.roborazzi.RoboVideoOptions
+import com.github.takahirom.roborazzi.RoboVideoRecorderScope
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -282,39 +284,70 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         pickApps(); rule.onNodeWithText("Continue (2 selected)", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
     }) { SetupScreen({}, deps = setupDeps(true)) }
 
-    private enum class Step { Home, Apps, Detail, Working, HomeDone }
+    private enum class Step { Home, Apps, Detail, Working, Activity, Setup }
+
+    // State the clip screens read; each clip test sets what it needs, then starts the runner.
+    private var step by mutableStateOf(Step.Home)
+    private var home by mutableStateOf(homeState())
+    private var activityEvents by mutableStateOf(emptyList<Event>())
+    private var run = q(9, NUVIO, QueueState.RUNNING).copy(source = QueueSource.MANUAL, runNow = true)
+    private val queue = MutableStateFlow(emptyList<QueueEntry>())
+    private val history = MutableStateFlow(emptyList<QueueItem>())
+    private val setupEnv = FakeSetupEnv(false, false, setupApps)
+    private val setupConn = MutableStateFlow(ConnectionState.Unpaired)
+    private val setupUrl = MutableStateFlow<String?>(null)
+    private fun clock() = nowMs + rule.mainClock.currentTime
+
+    // Key events go to whatever has focus, as with a remote.
+    @OptIn(ExperimentalTestApi::class)
+    private fun press(key: Key = Key.DirectionCenter) = rule.onRoot().performKeyInput { pressKey(key) }
+
+    private val oldEvents = listOf(
+        Event(1, nowMs - 20 * min, "com.example.streambox", "optimize_verified", "Optimized (checked)"),
+        Event(2, nowMs - 180 * min, "com.example.retroarcade", "optimize_verified", "Optimized (checked)"),
+        Event(3, nowMs - 26 * 60 * min, "com.example.musichub", "optimize_verified", "Optimized (checked)"),
+    )
+
+    /** Home and Activity for the hands-off clip: Nuvio was optimized three days ago, or just now when [nuvioDone]. */
+    private fun handsoff(q: List<QueueEntry>, events: List<Event>, nuvioDone: Boolean = false) {
+        val watched = listOf(
+            optimized("com.example.streambox", 20), optimized("com.example.retroarcade", 180),
+            optimized(NUVIO, if (nuvioDone) 0 else 3 * 24 * 60), optimized("com.example.musichub", 26 * 60),
+        )
+        queue.value = q; activityEvents = events
+        home = HomeState(ConnectionState.Connected, true, watched, q, events, ::look)
+    }
 
     /**
-     * README demo clip: Home, Apps, Nuvio, Optimize now, the Working screen and a few seconds of each game (Back to the arcade
-     * between them), the job finishing during Cosmic Worm, Done, and Home with Nuvio optimized. Runs only with DEMO_FLOW_GIF=<absolute path>; tools/demo.sh builds the video.
+     * The one runner behind every clip: sets up the screens at [start], the keyboard input mode and window focus, the game seeds
+     * and the fake setup state, then records [script] into <DEMO_CLIPS_DIR>/[name].gif. Skipped without that env var (absolute dir),
+     * so the stills run never records. tools/demo.sh runs all clips and builds the media.
      */
     @OptIn(ExperimentalTestApi::class)
-    @Config(qualifiers = "w960dp-h540dp-mdpi") // 960x540 like the old demo; 1080p frames run out of heap
-    @Test fun demoFlow() {
-        val path = System.getenv("DEMO_FLOW_GIF")
-        assumeNotNull(path)
+    private fun clip(name: String, start: Step, script: RoboVideoRecorderScope.() -> Unit) {
+        val dir = System.getenv("DEMO_CLIPS_DIR")
+        assumeNotNull(dir)
         val nuvio = demo[2]
-        val clock = { nowMs + rule.mainClock.currentTime }
-        var run = q(9, nuvio.pkg, QueueState.RUNNING).copy(source = QueueSource.MANUAL, runNow = true)
-        val queue = MutableStateFlow(emptyList<QueueEntry>())
-        val history = MutableStateFlow(emptyList<QueueItem>())
-        var step by mutableStateOf(Step.Home)
+        step = start
         rule.mainClock.autoAdvance = false // the games and the Working banner never go idle
         rule.setContent {
             // Robolectric starts in touch mode, where the clickable rows cannot take focus; a TV remote is keyboard mode.
             val input = LocalInputModeManager.current
             LaunchedEffect(Unit) { input.requestInputMode(InputMode.Keyboard) }
+            val q by queue.collectAsState()
+            val h by history.collectAsState()
             SpeedTheme(ThemeChoice.Dark) {
                 when (step) {
-                    Step.Home -> HomeContent(homeState(), { if (it == Routes.Apps) step = Step.Apps }, now, utc)
+                    Step.Home -> HomeContent(home, { step = when (it) { Routes.Apps -> Step.Apps; Routes.Activity -> Step.Activity; else -> step } }, now, utc)
                     Step.Apps -> AppsScreen({ if (it == Routes.appDetail(nuvio.pkg)) step = Step.Detail }, {}, appsDeps())
                     Step.Detail -> AppDetailContent(
                         AppInfo(nuvio.pkg, nuvio.label, "3.2", nowMs - 27L * 24 * 60 * min, banner = { banner(nuvio) }),
                         WatchedApp(nuvio.pkg, "1"), null, QueueEntry(nuvioEntry.item.copy(state = QueueState.QUEUED), 0, Eta.InQueue(0, 60_000)), nowMs, utc,
                         { run = run.copy(startedAt = clock()); queue.value = listOf(QueueEntry(run, 0, Eta.None)); step = Step.Working }, {}, {},
                     )
-                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, clock) { step = Step.HomeDone }
-                    Step.HomeDone -> HomeContent(homeState(nuvioDone = true), {}, now, utc)
+                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, ::clock) { home = homeState(nuvioDone = true); step = Step.Home }
+                    Step.Activity -> ActivityContent(q, h, activityEvents, ::look, {}, {}, now, utc)
+                    Step.Setup -> SetupScreen({}, deps = SetupDeps(setupEnv, setupConn, setupUrl))
                 }
             }
         }
@@ -322,57 +355,88 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         // Robolectric's window never gets focus, and the screens wait for it before taking their first focus.
         rule.runOnUiThread { rule.activity.window.decorView.dispatchWindowFocusChanged(true) }
         rule.mainClock.advanceTimeByFrame()
-        // Key events go to whatever has focus, as with a remote.
-        fun press(key: Key = Key.DirectionCenter) = rule.onRoot().performKeyInput { pressKey(key) }
-        CosmicWormDef.seed = 270 // picked by simulation: the gate loop below eats two stars on it
+        CosmicWormDef.seed = 270 // picked by simulation: the gate loop in the arcade clip eats two stars on it
         AlienRunDef.seed = 7; StarArrowDef.seed = 7
         try {
-            rule.onRoot().recordRoboVideo(rule, File(path), RoboVideoOptions(fps = 15, settleTimeoutMillis = 100)) {
-                // The first focus shows no ring under Robolectric, so step off the Apps button and back.
-                delay(1_200)
-                press(Key.DirectionRight)
-                delay(600)
-                press(Key.DirectionLeft)
-                delay(900)
-                press()
-                delay(1_000)
-                repeat(3) { press(Key.DirectionDown); delay(500) }
-                delay(500)
-                press()
-                delay(2_500)
-                press()
-                delay(2_000)
-                // After Back the picker focuses its first cabinet (Cosmic Worm), then Alien Run and Star Arrow to its right.
-                press(Key.DirectionRight)
-                delay(600)
-                press()
-                delay(1_600) // the first cactus reaches the alien at about 2.1 s
-                press()
-                delay(1_600)
-                press(Key.Back)
-                delay(900)
-                repeat(2) { press(Key.DirectionRight); delay(400) }
-                delay(300)
-                press()
-                delay(500)
-                // About 2 s of flight, out before the first rock column: the video's frame steps make longer blind flapping drift into the rocks.
-                repeat(3) { press(); delay(600) }
-                press(Key.Back)
-                delay(900)
-                press()
-                // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
-                delay(1_000)
-                press(Key.DirectionUp)
-                delay(7_000)
-                queue.value = emptyList()
-                history.value = listOf(run.copy(state = QueueState.DONE, finishedAt = clock()))
-                delay(2_000)
-                press(Key.Back)
-                delay(1_500)
-                press()
-                delay(3_000)
-            }
+            rule.onRoot().recordRoboVideo(rule, File(dir, "$name.gif"), RoboVideoOptions(fps = 15, settleTimeoutMillis = 100)) { script() }
         } finally { CosmicWormDef.seed = null; AlienRunDef.seed = null; StarArrowDef.seed = null }
+    }
+
+    /** Apps, Nuvio, Optimize now, a second of the arcade, the job finishing, Done, and Home with Nuvio optimized. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi") // 960x540; 1080p frames run out of heap
+    @Test fun hero() = clip("hero", Step.Apps) {
+        delay(700)
+        repeat(3) { press(Key.DirectionDown); delay(350) }
+        delay(250)
+        press() // Nuvio
+        delay(1_300)
+        press() // Optimize now
+        delay(600)
+        press() // the first cabinet
+        delay(1_000)
+        queue.value = emptyList()
+        history.value = listOf(run.copy(state = QueueState.DONE, finishedAt = clock()))
+        delay(1_200)
+        press(Key.Back)
+        delay(1_000)
+        press() // Done
+        delay(2_400)
+    }
+
+    /** The arcade picker, then about 3 s each of Alien Run, Star Arrow and Cosmic Worm while the job strip ticks. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun arcade() {
+        run = run.copy(startedAt = clock())
+        queue.value = listOf(QueueEntry(run, 0, Eta.None))
+        clip("arcade", Step.Working) {
+            delay(800)
+            press(Key.DirectionRight)
+            delay(300)
+            press() // Alien Run
+            delay(1_600) // the first cactus reaches the alien at about 2.1 s
+            press()
+            delay(900)
+            press(Key.Back)
+            delay(800)
+            press(Key.DirectionRight) // after Back the picker keeps focus on the cabinet just played
+            delay(300)
+            press() // Star Arrow
+            delay(500)
+            // Out before the first rock column: the video's frame steps make longer blind flapping drift into the rocks.
+            repeat(4) { press(); delay(600) }
+            press(Key.Back)
+            delay(800)
+            repeat(2) { press(Key.DirectionLeft); delay(300) }
+            press() // Cosmic Worm
+            // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
+            delay(1_000)
+            press(Key.DirectionUp)
+            delay(1_700)
+        }
+    }
+
+    /** An app update is detected, waits as Queued until nothing is playing, runs, and Activity shows it done. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun handsoff() {
+        handsoff(emptyList(), oldEvents)
+        clip("handsoff", Step.Home) {
+            delay(800)
+            press(Key.DirectionRight); delay(400); press(Key.DirectionLeft) // the first focus shows no ring under Robolectric
+            delay(600)
+            val detected = listOf(Event(5, clock(), NUVIO, "update_detected", "Update detected")) + oldEvents
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.QUEUED), 0, Eta.None)), detected)
+            delay(1_200)
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.WAITING_GATE), 0, Eta.WaitingForPlayback)), detected)
+            delay(1_000)
+            press(Key.DirectionRight); delay(300); press() // Activity
+            delay(1_700)
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.RUNNING).copy(startedAt = clock()), 0, Eta.None)), detected)
+            delay(1_000)
+            val item = q(10, NUVIO, QueueState.DONE).copy(startedAt = clock() - 90_000, finishedAt = clock())
+            history.value = listOf(item)
+            handsoff(emptyList(), listOf(Event(6, clock(), NUVIO, "optimize_verified", "Optimized (checked)")) + detected, nuvioDone = true)
+            delay(1_800)
+        }
     }
 
     private companion object {
