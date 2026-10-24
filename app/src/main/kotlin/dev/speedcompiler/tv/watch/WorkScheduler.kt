@@ -1,8 +1,8 @@
 package dev.speedcompiler.tv.watch
 
 import android.content.Context
-import android.os.Environment
-import android.os.StatFs
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -46,12 +46,13 @@ fun queueWithEta(
     connection: Flow<ConnectionState>,
     cache: GateCache,
     storageLow: () -> Boolean = { false },
+    tickMillis: Long = GATE_TICK_MILLIS,
 ): Flow<List<QueueEntry>> = flow {
     coroutineScope {
         launch { connection.distinctUntilChanged().collect { cache.refreshIfStale(force = true) } }
-        launch { while (true) { delay(GATE_TICK_MILLIS); cache.refreshIfStale() } }
-        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status, connection.distinctUntilChanged()) { items, gate, conn ->
-            val low = storageLow()
+        // Each tick refreshes the gate and re-reads storage, which has no flow of its own.
+        val storage = flow { while (true) { cache.refreshIfStale(); emit(storageLow()); delay(tickMillis) } }.distinctUntilChanged()
+        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status, connection.distinctUntilChanged(), storage) { items, gate, conn, low ->
             items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i, connection = conn, storageLow = low)) }
         })
     }
@@ -72,10 +73,11 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
 
     override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache, ::storageLow)
 
-    /** Mirrors the system's low-storage test (free < min(10% of data, 500 MB)), which WorkManager's constraint follows. */
+    /** Reads the same sticky broadcast WorkManager's storage-not-low constraint follows. */
+    @Suppress("DEPRECATION")
     private fun storageLow(): Boolean {
-        val fs = StatFs(Environment.getDataDirectory().path)
-        return fs.availableBytes < minOf(fs.totalBytes / 10, 500L * 1024 * 1024)
+        val filter = IntentFilter().apply { addAction(Intent.ACTION_DEVICE_STORAGE_LOW); addAction(Intent.ACTION_DEVICE_STORAGE_OK) }
+        return context.registerReceiver(null, filter)?.action == Intent.ACTION_DEVICE_STORAGE_LOW
     }
 
     override val history: Flow<List<QueueItem>> get() = queueDao.history()

@@ -84,4 +84,21 @@ class GateCacheTest {
         monitor.flow.value = ConnectionState.Connected
         assertEquals(Eta.InQueue(0, 0), withTimeout(2_000) { q.first { it.single().eta == Eta.InQueue(0, 0) } }.single().eta)
     }
+
+    @Test
+    fun storageReasonFollowsTheStorageCheck() = runBlocking {
+        val idle = object : GateSignals {
+            override suspend fun musicActive() = false
+            override suspend fun wakefulness() = Wakefulness.Dozing
+        }
+        val monitor = FakeConnectionMonitor(ConnectionState.Connected)
+        val gate = GateImpl(FakeClock(), idle, { GateConfig(GateMode.Idle, GateWindow(0, 0), false) }, ZoneId.of("UTC"))
+        val cache = GateCache(FakeClock(), scope) { gate.status() }
+        var low = true
+        val q = queueWithEta(items, monitor.state, cache, storageLow = { low }, tickMillis = 20)
+        withTimeout(2_000) { q.first { it.single().eta == Eta.WaitingForStorage } }
+        low = false
+        withTimeout(2_000) { q.first { it.single().eta == Eta.InQueue(0, 0) } }
+        Unit
+    }
 }
