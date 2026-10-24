@@ -18,6 +18,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.semantics.SemanticsActions
@@ -56,6 +57,8 @@ class HomeActivityTest : ComposeTestBase() {
         QueueEntry(queued(1, "a.alpha", QueueState.RUNNING), 0, Eta.None),
         QueueEntry(queued(2, "b.beta", QueueState.WAITING_GATE), 1, Eta.StartsAt(Instant.parse("2026-01-01T02:00:00Z"))),
     )
+    /** Nothing queued for a.alpha, so its failed row still offers Retry. */
+    private val queueWithoutAlpha = listOf(QueueEntry(queued(1, "c.gamma", QueueState.RUNNING), 0, Eta.None), queue[1])
     private val watched = listOf(WatchedApp("a.alpha", "1"), WatchedApp("b.beta", "1", lastResult = "Optimized (checked)"))
     private val events = listOf(Event(1, 5_000, "a.alpha", "optimize_failed", "Didn't finish: base.apk (arm64) is verify, not speed."))
 
@@ -213,7 +216,7 @@ class HomeActivityTest : ComposeTestBase() {
         val done = (1L..12).map { QueueItem(it, "p.app$it", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 2_000, finishedAt = 3_000) }
         val failed = QueueItem(99, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 2_500, failureReason = "Connection lost")
         val retried = mutableListOf<Long>()
-        show { ActivityContent(queue, done + failed, events, look, {}, { retried += it }, now, utc) }
+        show { ActivityContent(queueWithoutAlpha, done + failed, events, look, {}, { retried += it }, now, utc) }
         val row = "Alpha, Failed, ${clockText(2_500, utc)}, Connection lost"
         rule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription(row))
         rule.onNodeWithContentDescription(row).requestFocus()
@@ -223,6 +226,33 @@ class HomeActivityTest : ComposeTestBase() {
         assertEquals(listOf(99L), retried)
     }
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test
+    fun retryHidesAndFocusReturnsToTheFailedRow() {
+        val failed = QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 6_000, failureReason = "Connection lost")
+        val current = androidx.compose.runtime.mutableStateOf(emptyList<QueueEntry>())
+        show {
+            // A TV is always in keyboard mode; in touch mode a clickable row cannot take focus.
+            val input = androidx.compose.ui.platform.LocalInputModeManager.current
+            androidx.compose.runtime.SideEffect { input.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard) }
+            ActivityContent(current.value, listOf(failed), events, look, {}, { current.value = current.value + QueueEntry(queued(8, "a.alpha"), 0, Eta.None) }, now, utc)
+        }
+        rule.onNodeWithContentDescription("Retry Alpha").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused().invokeClick()
+        rule.waitForIdle()
+        rule.onAllNodesWithContentDescription("Retry Alpha").assertCountEquals(0)
+        rule.onNodeWithContentDescription("Alpha, Failed, ${clockText(6_000, utc)}, Connection lost").assertIsFocused()
+    }
+
+    @Test
+    fun onlyTheNewestRowOfAnAppOffersRetry() {
+        val older = QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 3_000, failureReason = "Connection lost")
+        val newer = QueueItem(8, "a.alpha", QueueSource.AUTO, QueueState.DONE, 4_000, startedAt = 5_000, finishedAt = 6_000)
+        show { ActivityContent(queueWithoutAlpha, listOf(newer, older), events, look, {}, {}, now, utc) }
+        rule.onAllNodesWithContentDescription("Retry Alpha").assertCountEquals(0)
+    }
+
     @Test
     fun activityQueueCancelHistoryRetryAndExpand() {
         val cancelled = mutableListOf<Long>()
@@ -230,7 +260,7 @@ class HomeActivityTest : ComposeTestBase() {
         val history = listOf(
             QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 6_000, failureReason = "Connection lost"),
         )
-        show { ActivityContent(queue, history, events, look, { cancelled += it }, { retried += it }, now, utc) }
+        show { ActivityContent(queueWithoutAlpha, history, events, look, { cancelled += it }, { retried += it }, now, utc) }
         rule.onNodeWithText("Running", substring = true).assertIsDisplayed()
         rule.onNodeWithText("Waiting · Starts at 02:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Cancel Beta").invokeClick()

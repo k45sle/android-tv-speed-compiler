@@ -96,11 +96,13 @@ fun ActivityContent(
     // The ids shown when the dialog opened, so a job added meanwhile is not cancelled unasked.
     var confirmAll by remember { mutableStateOf<List<Long>?>(null) }
     val queueHeader = remember { FocusRequester() }
-    val historyHeader = remember { FocusRequester() }
     var refocus by remember { mutableStateOf<FocusRequester?>(null) }
     // The acted-on row leaves its list; park focus on that section's header so D-pad focus is not lost.
     LaunchedEffect(queue, history) {
-        refocus?.let { r -> runCatching { r.requestFocus() }.onFailure { runCatching { queueHeader.requestFocus() } }; refocus = null }
+        refocus?.let { r ->
+            if (!runCatching { r.requestFocus() }.getOrDefault(false)) runCatching { queueHeader.requestFocus() }
+            refocus = null
+        }
     }
     // Start inside the board, not on the Marquee BACK chip.
     LaunchedEffect(Unit) { runCatching { queueHeader.requestFocus() } }
@@ -151,18 +153,20 @@ fun ActivityContent(
                 },
             )
         }
-        item { PixelText(stringResource(R.string.activity_history), Modifier.padding(top = Space.x2).focusRequester(historyHeader).focusFx(1f, RowRadius), sc.accent, 36.sp) }
+        item { PixelText(stringResource(R.string.activity_history), Modifier.padding(top = Space.x2).focusFx(1f, RowRadius), sc.accent, 36.sp) }
         if (history.isEmpty()) item { Text(stringResource(R.string.activity_nothing_run), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(history, key = { "h${it.id}" }) { h ->
             val l = look(h.packageName)
             val reason = h.failureReason?.takeIf { h.state == QueueState.FAILED || h.state == QueueState.SKIPPED }?.let { storedText(res, it) }
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
             val retryDesc = stringResource(R.string.activity_retry_app, l.label)
+            val rowFocus = remember { FocusRequester() }
             Column {
               // Retry sits beside the focusable row, not inside it: inside, RIGHT never reached it and OK only toggled the details.
               Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f).semantics { contentDescription = listOfNotNull(l.label, stateText(res, h.state), time, reason).joinToString(", ") }
+                        .focusRequester(rowFocus)
                         .focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
                         .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
@@ -181,7 +185,8 @@ fun ActivityContent(
                         else -> Tone.Neutral
                     }))
                 }
-                if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.padding(end = Space.x2).semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
+                // Only the app's newest finished row offers Retry, and not while it is queued again; then focus moves back to this row, which stays as the record of the failure.
+                if (h.state == QueueState.FAILED && history.first { it.packageName == h.packageName }.id == h.id && queue.none { it.item.packageName == h.packageName }) Button({ refocus = rowFocus; onRetry(h.id) }, Modifier.padding(end = Space.x2).semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
               }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt
