@@ -2,7 +2,9 @@ package dev.speedcompiler.tv.ui.home
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import dev.speedcompiler.tv.engine.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -34,6 +36,20 @@ class StoredTextTest {
     @Test fun everyStoredMessageRendersAsItself() {
         val res = ApplicationProvider.getApplicationContext<Context>().resources
         for (s in stored) assertEquals(s, storedText(res, s))
+    }
+
+    // Built from the engine's own constants and templates, so rewording one there without the registry fails here.
+    @Test fun everyMessageTheEngineCanWriteMapsToAResource() {
+        val all = listOf(
+            DID_NOT_FINISH + INVALID_APP_TAIL, DID_NOT_RESET + INVALID_APP_TAIL, DID_NOT_RESET + TOOK_TOO_LONG_RESET_TAIL,
+            DID_NOT_RESET + NOT_PAIRED_TAIL, DID_NOT_RESET + NOT_ALLOWED_TAIL, DID_NOT_RESET + LOST_TAIL, DID_NOT_RESET + REFUSED_RESET_TAIL,
+            withSaid(DID_NOT_RESET + REFUSED_RESET_TAIL, "x"), RESET_UNSUPPORTED, RESET_DONE,
+            DID_NOT_FINISH + NOT_PAIRED_TAIL, DID_NOT_FINISH + NOT_ALLOWED_TAIL, DID_NOT_FINISH + LOST_TAIL,
+            DID_NOT_FINISH + REFUSED_FINISH_TAIL, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, "x"),
+            tookMinutes(10), unexpectedError("IllegalStateException"), notSpeed("speed-profile"), notSpeed("not fully compiled: verify"),
+            OPTIMIZED_UNVERIFIED, OPTIMIZED_CHECKED, VERIFY_UNKNOWN, NOT_INSTALLED,
+        )
+        for (s in all) assertNotNull(s, storedResource(s))
     }
 
     @Test fun reworkedMessagesShowNextSteps() {

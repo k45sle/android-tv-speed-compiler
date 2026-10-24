@@ -1,5 +1,8 @@
 package dev.speedcompiler.tv.watch
 
+import dev.speedcompiler.tv.engine.NOT_INSTALLED
+import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
+import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
 import android.os.Build
 import androidx.annotation.VisibleForTesting
@@ -95,7 +98,7 @@ suspend fun runVerify(g: AppGraph) {
             "speed" -> {}
             // Unreadable output must not re-queue every app each week.
             null -> g.database.events().insert(
-                Event(timeMillis = g.clock.nowMillis(), packageName = app.packageName, kind = "verify_unknown", message = "The TV did not report this app's compiler filter."),
+                Event(timeMillis = g.clock.nowMillis(), packageName = app.packageName, kind = "verify_unknown", message = VERIFY_UNKNOWN),
             )
             else -> g.scheduler.enqueue(app.packageName, QueueSource.AUTO)
         }
@@ -132,7 +135,10 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 }
 
 /** Gives the app's next job its full set of connection tries again. */
-suspend fun resetConnectionTries(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState("lost:$packageName", "0"))
+fun lostKey(pkg: String) = "lost:$pkg"
+fun retriedKey(pkg: String) = "retried:$pkg"
+
+suspend fun resetConnectionTries(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState(lostKey(packageName), "0"))
 
 /** One later try for a failed app. Its own work name, so it never touches the optimize worker's REPLACE. */
 private fun enqueueRetryLater(context: Context, packageName: String) {
@@ -188,7 +194,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val dao = g.database.queue()
         dao.get(id)?.takeIf { it.state.isActive }?.let {
             resetConnectionTries(g, it.packageName)
-            dao.update(it.copy(state = QueueState.FAILED, finishedAt = g.clock.nowMillis(), failureReason = "Didn't finish: unexpected error (${e.javaClass.simpleName})."))
+            dao.update(it.copy(state = QueueState.FAILED, finishedAt = g.clock.nowMillis(), failureReason = unexpectedError(e.javaClass.simpleName)))
         }
         Result.success()
     }
@@ -200,7 +206,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val fingerprint = g.packageSystem.installed().firstOrNull { it.packageName == pkg }?.fingerprint
         if (fingerprint == null) {
             resetConnectionTries(g, pkg)
-            dao.update(item.copy(state = QueueState.SKIPPED, finishedAt = g.clock.nowMillis(), failureReason = "Not installed"))
+            dao.update(item.copy(state = QueueState.SKIPPED, finishedAt = g.clock.nowMillis(), failureReason = NOT_INSTALLED))
             return Result.success()
         }
         if (!item.runNow) {
@@ -214,7 +220,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         dao.update(item.copy(state = QueueState.RUNNING, startedAt = g.clock.nowMillis(), failureReason = null))
         val result = g.optimizer.optimize(pkg)
         val sync = g.database.syncState()
-        val lostKey = "lost:$pkg" // counted here, not by runAttemptCount: gate waits retry too, and a detect pass starts a fresh worker
+        val lostKey = lostKey(pkg) // counted here, not by runAttemptCount: gate waits retry too, and a detect pass starts a fresh worker
         if (result.connectionLost) {
             val tries = (sync.get(lostKey)?.toIntOrNull() ?: 0) + 1
             if (tries < MAX_CONNECTION_TRIES) {
@@ -241,7 +247,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             ),
         )
         // The fingerprint is stored either way, so the app would wait for the weekly verify: try once more later.
-        val retriedKey = "retried:$pkg"
+        val retriedKey = retriedKey(pkg)
         if (result.ok) {
             sync.put(SyncState(retriedKey, ""))
             WorkManager.getInstance(applicationContext).cancelUniqueWork("$RETRY_WORK:$pkg") // an app at speed needs no later try

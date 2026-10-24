@@ -29,7 +29,7 @@ class OptimizerImpl(
 
     override suspend fun optimize(packageName: String): OptimizeResult {
         if (!isValidPackageId(packageName)) {
-            return finish(null, false, "Didn't finish: that is not a valid app name.", "optimize_failed")
+            return finish(null, false, DID_NOT_FINISH + INVALID_APP_TAIL, "optimize_failed")
         }
         return compile(packageName)
     }
@@ -54,19 +54,11 @@ class OptimizerImpl(
     }
 
     override suspend fun reset(packageName: String): OptimizeResult {
-        if (!isValidPackageId(packageName)) return finish(null, false, "Didn't reset: that is not a valid app name.", "reset_failed")
+        if (!isValidPackageId(packageName)) return finish(null, false, DID_NOT_RESET + INVALID_APP_TAIL, "reset_failed")
         val res = try {
             withTimeout(timeoutMillis) { shell.run(resetCommand(packageName)) }
-        } catch (e: TimeoutCancellationException) {
-            return finish(packageName, false, "Didn't reset: the TV took too long.", "reset_failed")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: AdbFailure.NotPaired) {
-            return finish(packageName, false, "Didn't reset: the TV no longer trusts this app. Choose Fix connection in Settings.", "reset_failed", terminal = true)
-        } catch (e: AdbFailure.NotAuthorized) {
-            return finish(packageName, false, "Didn't reset: the TV has not allowed this app. Accept the debugging prompt on the TV.", "reset_failed", terminal = true)
         } catch (e: Exception) {
-            return finish(packageName, false, "Didn't reset: lost the connection to the TV.", "reset_failed", connectionLost = true)
+            return adbFailed(packageName, e, DID_NOT_RESET, DID_NOT_RESET + TOOK_TOO_LONG_RESET_TAIL, "reset_failed")
         } finally {
             synchronized(dumpLock) { // the reset changes what a dump says
                 dumpGeneration++
@@ -75,24 +67,16 @@ class OptimizerImpl(
         }
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
             val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
-            return finish(packageName, false, "Didn't reset: the TV refused." + said?.let { " It said: $it" }.orEmpty(), "reset_failed")
+            return finish(packageName, false, withSaid(DID_NOT_RESET + REFUSED_RESET_TAIL, said), "reset_failed")
         }
-        return finish(packageName, true, "Reset done. The TV chooses how to run this app again.", "reset_done")
+        return finish(packageName, true, RESET_DONE, "reset_done")
     }
 
     private suspend fun compile(pkg: String): OptimizeResult {
         val res = try {
             withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)) }
-        } catch (e: TimeoutCancellationException) {
-            return finish(pkg, false, "Didn't finish: the TV took more than ${timeoutMillis / 60_000} minutes.", "optimize_failed")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: AdbFailure.NotPaired) { // retrying cannot help: the user has to act
-            return finish(pkg, false, "Didn't finish: the TV no longer trusts this app. Choose Fix connection in Settings.", "optimize_failed", terminal = true)
-        } catch (e: AdbFailure.NotAuthorized) {
-            return finish(pkg, false, "Didn't finish: the TV has not allowed this app. Accept the debugging prompt on the TV.", "optimize_failed", terminal = true)
         } catch (e: Exception) {
-            return finish(pkg, false, "Didn't finish: lost the connection to the TV.", "optimize_failed", connectionLost = true)
+            return adbFailed(pkg, e, DID_NOT_FINISH, tookMinutes(timeoutMillis / 60_000), "optimize_failed")
         } finally {
             synchronized(dumpLock) { // the compile changes what a dump says
                 dumpGeneration++
@@ -102,7 +86,7 @@ class OptimizerImpl(
         // exitCode -1 means the TV gave no code; the word Success then decides alone.
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
             val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
-            return finish(pkg, false, "Didn't finish: the TV refused to optimize this app." + said?.let { " It said: $it" }.orEmpty(), "optimize_failed")
+            return finish(pkg, false, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, said), "optimize_failed")
         }
         val filter = try {
             verify(pkg)
@@ -112,10 +96,19 @@ class OptimizerImpl(
             null
         }
         return when (filter) {
-            null -> finish(pkg, true, "Optimized (this TV doesn't report the result)", "optimize_unverified")
-            "speed" -> finish(pkg, true, "Optimized (checked)", "optimize_verified")
-            else -> finish(pkg, false, "Didn't finish: ${filter.removePrefix("not fully compiled: ")}, not speed.", "optimize_failed")
+            null -> finish(pkg, true, OPTIMIZED_UNVERIFIED, "optimize_unverified")
+            "speed" -> finish(pkg, true, OPTIMIZED_CHECKED, "optimize_verified")
+            else -> finish(pkg, false, notSpeed(filter), "optimize_failed")
         }
+    }
+
+    /** One ladder for reset and compile; a user-fixable failure is terminal, a dropped link is connectionLost. */
+    private suspend fun adbFailed(pkg: String, e: Exception, prefix: String, timeoutText: String, kind: String): OptimizeResult = when (e) {
+        is TimeoutCancellationException -> finish(pkg, false, timeoutText, kind)
+        is CancellationException -> throw e
+        is AdbFailure.NotPaired -> finish(pkg, false, prefix + NOT_PAIRED_TAIL, kind, terminal = true) // retrying cannot help: the user has to act
+        is AdbFailure.NotAuthorized -> finish(pkg, false, prefix + NOT_ALLOWED_TAIL, kind, terminal = true)
+        else -> finish(pkg, false, prefix + LOST_TAIL, kind, connectionLost = true)
     }
 
     private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false): OptimizeResult {
