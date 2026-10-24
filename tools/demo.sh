@@ -2,7 +2,7 @@
 # Builds the README clips from the scripted Robolectric tests in ReadmeScreenshotsTest (hero, arcade, handsoff, setup). Needs ffmpeg,
 # ImageMagick and, for the setup clip's phone page, Google Chrome (CHROME overrides its path).
 # One Gradle call records every clip. For each clip it writes docs/media/<name>.gif (10 fps, 640 px wide with the pixel TV bezel from
-# tools/pixel/bezel.png; setup.gif is wider, with the phone page beside the TV during the pair step) and docs/media/<name>.png
+# tools/pixel/bezel.png; setup.gif is wider, with a phone beside the TV that shows the phone page during the pair step) and docs/media/<name>.png
 # (the first frame, the poster for prefers-reduced-motion), and <name>.mp4 (the bare clip) into $DEMO_OUT (default: a new temp folder).
 # The phone page is also written to docs/media/phone-pair.png. MP4s never go into the repo, so new takes do not grow git history.
 # With DEMO_TAG set, every MP4 is attached to that existing GitHub release (gh release upload --clobber). Last, a size check: no GIF
@@ -37,6 +37,8 @@ case " $clips " in *" setup "*)
   magick "$work/phone-full.png" -crop 780x960+0+0 +repage "$media/phone-pair.png"
   # A simple phone frame: grey body, dark outline.
   magick "$media/phone-pair.png" -resize 290x -bordercolor '#4D5560' -border 8 -bordercolor '#0B2017' -border 2 "$work/phone.png"
+  # The same frame with a dark screen, shown until the pair step.
+  magick "$media/phone-pair.png" -resize 290x -fill '#07140E' -colorize 100 -bordercolor '#4D5560' -border 8 -bordercolor '#0B2017' -border 2 "$work/phone-off.png"
   ;;
 esac
 
@@ -47,8 +49,8 @@ for c in $clips; do
   ffmpeg -loglevel error -y -i "$work/$c.gif" -r 30 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
     -c:v libx264 -crf 20 -movflags +faststart "$out/$c.mp4"
   if [ "$c" = setup ]; then
-    fx="$(tv 958)[tv];[tv][2:v]overlay=648:18:enable='between(t,$phone_from,$phone_to)':shortest=1"
-    extra="-loop 1 -i $work/phone.png"
+    fx="$(tv 958)[tv];[tv][2:v]overlay=648:18:shortest=1[off];[off][3:v]overlay=648:18:enable='between(t,$phone_from,$phone_to)':shortest=1"
+    extra="-loop 1 -i $work/phone-off.png -loop 1 -i $work/phone.png"
   else
     fx=$(tv 640)
     extra=""

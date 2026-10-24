@@ -346,7 +346,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
                         WatchedApp(nuvio.pkg, "1"), null, QueueEntry(nuvioEntry.item.copy(state = QueueState.QUEUED), 0, Eta.InQueue(0, 60_000)), nowMs, utc,
                         { run = run.copy(startedAt = clock()); queue.value = listOf(QueueEntry(run, 0, Eta.None)); step = Step.Working }, {}, {},
                     )
-                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, ::clock) { home = homeState(nuvioDone = true); step = Step.Home }
+                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, ::clock, verified = flowOf(true)) { home = homeState(nuvioDone = true); step = Step.Home }
                     Step.Activity -> ActivityContent(q, h, activityEvents, ::look, {}, {}, now, utc)
                     Step.Setup -> SetupScreen({}, deps = SetupDeps(setupEnv, setupConn, setupUrl))
                 }
@@ -409,10 +409,10 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
             delay(600)
             repeat(2) { press(Key.DirectionLeft); delay(250) }
             press() // Cosmic Worm
-            // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
-            delay(900)
+            // The head starts at (4, 3) going right, a cell every 0.17 s: the turn up comes at x = 10.
+            delay(1_000)
             press(Key.DirectionUp)
-            delay(1_400)
+            delay(500) // the worm hits the wall about 0.8 s after this turn, so the clip ends first
         }
     }
 
@@ -424,7 +424,8 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
             delay(800)
             press(Key.DirectionRight); delay(400); press(Key.DirectionLeft) // the first focus shows no ring under Robolectric
             delay(600)
-            val detected = listOf(Event(5, clock(), NUVIO, "update_detected", "Update detected")) + oldEvents
+            // The engine writes no event for a detected update; the card going from Optimized to Queued shows it.
+            val detected = oldEvents
             handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.QUEUED), 0, Eta.None)), detected)
             delay(1_200)
             handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.WAITING_GATE), 0, Eta.WaitingForPlayback)), detected)
