@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.assertCountEquals
@@ -193,6 +194,7 @@ class SetupFlowTest : ComposeTestBase() {
         }
         assertEquals(3, env.calls.count { it == "startPairing" })
         see("Show me how")
+        rule.onNodeWithText("Open Developer options", ignoreCase = true).assertIsFocused() // focus stays on an action
     }
 
     @Test

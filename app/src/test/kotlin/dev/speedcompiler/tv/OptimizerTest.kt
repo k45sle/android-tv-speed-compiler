@@ -112,6 +112,8 @@ class OptimizerTest {
         assertNull(parseCompilerFilter(art, "dev.speedcompiler"))
         assertEquals("speed", parseCompilerFilter(v1, "dev.speedcompiler.tv"))
         assertNull(parseCompilerFilter("[qa.wifihold]\n  arm: [status=speed]\n", "dev.speedcompiler.tv"))
+        // A longer id that starts with the wanted one must not match.
+        assertNull(parseCompilerFilter("[dev.speedcompiler.tv.test]\n  arm: [status=speed]\n", "dev.speedcompiler.tv"))
     }
 
     @Test fun fullyCompiledSingleAndSplitAppsReadSpeedOnBothVersions() {
