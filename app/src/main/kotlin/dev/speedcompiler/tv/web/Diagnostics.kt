@@ -75,7 +75,7 @@ fun buildDiagnosticsJson(d: DiagnosticsInput, known: List<String> = emptyList(),
             "settings",
             JSONObject().put("mode", s.mode.name).put("windowStartMinute", s.windowStartMinute)
                 .put("windowEndMinute", s.windowEndMinute).put("gateMode", s.gateMode.name)
-                .put("paused", s.paused).put("keepTrusting", s.keepTrusting).put("theme", s.theme.name),
+                .put("paused", s.paused).put("keepTrusting", s.keepTrusting).put("keepWifiDebugging", s.keepWifiDebugging).put("theme", s.theme.name),
         )
         .put(
             "watchedApps",

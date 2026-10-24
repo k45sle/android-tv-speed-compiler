@@ -176,7 +176,9 @@ class SettingsScreenTest : ComposeTestBase() {
         click("Fix connection"); click("Export diagnostics"); click("Help")
         assertEquals(listOf(Routes.Reconnect, Routes.Diagnostics, Routes.Help), gone)
         click("Keep this TV trusting the app")
-        assertEquals(true, state.value.keepTrusting)
+        assertEquals(false, state.value.keepTrusting)
+        click("Keep Wireless debugging on")
+        assertEquals(false, state.value.keepWifiDebugging)
     }
 
     @Test

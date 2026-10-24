@@ -21,9 +21,11 @@ class SettingsTest {
     @get:Rule val tmp = TemporaryFolder()
 
     @Test
-    fun keepTrustingIsOffByDefault() = runBlocking {
+    fun connectionSettingsAreOnByDefault() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("k.preferences_pb").also { it.delete() } }
-        assertEquals(false, DataStoreSettings(store).values.first().keepTrusting)
+        val v = DataStoreSettings(store).values.first()
+        assertEquals(true, v.keepTrusting)
+        assertEquals(true, v.keepWifiDebugging)
     }
 
     @Test

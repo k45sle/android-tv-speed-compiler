@@ -94,7 +94,7 @@ The app was written with the Nuvio community in mind, but it works with any app 
 
 - Watches the apps you pick and queues a compile when one of them updates.
 - Waits until nothing is playing, or until a time window you set, so it does not slow down what you are watching.
-- Reconnects by itself after the TV restarts, as long as Wireless debugging stays on. After a restart it turns Wireless debugging back on if it was off.
+- Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging back on at those moments (you can turn this off in Settings).
 - Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
 - Shows a history of each job, with the reason when one fails.
 - Has eight accent colours plus a custom one, and light and dark themes.
@@ -122,8 +122,8 @@ If setup gets stuck, these are the usual causes.
 | No Developer options in Settings | Open Settings, then System, then About. Press OK on Build 7 times. |
 | The pairing code did not work | Codes expire after a short time. Open Pair device with pairing code again on the TV and type the new 6 digits. |
 | The phone can't open the pairing page | Keep the phone on the same Wi-Fi as the TV. If the QR code will not scan, type the short address shown on the TV into the phone's browser. |
-| The TV asks to allow debugging | Choose Always allow from this computer, then OK. Android can ask again after a while; turn on Keep this TV trusting the app in Settings to stop that. |
-| Wireless debugging is off | It can switch off after a network change. Turn it on again in Developer options and the app reconnects by itself. The app only turns it on itself after a TV restart, so switching it off stays off until then. |
+| The TV asks to allow debugging | Choose Always allow from this computer, then OK. If you turned off Keep this TV trusting the app in Settings, Android can ask again after a while. |
+| Wireless debugging is off | It can switch off after a network change. With Keep Wireless debugging on (the default), the app turns it back on as soon as you open it, after the TV restarts, or when an optimization or weekly check loses its connection. If you turned that setting off, turn Wireless debugging on again in Developer options and the app reconnects by itself. |
 | The TV forgot this app | Open the app and choose Fix connection. |
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
@@ -140,10 +140,15 @@ So far it has been tested on the Android TV emulator (API 34) only. Reports from
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
 **Why does it need Developer options?**
-Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. Through that connection it also gives itself permission to switch Wireless debugging back on after a restart (and only then), and, if you turn on Keep this TV trusting the app (off by default), stops the TV from asking to allow debugging again.
+Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. Through that connection it also changes two TV settings so it keeps working on its own. Both are on by default:
+
+- **Keep Wireless debugging on.** Each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself.
+- **Keep this TV trusting the app.** Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again.
+
+You can turn either one off in the app's Settings. That's optional, and it can make things less convenient later. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
 **Is it safe?**
-It runs Android's own compiler through the standard `cmd package compile` command, only for the apps you pick. You can stop it at any time by switching off Wireless debugging (it stays off until the TV restarts) or uninstalling the app. Wireless debugging and the trust setting stay as they are after an uninstall; switch them off in Developer options if you no longer want them.
+It runs Android's own compiler through the standard `cmd package compile` command, only for the apps you pick. You can stop it at any time by uninstalling the app, or by turning off Keep Wireless debugging on in Settings and then switching off Wireless debugging. Wireless debugging and the trust setting stay as they are after an uninstall; switch them off in Developer options if you no longer want them.
 
 **How do I undo it?**
 Open the app in Apps and choose Reset. Uninstalling Speed Compile does not undo it.
