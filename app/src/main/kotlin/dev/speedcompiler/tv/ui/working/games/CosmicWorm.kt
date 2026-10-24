@@ -29,6 +29,9 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     /** Last moved direction: index into [DX]/[DY] (right, down, left, up). */
     var dir = 0; private set
     private var want = 0
+    /** Direction of the move before the last one, and whether the last move was plain; for [redirect]. */
+    private var prevDir = 0
+    private var plain = false
     /** A second quick turn pressed within one step, played on the next step; -1 if none. */
     private var queued = -1
     var foodX = 0; internal set
@@ -70,6 +73,21 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         for (c in 0 until CELLS) if (!onBody(c % W, c / W, len) && k-- == 0) { foodX = c % W; foodY = c / W; return }
     }
 
+    /**
+     * Redoes the last move toward [d] instead, if it was a plain move (no star, no gate) and the new cell is empty and plain too.
+     * The cells before that move are still in [px]/[py], so the body is rebuilt from them; [acc] keeps the slide where it is.
+     */
+    private fun redirect(d: Int): Boolean {
+        if (!plain || (d + 2) % 4 == prevDir) return false
+        val nx = px[0] + DX[d]; val ny = py[0] + DY[d]
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H || (nx == foodX && ny == foodY)) return false
+        for (i in 0 until len - 1) if (px[i] == nx && py[i] == ny) return false // the tail cell frees up, as in step()
+        for (i in len - 1 downTo 1) { bx[i] = px[i - 1]; by[i] = py[i - 1] }
+        bx[0] = nx; by[0] = ny
+        dir = d; want = d
+        return true
+    }
+
     private fun onBody(x: Int, y: Int, n: Int): Boolean {
         for (i in 0 until n) if (bx[i] == x && by[i] == y) return true
         return false
@@ -84,14 +102,16 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         // Reversing into the neck is ignored; a second turn within one step waits for the next step, so UP then LEFT is a quick U-turn.
         if (d >= 0) {
             if (want == dir) {
-                // A turn pressed in the second half of a step moves at once: the head snaps up to half a cell, but waits at most half a step.
-                if ((d + 2) % 4 != dir && d != dir) { want = d; if (acc >= STEP / 2) acc = STEP - DT / 2 }
+                // A turn never waits for the cell boundary. Late in a step the move happens now (the head snaps up to half a cell);
+                // early in a step the last move is redone toward the turn (the head shifts sideways up to 0.7 cell).
+                if ((d + 2) % 4 != dir && d != dir && !(acc < STEP / 2 && redirect(d))) { want = d; if (acc >= STEP / 2) acc = STEP - DT / 2 }
             }
             else if (queued < 0 && d != want && (d + 2) % 4 != want) queued = d
         }
         acc += DT
         if (acc < STEP) return
         acc -= STEP
+        prevDir = dir
         dir = want
         if (queued >= 0) { want = queued; queued = -1 }
         val n = neighbour(bx[0], by[0], dir)
@@ -115,6 +135,7 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         // A new tail cell grows out of the old tail cell.
         for (i in oldLen until len) { px[i] = px[oldLen - 1]; py[i] = py[oldLen - 1] }
         moves++
+        plain = !eat && abs(nx - px[0]) + abs(ny - py[0]) == 1
         if (eat) { score++; sparkle = 0f; sparkleX = nx; sparkleY = ny; placeFood() }
     }
 

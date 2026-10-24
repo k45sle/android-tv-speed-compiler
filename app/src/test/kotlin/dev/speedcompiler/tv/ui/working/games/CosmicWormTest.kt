@@ -7,9 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CosmicWormTest {
-    /** Ticks until the worm has moved one cell (or died). */
+    /** Ticks until the worm has moved one cell (or died). [input] is pressed late in the step, so a turn starts at the head. */
     private fun CosmicWorm.move(input: Input? = null) {
         val m = moves
+        while (acc < CosmicWorm.STEP / 2 && !over) step(null)
         step(input)
         var guard = 0
         while (moves == m && !over && guard++ < 20) step(null)
@@ -50,6 +51,23 @@ class CosmicWormTest {
         g.step(Input.UP)
         assertEquals(m + 1, g.moves)
         assertEquals(4 to 2, g.head())
+    }
+
+    @Test
+    fun aTurnEarlyInAStepRedoesTheLastMove() {
+        val g = CosmicWorm(Random(1))
+        g.foodX = 0; g.foodY = 0
+        g.move() // (4,3) -> (5,3), a plain move
+        val m = g.moves
+        g.step(Input.UP)
+        assertEquals(m, g.moves)
+        assertEquals(4 to 2, g.head()) // turned from (4,3), where the head was drawn
+        assertEquals(4 to 3, g.bx[1] to g.by[1])
+        assertEquals(3, g.dir)
+        g.step(Input.LEFT) // the reverse of the move before: waits for the boundary, a U-turn
+        g.move()
+        assertEquals(3 to 2, g.head())
+        assertFalse(g.over)
     }
 
     @Test
