@@ -352,6 +352,19 @@ class SchedulingTest {
         assertEquals("lost", g.database.queue().get(1)!!.failureReason)
     }
 
+    @Test fun aRefusedCompileIsRequeuedOnceThenFails() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "refused", refused = true)
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("requeued") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
+        assertEquals(QueueState.WAITING_GATE, state(1))
+        assertEquals(1, optimizer.optimized.size)
+        driver.setAllConstraintsMet(infos("a").single().id)
+        await("failed") { state(1) == QueueState.FAILED }
+        assertEquals(2, optimizer.optimized.size)
+        assertEquals("refused", g.database.queue().get(1)!!.failureReason)
+    }
+
     @Test fun aFailedCompileQueuesOneRetrySixHoursLater() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")

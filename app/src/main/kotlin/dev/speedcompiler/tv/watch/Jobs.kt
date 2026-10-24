@@ -137,8 +137,12 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 /** Gives the app's next job its full set of connection tries again. */
 fun lostKey(pkg: String) = "lost:$pkg"
 fun retriedKey(pkg: String) = "retried:$pkg"
+private fun refusedKey(pkg: String) = "refused:$pkg"
 
-suspend fun resetConnectionTries(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState(lostKey(packageName), "0"))
+suspend fun resetConnectionTries(g: AppGraph, packageName: String) {
+    g.database.syncState().put(SyncState(lostKey(packageName), "0"))
+    g.database.syncState().put(SyncState(refusedKey(packageName), "0"))
+}
 
 /** One later try for a failed app. Its own work name, so it never touches the optimize worker's REPLACE. */
 private fun enqueueRetryLater(context: Context, packageName: String) {
@@ -229,6 +233,13 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 enqueueReconnect(applicationContext)
                 return Result.retry()
             }
+        }
+        // The TV's own background dexopt can collide with ours and make it refuse: one try after WorkManager's 15 min backoff, behind the gate.
+        val refusedKey = refusedKey(pkg)
+        if (result.refused && sync.get(refusedKey) != "1") {
+            sync.put(SyncState(refusedKey, "1"))
+            dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
+            return Result.retry()
         }
         resetConnectionTries(g, pkg)
         val now = g.clock.nowMillis()

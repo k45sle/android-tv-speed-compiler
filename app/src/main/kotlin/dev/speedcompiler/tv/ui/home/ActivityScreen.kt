@@ -159,8 +159,10 @@ fun ActivityContent(
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
             val retryDesc = stringResource(R.string.activity_retry_app, l.label)
             Column {
+              // Retry sits beside the focusable row, not inside it: inside, RIGHT never reached it and OK only toggled the details.
+              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    Modifier.fillMaxWidth().semantics { contentDescription = listOfNotNull(l.label, stateText(res, h.state), time, reason).joinToString(", ") }
+                    Modifier.weight(1f).semantics { contentDescription = listOfNotNull(l.label, stateText(res, h.state), time, reason).joinToString(", ") }
                         .focusFx(1.02f, RowRadius) { open = if (open == h.id) null else h.id }
                         .padding(horizontal = Space.x2, vertical = Space.x1),
                     verticalAlignment = Alignment.CenterVertically,
@@ -178,8 +180,9 @@ fun ActivityContent(
                         QueueState.SKIPPED -> Tone.Warn
                         else -> Tone.Neutral
                     }))
-                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
                 }
+                if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.padding(end = Space.x2).semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
+              }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt
                     val to = h.finishedAt ?: Long.MAX_VALUE

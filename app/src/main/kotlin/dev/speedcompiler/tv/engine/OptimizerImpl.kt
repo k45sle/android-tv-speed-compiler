@@ -86,7 +86,7 @@ class OptimizerImpl(
         // exitCode -1 means the TV gave no code; the word Success then decides alone.
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
             val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
-            return finish(pkg, false, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, said), "optimize_failed")
+            return finish(pkg, false, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, said), "optimize_failed", refused = true)
         }
         val filter = try {
             verify(pkg)
@@ -111,8 +111,8 @@ class OptimizerImpl(
         else -> finish(pkg, false, prefix + LOST_TAIL, kind, connectionLost = true)
     }
 
-    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false): OptimizeResult {
+    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false, refused: Boolean = false): OptimizeResult {
         events.insert(Event(timeMillis = clock.nowMillis(), packageName = pkg, kind = kind, message = detail))
-        return OptimizeResult(ok, detail, connectionLost, terminal)
+        return OptimizeResult(ok, detail, connectionLost, terminal, refused)
     }
 }

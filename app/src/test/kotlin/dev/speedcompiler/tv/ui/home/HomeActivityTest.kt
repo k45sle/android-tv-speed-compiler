@@ -212,13 +212,15 @@ class HomeActivityTest : ComposeTestBase() {
         // Enough finished jobs that the failed row starts below the viewport.
         val done = (1L..12).map { QueueItem(it, "p.app$it", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 2_000, finishedAt = 3_000) }
         val failed = QueueItem(99, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 2_500, failureReason = "Connection lost")
-        show { ActivityContent(queue, done + failed, events, look, {}, {}, now, utc) }
+        val retried = mutableListOf<Long>()
+        show { ActivityContent(queue, done + failed, events, look, {}, { retried += it }, now, utc) }
         val row = "Alpha, Failed, ${clockText(2_500, utc)}, Connection lost"
         rule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription(row))
         rule.onNodeWithContentDescription(row).requestFocus()
-        rule.onNodeWithContentDescription(row).performKeyInput { keyDown(Key.DirectionDown); keyUp(Key.DirectionDown) }
+        rule.onNodeWithContentDescription(row).performKeyInput { keyDown(Key.DirectionRight); keyUp(Key.DirectionRight) }
         rule.waitForIdle()
-        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused().assertIsDisplayed()
+        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused().assertIsDisplayed().invokeClick()
+        assertEquals(listOf(99L), retried)
     }
 
     @Test
