@@ -19,7 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
+import dev.speedcompiler.tv.theme.Button
+import dev.speedcompiler.tv.theme.upper
 import dev.speedcompiler.tv.ui.home.JobResult
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -74,28 +79,50 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val mine = watched.firstOrNull { it.packageName == packageName }
     val res = LocalResources.current
     val resetting = stringResource(R.string.detail_resetting)
+    var confirmReset by remember(packageName) { mutableStateOf(false) }
+    val reset: () -> Unit = {
+        if (resetNote != resetting) {
+            resetNote = resetting // set before launch so a second tap cannot start another reset
+            scope.launch {
+                // Cancel a queued compile first so it cannot redo speed after the reset; on success unwatch, on failure
+                // put the compile back so the app is left as it was. NonCancellable so Back does not stop it halfway.
+                val active = queue.firstOrNull { it.item.packageName == packageName }?.item?.id
+                resetNote = try {
+                    withContext(NonCancellable) {
+                        active?.let { deps.scheduler.cancel(it) }
+                        val r = runCatching { deps.reset(packageName) }
+                        if (r.getOrNull()?.ok == true) deps.scheduler.unwatch(packageName) else active?.let { deps.scheduler.retry(it) }
+                        r.getOrThrow()
+                    }.detail.let { storedText(res, it) }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))
+                }
+            }
+        }
+    }
     AppDetailContent(
         loaded ?: AppInfo(packageName, packageName),
         mine, optimizedAtMap(watched, history, resets)[packageName], queue.firstOrNull { it.item.packageName == packageName }, now, deps.zone,
         onOptimize = { optimizeNow(packageName) },
         onToggleWatch = { scope.launch { if (mine != null) deps.scheduler.unwatch(packageName) else deps.scheduler.watch(packageName) } },
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
-        onReset = {
-            if (resetNote != resetting) scope.launch {
-                resetNote = resetting
-                // Unwatch first so a queued compile cannot redo speed after the reset; NonCancellable so Back does not stop it halfway.
-                resetNote = try {
-                    withContext(NonCancellable) { deps.scheduler.unwatch(packageName); deps.reset(packageName) }.detail.let { storedText(res, it) }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))
-                }
-            }
-        },
+        onReset = { confirmReset = true },
         resetNote = resetNote,
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
     )
+    if (confirmReset) {
+        val cancel = remember { FocusRequester() }
+        LaunchedEffect(Unit) { cancel.requestFocus() }
+        SimpleDialog({ confirmReset = false }) {
+            Text(stringResource(R.string.detail_reset_body))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
+                Button({ confirmReset = false; reset() }) { Text(stringResource(R.string.common_ok).upper()) }
+                Button({ confirmReset = false }, Modifier.focusRequester(cancel)) { Text(stringResource(R.string.common_cancel).upper()) }
+            }
+        }
+    }
 }
 
 @Composable

@@ -151,7 +151,7 @@ You can turn either one off in the app's Settings. That's optional, and it can m
 It runs Android's own compiler through the standard `cmd package compile` command, only for the apps you pick. You can stop it at any time by uninstalling the app, or by turning off Keep Wireless debugging on in Settings and then switching off Wireless debugging. Wireless debugging and the trust setting stay as they are after an uninstall; switch them off in Developer options if you no longer want them.
 
 **How do I undo it?**
-Open the app in Apps and choose Reset. Uninstalling Speed Compile does not undo it.
+Open the app in Apps and choose Reset. The app also stops being watched. Uninstalling Speed Compile does not undo it.
 
 ## Build from source
 
