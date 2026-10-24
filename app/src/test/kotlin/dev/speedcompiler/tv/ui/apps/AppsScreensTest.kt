@@ -194,21 +194,44 @@ class AppsScreensTest : ComposeTestBase() {
         assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
     }
 
+    private fun resetDeps(reset: MutableList<String>, ok: Boolean) = AppsDeps(
+        loadApps = { apps }, scheduler = scheduler, watched = watched, musicActive = { music },
+        setAutoOptimize = { _, _ -> }, now = { 1_800_000_000_000 },
+        reset = { reset += it; dev.speedcompiler.tv.engine.OptimizeResult(ok, if (ok) "Reset done." else "Didn't reset: the TV refused.") },
+    )
+
     @Test
-    fun resetRunsAndUnwatches() {
+    fun resetAsksFirstThenRunsAndUnwatches() {
         val reset = mutableListOf<String>()
         watched.value = listOf(WatchedApp("a.alpha", "f"))
-        detailScreen(d = AppsDeps(
-            loadApps = { apps }, scheduler = scheduler, watched = watched, musicActive = { music },
-            setAutoOptimize = { _, _ -> }, now = { 1_800_000_000_000 },
-            reset = { reset += it; dev.speedcompiler.tv.engine.OptimizeResult(true, "Reset done.") },
-        ))
+        detailScreen(d = resetDeps(reset, true))
         rule.onNodeWithText("Reset", ignoreCase = true).assertIsDisplayed()
         rule.onRoot().captureRoboImage("build/outputs/roborazzi/app_detail_reset.png")
         click("Reset")
+        assertTrue(reset.isEmpty() && scheduler.calls.isEmpty())
+        click("OK")
         assertEquals(listOf("a.alpha"), reset)
         assertEquals(listOf("unwatch:a.alpha"), scheduler.calls)
         rule.onNodeWithText("Reset done.").assertIsDisplayed()
+    }
+
+    @Test
+    fun cancelOnTheResetBoxDoesNothing() {
+        val reset = mutableListOf<String>()
+        detailScreen(d = resetDeps(reset, true))
+        click("Reset"); click("Cancel")
+        assertTrue(reset.isEmpty() && scheduler.calls.isEmpty())
+    }
+
+    @Test
+    fun failedResetKeepsTheAppWatched() {
+        val reset = mutableListOf<String>()
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        detailScreen(d = resetDeps(reset, false))
+        click("Reset"); click("OK")
+        assertEquals(listOf("a.alpha"), reset)
+        assertTrue(scheduler.calls.isEmpty())
+        rule.onNodeWithText("Didn't reset: the TV refused.").assertIsDisplayed()
     }
 
     @Test
