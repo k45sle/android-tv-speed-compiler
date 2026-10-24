@@ -66,8 +66,9 @@ class PairingWebServer(
         val code = PairingSession.cleanCode(s.parms["code"])
             ?: return reply(Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_enter_code)))
         if (!session.tryAttempt()) return reply(Response.Status.FORBIDDEN, msg(res.getString(R.string.web_pair_too_many)))
-        // The discovered port wins; the form port is only a fallback when discovery found nothing.
-        val port = pairingPort() ?: s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 }
+        // A typed port wins: the page asks for one only when pairing failed, so discovery may be stale. The host stays
+        // pinned to the TV's own address (A-01), so any port is harmless.
+        val port = s.parms["port"]?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 } ?: pairingPort()
             ?: return reply(Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_no_port)))
         val ok = runBlocking { runCatching { pairing.pair(host(), port, code) }.getOrDefault(false) }
         if (!ok) return reply(Response.Status.OK, msg(res.getString(R.string.web_pair_failed)))
