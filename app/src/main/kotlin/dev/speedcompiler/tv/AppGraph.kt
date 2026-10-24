@@ -17,6 +17,7 @@ import dev.speedcompiler.tv.engine.DeviceSignalsImpl
 import dev.speedcompiler.tv.engine.Gate
 import dev.speedcompiler.tv.engine.GateConfigProvider
 import dev.speedcompiler.tv.engine.GateImpl
+import dev.speedcompiler.tv.engine.Mode
 import dev.speedcompiler.tv.engine.Optimizer
 import dev.speedcompiler.tv.engine.OptimizerImpl
 import dev.speedcompiler.tv.engine.PackageSystem
@@ -24,6 +25,7 @@ import dev.speedcompiler.tv.engine.Settings
 import dev.speedcompiler.tv.engine.SystemClock
 import dev.speedcompiler.tv.engine.toGateConfig
 import dev.speedcompiler.tv.watch.AppDatabase
+import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.Scheduler
 import dev.speedcompiler.tv.watch.WorkScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -63,9 +65,26 @@ class AppGraph(context: Context) {
         val prefs = app.getSharedPreferences("setup", Context.MODE_PRIVATE)
         appScope.launch {
             connectionMonitor.state.collect {
-                if (it == ConnectionState.Connected) prefs.edit().putBoolean("paired", true).apply()
-                else if (it == ConnectionState.Unpaired) prefs.edit().putBoolean("paired", false).apply()
+                if (it == ConnectionState.Connected) {
+                    prefs.edit().putBoolean("paired", true).apply()
+                    launch { runCatching { queueSelf() } } // best effort; must not end this collector
+                } else if (it == ConnectionState.Unpaired) prefs.edit().putBoolean("paired", false).apply()
             }
         }
     }
+
+    /**
+     * Queues this app for its own speed compile until one succeeds for the installed version (OptimizeWorker
+     * records it): a forced compile cut screen-change hitches. Not while paused or manual, where it would sit forever.
+     */
+    private suspend fun queueSelf() {
+        val s = settings.values.first()
+        if (s.paused || s.mode != Mode.Auto) return
+        val self = packageSystem.fingerprint(app.packageName) ?: return
+        if (database.syncState().get(KEY_SELF_COMPILED) == self) return
+        if (database.queue().activeFor(app.packageName) != null) return // re-enqueueing would restart its debounce
+        scheduler.enqueue(app.packageName, QueueSource.AUTO)
+    }
 }
+
+const val KEY_SELF_COMPILED = "self_compiled"

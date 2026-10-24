@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
+import dev.speedcompiler.tv.KEY_SELF_COMPILED
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.ChangeDetector
@@ -228,6 +229,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         // Written while the row still says RUNNING, so an enqueue cannot REPLACE this worker before it lands.
         // A targeted UPDATE, not a read-modify-write: a toggle of autoOptimize during the compile must survive.
         g.database.watchedApps().recordResult(pkg, fingerprint, result.detail, now)
+        if (result.ok && pkg == applicationContext.packageName) sync.put(SyncState(KEY_SELF_COMPILED, fingerprint))
         dao.update(
             item.copy(
                 state = if (result.ok) QueueState.DONE else QueueState.FAILED,

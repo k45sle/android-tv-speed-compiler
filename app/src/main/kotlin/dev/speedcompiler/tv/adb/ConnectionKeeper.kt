@@ -75,13 +75,31 @@ class ConnectionKeeper(
         }
     }
 
+    /**
+     * Runs [wait] (a retry loop's pause) while showing Connecting instead of the last failure, so Home doesn't
+     * offer Fix connection while an automatic retry is still coming. A cancelled wait puts the failure back.
+     */
+    suspend fun connectingWhile(wait: suspend () -> Unit) {
+        val failed = _status.value as? KeeperStatus.Failed ?: return wait()
+        _status.value = KeeperStatus.Reconnecting
+        try {
+            wait()
+        } catch (e: CancellationException) {
+            _status.compareAndSet(KeeperStatus.Reconnecting, failed)
+            throw e
+        }
+    }
+
     /** Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. */
     /** Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status. */
     suspend fun reconnect(): KeeperStatus = lock.withLock {
+        val before = _status.value
         _status.value = KeeperStatus.Reconnecting
         try {
             connect()
         } catch (e: CancellationException) {
+            // Never leave Connecting with nobody trying; before can itself be Connecting (app start, after a pause).
+            _status.compareAndSet(KeeperStatus.Reconnecting, before.takeIf { it != KeeperStatus.Reconnecting } ?: KeeperStatus.Failed(AdbFailure.Timeout(), Fix.Retry))
             throw e
         } catch (e: Exception) {
             val err = mapAdbError(e)
