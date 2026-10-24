@@ -164,11 +164,17 @@ class PairingTest {
         assertEquals(1, rec.calls.size)
     }
 
-    // QA A-18
-    @Test fun discoveredPortWinsOverFormPort() {
+    @Test fun typedPortWinsOverDiscoveredPort() {
         val rec = Recorder(); val s = start(rec)
-        http(s, "/${s.token}", "POST", "code=123456&port=1")
-        assertEquals(4242, rec.calls.single().second)
+        http(s, "/${s.token}", "POST", "code=123456&port=5555")
+        assertEquals(5555, rec.calls.single().second)
+    }
+
+    @Test fun blankOrBadFormPortFallsBackToDiscovered() {
+        val rec = Recorder(); val s = start(rec)
+        http(s, "/${s.token}", "POST", "code=123456&port=")
+        http(s, "/${s.token}", "POST", "code=123456&port=70000")
+        assertEquals(listOf(4242, 4242), rec.calls.map { it.second })
     }
 
     @Test fun formPortOutOfRangeIsIgnored() {
