@@ -118,7 +118,7 @@ fun stateText(res: Resources, state: QueueState): String = res.getString(
         QueueState.RUNNING -> R.string.home_running
         QueueState.QUEUED -> R.string.home_queued
         QueueState.WAITING_GATE -> R.string.home_waiting
-        QueueState.DONE -> R.string.common_done
+        QueueState.DONE -> R.string.home_optimized
         QueueState.FAILED -> R.string.home_failed
         QueueState.SKIPPED -> R.string.home_skipped
     },

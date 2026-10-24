@@ -34,7 +34,7 @@ class EtaTextTest {
         assertEquals("Waiting for the connection", text(Eta.WaitingForConnection))
         assertEquals("Connecting to the TV", text(Eta.Connecting))
         assertEquals("Checking the TV", text(Eta.Checking))
-        assertEquals("Unknown", text(Eta.Unknown))
+        assertEquals("Start time unknown. Check the connection.", text(Eta.Unknown))
         assertEquals("#2 in queue, about 4 min", text(Eta.InQueue(1, 240_000)))
         assertEquals("", text(Eta.None))
     }

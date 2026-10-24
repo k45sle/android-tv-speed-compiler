@@ -132,7 +132,7 @@ fun AppDetailContent(
             ScoreRow(
                 agoText(res, it.finishedAt ?: it.enqueuedAt, now),
                 res.getString(if (it.source == QueueSource.AUTO) R.string.detail_run_automatic else R.string.detail_run_manual),
-                res.getString(if (ok) R.string.common_done else R.string.home_failed),
+                res.getString(if (ok) R.string.home_optimized else R.string.home_failed),
                 if (ok) Tone.Ok else Tone.Error,
             )
         }

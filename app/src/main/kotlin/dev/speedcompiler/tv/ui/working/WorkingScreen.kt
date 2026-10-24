@@ -126,7 +126,7 @@ fun jobView(res: Resources, pkg: String, queue: List<QueueEntry>, history: List<
         QueueState.RUNNING -> JobView.Running
         QueueState.QUEUED, QueueState.WAITING_GATE -> JobView.Waiting(queue.firstOrNull { it.item.id == run.id }?.eta ?: Eta.None)
         QueueState.DONE -> JobView.Done
-        QueueState.SKIPPED -> JobView.Failed(res.getString(R.string.working_cancelled))
+        QueueState.SKIPPED -> JobView.Failed(run.failureReason ?: res.getString(R.string.working_cancelled))
         QueueState.FAILED -> JobView.Failed(run.failureReason ?: res.getString(R.string.working_no_reason))
     }
 }
