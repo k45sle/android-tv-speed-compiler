@@ -78,8 +78,8 @@ class PairingTest {
         }
     }
 
-    private fun start(p: Pairing, discovered: Int? = 4242, finished: () -> Unit = {}): PairingWebServer {
-        val s = PairingWebServer(ApplicationProvider.getApplicationContext<Context>().resources, PairingSession(clock), p, { "<tv-ip>" }, { discovered }, finished)
+    private fun start(p: Pairing, discovered: Int? = 4242, paired: () -> Unit = {}, finished: () -> Unit = {}): PairingWebServer {
+        val s = PairingWebServer(ApplicationProvider.getApplicationContext<Context>().resources, PairingSession(clock), p, { "<tv-ip>" }, { discovered }, finished, paired)
         s.start()
         server = s
         return s
@@ -108,6 +108,17 @@ class PairingTest {
         assertEquals(200, c2)
         assertEquals(listOf(Triple("<tv-ip>", 4242, "123456")), rec.calls)
         assertTrue(finished.await(5, TimeUnit.SECONDS)) // the server finishes on a 500 ms timer
+    }
+
+    @Test fun onlyAcceptedCodeAsksToConnect() {
+        var paired = 0
+        val bad = start(Recorder(ok = false), paired = { paired++ })
+        http(bad, "/${bad.token}", "POST", "code=123456")
+        assertEquals(0, paired)
+        bad.stop()
+        val good = start(Recorder(), paired = { paired++ })
+        http(good, "/${good.token}", "POST", "code=123456")
+        assertEquals(1, paired) // before the reply, so Setup sees Connecting before the session ends
     }
 
     @Test fun manualPortOverridesDiscovery() {

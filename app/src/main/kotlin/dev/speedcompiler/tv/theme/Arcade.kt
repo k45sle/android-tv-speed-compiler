@@ -122,9 +122,9 @@ private val Confetti = List(14) { i ->
     Triple(x, 6 + i * 11 % 24, i)
 }
 
-/** The arcade room: stripes 48 dp wide on the wall, a floor bar with the D-pad hint and a few confetti pixels. */
+/** The arcade room: stripes 48 dp wide on the wall, a floor bar with the D-pad hint ([hint] replaces the default) and a few confetti pixels. */
 @Composable
-fun RoomBackdrop(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun RoomBackdrop(modifier: Modifier = Modifier, hint: String? = null, content: @Composable BoxScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
     val c = LocalSpeedColors.current
     val dots = listOf(c.accent, c.ok, c.warn, c.error, cs.onSurfaceVariant)
@@ -143,7 +143,7 @@ fun RoomBackdrop(modifier: Modifier = Modifier, content: @Composable BoxScope.()
     ) {
         Box(Modifier.fillMaxSize().padding(bottom = FloorH), content = content)
         Box(Modifier.align(Alignment.BottomCenter).height(FloorH), Alignment.Center) {
-            PixelText(stringResource(R.string.common_footer_hint), color = cs.onSurfaceVariant)
+            PixelText(hint ?: stringResource(R.string.common_footer_hint), color = cs.onSurfaceVariant)
         }
     }
 }

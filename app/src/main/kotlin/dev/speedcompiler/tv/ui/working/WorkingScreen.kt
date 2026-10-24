@@ -64,6 +64,7 @@ import androidx.tv.material3.Text
 import androidx.compose.ui.Alignment
 import dev.speedcompiler.tv.theme.CardRadius
 import dev.speedcompiler.tv.theme.LocalSpeedColors
+import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.theme.PixelBanner
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.Space
@@ -74,6 +75,7 @@ import dev.speedcompiler.tv.ui.home.aggregateLine
 import dev.speedcompiler.tv.ui.home.batchDone
 import dev.speedcompiler.tv.ui.home.etaText
 import dev.speedcompiler.tv.ui.home.storedText
+import dev.speedcompiler.tv.AppGraph
 import dev.speedcompiler.tv.ui.home.rememberGraph
 import dev.speedcompiler.tv.ui.home.lookup
 import androidx.compose.runtime.produceState
@@ -175,9 +177,14 @@ fun WorkingScreen(pkg: String, back: () -> Unit) {
     val verified = remember(graph, pkg) { graph.database.events().recent(50).map { l -> jobResult(l.firstOrNull { it.packageName == pkg && it.kind.startsWith("optimize_") }?.message, null) == JobResult.Verified } }
     WorkingHost(
         pkg, look, flows.first, flows.second, connection = connection, bests = bests, verified = verified,
-        saveBest = { game, score -> graph.appScope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } } },
+        saveBest = { game, score -> saveBest(graph, game, score) },
         back = back,
     )
+}
+
+/** Stores [score] as [game]'s best if it beats the stored one. */
+internal fun saveBest(graph: AppGraph, game: String, score: Int) {
+    graph.appScope.launch { graph.settings.update { it.copy(bests = it.bests + (game to max(score, it.bests[game] ?: 0))) } }
 }
 
 /** Observes the job (it runs in WorkManager, so leaving never cancels it). Elapsed comes from timestamps, not counted ticks. */
@@ -210,6 +217,7 @@ fun WorkingHost(
 fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) -> Unit = { _, _ -> }) {
     var playing by remember { mutableStateOf<GameKind?>(null) }
     var last by remember { mutableStateOf(GameKind.entries.first()) } // Back from a game lands on its cabinet
+    var playOn by remember { mutableStateOf(false) } // the user chose to keep playing after the job ended
     val done = remember { FocusRequester() }
     val first = remember { FocusRequester() }
     LaunchedEffect(s.job.finished, playing) {
@@ -218,7 +226,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
     }
     playing?.let { kind ->
         Box(Modifier.fillMaxSize()) {
-            GamePlayer(kind, paused = s.job.finished, best = s.bests[kind.name] ?: 0, onBest = { saveBest(kind.name, it) }, onExit = { playing = null })
+            GamePlayer(kind, paused = s.job.finished && !playOn, best = s.bests[kind.name] ?: 0, onBest = { saveBest(kind.name, it) }, onExit = { playing = null }, onPlayOn = { playOn = true })
             StatusLine(s)
         }
         return
@@ -230,7 +238,7 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             WorkingHeader(s, back, done, first)
-            ArcadePicker({ last = it; playing = it }, first, last)
+            ArcadePicker({ last = it; playing = it; if (s.job.finished) playOn = true }, first, last)
         }
     }
 }
@@ -259,8 +267,8 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         PixelBanner(s.job.finished || still, Modifier.semantics { contentDescription = bannerDesc }, size = 64.dp)
-        val bezel = Modifier.size(96.dp, 54.dp).border(2.dp, c.hairline)
-        if (s.art != null) Image(s.art, null, bezel.padding(2.dp)) else Box(bezel.padding(2.dp).background(c.accent))
+        // The same cartridge and label size as the Apps list.
+        Cartridge { val label = Modifier.size(72.dp, 40.dp); if (s.art != null) Image(s.art, null, label) else Box(label.background(c.accent)) }
         Column(Modifier.weight(1f)) {
             val running = s.running
             PixelText(

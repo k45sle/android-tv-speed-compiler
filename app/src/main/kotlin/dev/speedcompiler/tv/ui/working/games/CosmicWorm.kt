@@ -23,12 +23,25 @@ import kotlin.random.Random
  * side pair up and carry the worm to the far side. Moves every 0.17 s; the drawing slides between cells.
  */
 class CosmicWorm(private val rng: Random = Random.Default) : Game {
-    /** Body cells, head first; [px]/[py] are where each cell was before the last move, for the slide. */
+    /** Body cells, head first; [px]/[py] are where each cell was before the last move. */
     val bx = IntArray(CELLS); val by = IntArray(CELLS); val px = IntArray(CELLS); val py = IntArray(CELLS)
+    /** Where each cell's slide toward [bx]/[by] starts (cells, may lie off the board after a gate), and the [acc] it starts at. */
+    private val fx = FloatArray(CELLS); private val fy = FloatArray(CELLS)
+    private var a0 = 0f
     var len = 4; private set
     /** Last moved direction: index into [DX]/[DY] (right, down, left, up). */
     var dir = 0; private set
     private var want = 0
+    /** Direction of the move before the last one, and whether the last move was plain; for [redirect]. */
+    private var prevDir = 0
+    private var plain = false
+    /** The next move is blocked, but the drawing has not reached the last cell yet; see [move]. */
+    private var crash = false
+    /** While [crash]: the direction that is blocked, and the [acc] at which the worm dies. */
+    private var bumpDir = -1
+    private var crashEnd = 0f
+    /** Turns taken at once in this step; a third waits for the step to end. */
+    private var turns = 0
     /** A second quick turn pressed within one step, played on the next step; -1 if none. */
     private var queued = -1
     var foodX = 0; internal set
@@ -50,7 +63,7 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     override val canRestart get() = dead > 0.4f
 
     init {
-        for (i in 0 until len) { bx[i] = 4 - i; by[i] = 3; px[i] = bx[i]; py[i] = by[i] }
+        for (i in 0 until len) { bx[i] = 4 - i; by[i] = 3; px[i] = bx[i]; py[i] = by[i]; fx[i] = bx[i].toFloat(); fy[i] = by[i].toFloat() }
         placeFood()
     }
 
@@ -70,6 +83,68 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         for (c in 0 until CELLS) if (!onBody(c % W, c / W, len) && k-- == 0) { foodX = c % W; foodY = c / W; return }
     }
 
+    /**
+     * Redoes the last move toward [d] instead, if it was a plain move (no star, no gate) and the new cell is empty and plain too.
+     * The cells before that move are still in [px]/[py], so the body is rebuilt from them; [acc] keeps the slide where it is.
+     */
+    private fun redirect(d: Int): Boolean {
+        if (!plain || (d + 2) % 4 == prevDir) return false
+        val nx = px[0] + DX[d]; val ny = py[0] + DY[d]
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H || (nx == foodX && ny == foodY)) return false
+        for (i in 0 until len - 1) if (px[i] == nx && py[i] == ny) return false // the tail cell frees up, as in step()
+        for (i in len - 1 downTo 1) { bx[i] = px[i - 1]; by[i] = py[i - 1] }
+        bx[0] = nx; by[0] = ny
+        dir = d; want = d; crash = false
+        return true
+    }
+
+    /** How far the cells have slid from [fx]/[fy] toward [bx]/[by], 0..1. */
+    fun slide(): Float = if (over) 1f else ((acc - a0) / (STEP - a0)).coerceIn(0f, 1f)
+
+    /** Cell [i]'s drawn position at slide [q], in cells; the target is unwrapped to the start's side of a gate. */
+    fun slideX(i: Int, q: Float) = along(fx[i], bx[i].toFloat(), W, q)
+    fun slideY(i: Int, q: Float) = along(fy[i], by[i].toFloat(), H, q)
+    private fun along(a: Float, b0: Float, size: Int, q: Float): Float {
+        // A slide covers at most 2 cells per axis, so a longer one is a gate pass.
+        val b = if (b0 - a > size / 2f) b0 - size else if (a - b0 > size / 2f) b0 + size else b0
+        return a + (b - a) * q
+    }
+
+    /** Starts the next slide from where the cells are drawn now, so a turn never makes the worm jump. */
+    private fun hold() {
+        val q = slide()
+        for (i in 0 until len) { fx[i] = slideX(i, q); fy[i] = slideY(i, q) }
+        a0 = acc
+    }
+
+    /**
+     * How far the head is drawn past its last cell toward [bumpDir], in cells: once the drawing reaches that cell the head
+     * pushes on over [GRACE] until it touches the wall or body, so the worm never dies short of what it hit.
+     */
+    fun bump(): Float = when {
+        bumpDir < 0 -> 0f
+        over -> BUMP
+        else -> ((acc - (crashEnd - GRACE)) / GRACE).coerceIn(0f, 1f) * BUMP
+    }
+
+    /**
+     * Cells the body has travelled, for the specks riding on it. acc runs below 0 during a turn's longer slide, so this stays
+     * continuous through a turn; a body standing at its last cell (crashing or dead) has finished its move.
+     */
+    fun travel(): Float {
+        val standing = over || (crash && fx[0] == bx[0].toFloat() && fy[0] == by[0].toFloat())
+        return moves + if (standing) 1f else min(1f, acc / STEP)
+    }
+
+    fun bumpX() = if (bumpDir < 0) 0f else DX[bumpDir] * bump()
+    fun bumpY() = if (bumpDir < 0) 0f else DY[bumpDir] * bump()
+
+    private fun die() {
+        crash = false
+        dead = 1e-6f
+        for (i in 0 until len) { px[i] = bx[i]; py[i] = by[i]; fx[i] = bx[i].toFloat(); fy[i] = by[i].toFloat() }
+    }
+
     private fun onBody(x: Int, y: Int, n: Int): Boolean {
         for (i in 0 until n) if (bx[i] == x && by[i] == y) return true
         return false
@@ -81,24 +156,64 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         for (i in flash.indices) if (flash[i] >= 0f) { flash[i] += DT; if (flash[i] > 0.4f) flash[i] = -1f }
         if (over) { dead += DT; return }
         val d = when (input) { Input.RIGHT -> 0; Input.DOWN -> 1; Input.LEFT -> 2; Input.UP -> 3; else -> -1 }
-        // Reversing into the neck is ignored; a second turn within one step waits for the next step, so UP then LEFT is a quick U-turn.
+        // Reversing into the neck is ignored; UP then LEFT in quick succession is a U-turn.
         if (d >= 0) {
-            if (want == dir) { if ((d + 2) % 4 != dir) want = d }
-            else if (queued < 0 && d != want && (d + 2) % 4 != want) queued = d
+            if (want != dir) { if (queued < 0 && d != want && (d + 2) % 4 != want) queued = d }
+            else if (d != dir && (d + 2) % 4 != dir) {
+                // A third turn in a step, or a second one while the moves already run more than half a step ahead of the
+                // drawing, waits for the step to end: the worm must not get far ahead of where it is drawn.
+                if (!crash && (turns >= 2 || (turns == 1 && acc < -STEP / 2))) want = d
+                else {
+                    // A turn takes effect at once and the cells glide on from where they are drawn, so nothing jumps.
+                    // Early in a step the last move is redone toward the turn (never for a second turn: that would undo the
+                    // first); otherwise the next move happens now and its slide also covers the rest of this step, so the
+                    // worm keeps its speed and reaches each cell on the beat.
+                    val pushX = bumpX(); val pushY = bumpY() // nonzero only while crashing
+                    hold()
+                    // While crashing the head may already sit on its last cell, so a redo would pull it back a cell.
+                    val redo = !crash && turns == 0 && acc < STEP / 2 && redirect(d)
+                    turns++
+                    if (!redo) {
+                        want = d; acc -= STEP; a0 -= STEP
+                        move()
+                        if (over) return
+                        if (crash) { acc += STEP; a0 += STEP } // the move did not happen, so the glide keeps its pace
+                        else { fx[0] += pushX; fy[0] += pushY } // a saving turn glides on from where the bump had pushed the head
+                    }
+                }
+            }
         }
         acc += DT
+        if (crash) { if (acc >= crashEnd) die(); return }
         if (acc < STEP) return
         acc -= STEP
+        turns = 0
+        for (i in 0 until len) { fx[i] = bx[i].toFloat(); fy[i] = by[i].toFloat() }
+        a0 = 0f
+        move()
+    }
+
+    private fun move() {
+        val before = prevDir
+        prevDir = dir
         dir = want
         if (queued >= 0) { want = queued; queued = -1 }
         val n = neighbour(bx[0], by[0], dir)
+        val wasCrash = crash
+        crash = false
         // The tail cell frees up as the worm moves on, so it does not count.
         if (n < 0 || onBody(n % W, n / W, len - 1)) {
-            dead = 1e-6f
-            for (i in 0 until len) { px[i] = bx[i]; py[i] = by[i] }
+            // The worm glides on to its last cell (the moves can run ahead of the drawing), bumps into what blocks it and dies
+            // [GRACE] later; a turn before then still saves it. The blocked move is undone so the turn checks hold.
+            val blocked = dir
+            dir = prevDir; prevDir = before; want = dir; queued = -1
+            if (!wasCrash) crashEnd = (if (fx[0] == bx[0].toFloat() && fy[0] == by[0].toFloat()) acc else STEP) + GRACE
+            if (!wasCrash) bumpDir = blocked // a second blocked turn keeps the first push, so the head does not jump sideways
+            crash = true
             return
         }
         val nx = n % W; val ny = n / W
+        bumpDir = -1
         if (abs(nx - bx[0]) > 1 || abs(ny - by[0]) > 1) {
             val pair = if (abs(nx - bx[0]) > 1) 2 + GATE_Y.indexOf(ny) else GATE_X.indexOf(nx)
             for (i in 0 until PORTALS) if (P_PAIR[i] == pair) flash[i] = 0f
@@ -110,14 +225,18 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         for (i in len - 1 downTo 1) { bx[i] = bx[i - 1]; by[i] = by[i - 1] }
         bx[0] = nx; by[0] = ny
         // A new tail cell grows out of the old tail cell.
-        for (i in oldLen until len) { px[i] = px[oldLen - 1]; py[i] = py[oldLen - 1] }
+        for (i in oldLen until len) { px[i] = px[oldLen - 1]; py[i] = py[oldLen - 1]; fx[i] = fx[oldLen - 1]; fy[i] = fy[oldLen - 1] }
         moves++
+        plain = !eat && abs(nx - px[0]) + abs(ny - py[0]) == 1
         if (eat) { score++; sparkle = 0f; sparkleX = nx; sparkleY = ny; placeFood() }
     }
 
     companion object {
         const val DT = 1f / 30f
         const val STEP = 0.17f
+        /** Seconds a crash takes from the drawn head reaching its last cell to death, and how far it pushes on, in cells. */
+        const val GRACE = 0.1f
+        const val BUMP = 0.25f
         const val W = 15
         const val H = 7
         const val CELLS = W * H
@@ -177,11 +296,13 @@ private class WormRenderer(
             s.img(pad, (cx - 11).toFloat(), (cy + 2).toFloat())
             s.img(star, (floor(g.t * 3f).toInt() % 2) * 9, 0, 9, 9, (cx - 4).toFloat(), (cy - 8 + BOB[floor(g.t * 5f).toInt() % 4]).toFloat())
         }
-        val p = if (g.over) 1f else min(1f, g.acc / CosmicWorm.STEP)
-        path(g, p)
-        val travel = (g.moves + p) * 20f
+        path(g, g.slide())
+        val travel = g.travel() * 20f
         // The unwrapped line can sit one board away on both axes after two gate passes, so try all nine copies; most are culled.
-        for (oy in -1..1) for (ox in -1..1) tube(g, ox * 300f, oy * 140f, travel)
+        tube(g, 0f, 0f, travel)
+        // The crash bump pushes the head past the force field; only the copy in place shows it, not a far-side copy.
+        if (g.bump() > 0f) path(g, g.slide(), bump = false)
+        for (oy in -1..1) for (ox in -1..1) if (ox != 0 || oy != 0) tube(g, ox * 300f, oy * 140f, travel)
         val pf = floor(g.t * 8f).toInt() % 4
         for (i in 0 until CosmicWorm.PORTALS) {
             val wide = CosmicWorm.P_WIDE[i]
@@ -200,16 +321,11 @@ private class WormRenderer(
     private fun grow(a: FloatArray, need: Int) = if (a.size >= need) a else a.copyOf(max(need, a.size * 2))
 
     /** The centre line, unwrapped so it stays continuous through a gate, resampled about every 2 px into [ptX]/[ptY]. */
-    private fun path(g: CosmicWorm, p: Float) {
+    private fun path(g: CosmicWorm, p: Float, bump: Boolean = true) {
         val len = g.len
         kx = grow(kx, len); ky = grow(ky, len)
-        for (i in 0 until len) {
-            val ax = (20 + 20 * g.px[i]).toFloat(); val ay = (40 + 20 * g.py[i]).toFloat()
-            var bx = (20 + 20 * g.bx[i]).toFloat(); var by = (40 + 20 * g.by[i]).toFloat()
-            if (bx - ax > 30) bx -= 300; if (ax - bx > 30) bx += 300
-            if (by - ay > 30) by -= 140; if (ay - by > 30) by += 140
-            kx[i] = ax + (bx - ax) * p; ky[i] = ay + (by - ay) * p
-        }
+        for (i in 0 until len) { kx[i] = 20 + 20 * g.slideX(i, p); ky[i] = 40 + 20 * g.slideY(i, p) }
+        if (bump) { kx[0] += 20 * g.bumpX(); ky[0] += 20 * g.bumpY() }
         for (i in 1 until len) for (k in 0 until 4) {
             val dx = WRAP_X[k]; val dy = WRAP_Y[k]
             val qx = kx[i - 1]; val qy = ky[i - 1]
@@ -238,11 +354,11 @@ private class WormRenderer(
 
     /** One copy of the worm shifted by ([ox],[oy]); everything outside the force field is cut off, so a gate pass shows two halves. */
     private fun tube(g: CosmicWorm, ox: Float, oy: Float, travel: Float) {
-        // 14 px covers the widest stamp, the shadow drop and the antennae.
+        // 14 px covers the widest stamp and the antennae.
         if (maxX + ox + 14 < FX0 || minX + ox - 14 > FX1 || maxY + oy + 14 < FY0 || minY + oy - 14 > FY1) return
-        // Shadow, outline, belly side, body: each layer from the tail to the head.
-        for (layer in 0 until 4) for (i in n - 1 downTo 0) {
-            val r = rad(i) + if (layer == 1) 1 else 0
+        // Outline, belly side, body: each layer from the tail to the head.
+        for (layer in 0 until 3) for (i in n - 1 downTo 0) {
+            val r = rad(i) + if (layer == 0) 1 else 0
             stamp(LAYER_COLOR[layer], r, ptX[i] + ox, ptY[i] + oy + LAYER_DY[layer])
         }
         for (i in n - 1 downTo 0) {
@@ -255,7 +371,10 @@ private class WormRenderer(
             val m = floor(i * 2f - travel).toInt()
             if (Math.floorMod(m, 13) == 0) dot(if ((m / 13) % 2 != 0) GameColors.white else GameColors.yellow, rnd(ptX[i] + ox), rnd(ptY[i] + oy) - 1, 1, 1)
         }
-        head(g, ptX[0] + ox, ptY[0] + oy)
+        // Only one copy gets the face and antennae: the one whose head is in a window exactly one wrap period (300 x 140)
+        // across, so a head near a wall never qualifies on both sides.
+        val hx = ptX[0] + ox; val hy = ptY[0] + oy
+        if (hx >= IX0 && hx < IX0 + 300 && hy >= IY1 - 140 && hy < IY1) head(g, hx, hy)
     }
 
     private fun stamp(color: Int, r: Int, cx: Float, cy: Float) = cut(STAMPS[color][r], rnd(cx) - r, rnd(cy) - r, 2 * r + 1, 2 * r + 1)
@@ -266,8 +385,10 @@ private class WormRenderer(
         if (x1 > x0 && y1 > y0) s.img(im, x0 - x, y0 - y, x1 - x0, y1 - y0, x0.toFloat(), y0.toFloat())
     }
 
-    private fun dot(c: androidx.compose.ui.graphics.Color, x: Int, y: Int, w: Int, h: Int) {
-        val x0 = max(x, FX0); val y0 = max(y, FY0); val x1 = min(x + w, FX1); val y1 = min(y + h, FY1)
+    /** A rect cut to the force field, or with [inner] to the open area inside the rails. */
+    private fun dot(c: androidx.compose.ui.graphics.Color, x: Int, y: Int, w: Int, h: Int, inner: Boolean = false) {
+        val x0 = max(x, if (inner) IX0 else FX0); val y0 = max(y, if (inner) IY0 else FY0)
+        val x1 = min(x + w, if (inner) IX1 else FX1); val y1 = min(y + h, if (inner) IY1 else FY1)
         if (x1 > x0 && y1 > y0) s.rect(c, x0.toFloat(), y0.toFloat(), (x1 - x0).toFloat(), (y1 - y0).toFloat())
     }
 
@@ -277,8 +398,9 @@ private class WormRenderer(
         val hx = hx0; val hy = hy0 - 1f
         for (sd in -1..1 step 2) {
             val ax = hx + sd * 3 - dx * 2; val wob = sin(g.t * 8f + sd) * 1.2f
-            dot(GameColors.outline, rnd(ax), rnd(hy - 10f), 1, 4)
-            dot(GameColors.yellow, rnd(ax + wob - 1f), rnd(hy - 12f), 2, 2)
+            // The antennae stop at the rail's inner edge instead of poking into the wall.
+            dot(GameColors.outline, rnd(ax), rnd(hy - 10f), 1, 4, inner = true)
+            dot(GameColors.yellow, rnd(ax + wob - 1f), rnd(hy - 12f), 2, 2, inner = true)
         }
         if (g.over && floor(g.dead * 8f).toInt() % 2 == 1) { cheeks(hx, hy); return } // blinks out after the crash
         for (sd in -1..1 step 2) {
@@ -300,12 +422,14 @@ private class WormRenderer(
 
     private companion object {
         const val FX0 = 8; const val FY0 = 28; const val FX1 = 312; const val FY1 = 172
+        /** The open area inside the rails of game_worm_board.png (the field above reaches 2-3 px into the rails). */
+        const val IX0 = 10; const val IY0 = 31; const val IX1 = 310; const val IY1 = 170
         val BOB = intArrayOf(0, -1, -2, -1)
         val WRAP_X = floatArrayOf(300f, -300f, 0f, 0f)
         val WRAP_Y = floatArrayOf(0f, 0f, 140f, -140f)
-        /** Layers: shadow, outline, belly side, body; indexes into [STAMPS] (outline, indigo, blue, sky2). */
-        val LAYER_COLOR = intArrayOf(0, 0, 1, 2)
-        val LAYER_DY = floatArrayOf(4f, 0f, 0f, -1f)
+        /** Layers: outline, belly side, body; indexes into [STAMPS] (outline, indigo, blue, sky2). */
+        val LAYER_COLOR = intArrayOf(0, 1, 2)
+        val LAYER_DY = floatArrayOf(0f, 0f, -1f)
 
         /** Filled pixel circles of radius 1..8 in the four worm colours, built once. */
         val STAMPS: Array<Array<ImageBitmap>> by lazy {

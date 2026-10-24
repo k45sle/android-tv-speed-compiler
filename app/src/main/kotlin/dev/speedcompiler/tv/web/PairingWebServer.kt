@@ -19,6 +19,8 @@ class PairingWebServer(
     private val host: () -> String,
     private val pairingPort: () -> Int?,
     private val onFinished: () -> Unit = {},
+    /** Runs once the TV accepted the code; the connection layer does not connect on its own. */
+    private val onPaired: () -> Unit = {},
 ) : NanoHTTPD(0) {
     private val timer = Timer("pairing-expiry", true)
 
@@ -69,6 +71,7 @@ class PairingWebServer(
             ?: return reply(Response.Status.BAD_REQUEST, msg(res.getString(R.string.web_pair_no_port)))
         val ok = runBlocking { runCatching { pairing.pair(host(), port, code) }.getOrDefault(false) }
         if (!ok) return reply(Response.Status.OK, msg(res.getString(R.string.web_pair_failed)))
+        onPaired()
         Timer(true).schedule(500) { finish() }
         return reply(Response.Status.OK, msg(res.getString(R.string.web_pair_done)))
     }
