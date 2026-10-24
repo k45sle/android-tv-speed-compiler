@@ -7,16 +7,14 @@
 <p align="center">Compiles the Android TV apps you pick ahead of time, and again after each update. It runs on the TV, so you don't need a computer.</p>
 
 <p align="center">
-  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest"><img src="https://img.shields.io/github/v/release/k45sle/android-tv-speed-compiler?include_prereleases&color=123524" alt="Latest release"></a>
+  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases"><img src="https://img.shields.io/github/v/release/k45sle/android-tv-speed-compiler?include_prereleases&color=123524" alt="Latest release"></a>
   <a href="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml"><img src="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Android%20TV-11%2B-123524" alt="Android TV 11 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-123524" alt="MIT license"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk"><b>Download the APK</b></a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest">All releases</a>
+  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases"><b>Download the APK</b></a>
   &nbsp;·&nbsp;
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler">Add to Obtainium</a>
 </p>
@@ -128,7 +126,7 @@ Not measured on a real TV yet. So far it has run only on the Android TV emulator
 
 ### Checking a download
 
-Each release has a `SHA256SUMS` file and a build provenance attestation from GitHub Actions, and its release notes list the SHA-256 fingerprint of the signing certificate.
+Releases after v0.9.0-test1 have a `SHA256SUMS` file and a build provenance attestation from GitHub Actions, and its release notes list the SHA-256 fingerprint of the signing certificate.
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -146,7 +144,7 @@ apksigner verify --print-certs speed-compile.apk
 
 ## Install
 
-1. Get the APK onto the TV. In the Downloader app, type the stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk`. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
+1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). From the first full release on, the stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK, which is handy to type into the Downloader app. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
 2. Open the APK on the TV and allow installs from that source if asked.
 3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
 
@@ -204,7 +202,7 @@ You can turn either one off in the app's Settings, but things get less convenien
 It can. A system update may throw away compiled code. The weekly check notices when a watched app is no longer at `speed` and queues it again. This hasn't been checked on a real TV yet.
 
 **Does it work on Ethernet?**
-Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, the Device report form has room to say how it went.
+Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.
 
 **How is this different from running `pm compile` myself, or from other ADB tools?**
 The compile is the same. The difference is that Speed Compile runs on the TV, does it again after every update without a laptop, waits until nothing is playing, and reconnects after reboots.
