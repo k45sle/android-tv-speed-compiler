@@ -371,7 +371,10 @@ private class WormRenderer(
             val m = floor(i * 2f - travel).toInt()
             if (Math.floorMod(m, 13) == 0) dot(if ((m / 13) % 2 != 0) GameColors.white else GameColors.yellow, rnd(ptX[i] + ox), rnd(ptY[i] + oy) - 1, 1, 1)
         }
-        head(g, ptX[0] + ox, ptY[0] + oy)
+        // Only one copy gets the face and antennae: the one whose head is in a window exactly one wrap period (300 x 140)
+        // across, so a head near a wall never qualifies on both sides.
+        val hx = ptX[0] + ox; val hy = ptY[0] + oy
+        if (hx >= IX0 && hx < IX0 + 300 && hy >= IY1 - 140 && hy < IY1) head(g, hx, hy)
     }
 
     private fun stamp(color: Int, r: Int, cx: Float, cy: Float) = cut(STAMPS[color][r], rnd(cx) - r, rnd(cy) - r, 2 * r + 1, 2 * r + 1)
@@ -382,8 +385,10 @@ private class WormRenderer(
         if (x1 > x0 && y1 > y0) s.img(im, x0 - x, y0 - y, x1 - x0, y1 - y0, x0.toFloat(), y0.toFloat())
     }
 
-    private fun dot(c: androidx.compose.ui.graphics.Color, x: Int, y: Int, w: Int, h: Int) {
-        val x0 = max(x, FX0); val y0 = max(y, FY0); val x1 = min(x + w, FX1); val y1 = min(y + h, FY1)
+    /** A rect cut to the force field, or with [inner] to the open area inside the rails. */
+    private fun dot(c: androidx.compose.ui.graphics.Color, x: Int, y: Int, w: Int, h: Int, inner: Boolean = false) {
+        val x0 = max(x, if (inner) IX0 else FX0); val y0 = max(y, if (inner) IY0 else FY0)
+        val x1 = min(x + w, if (inner) IX1 else FX1); val y1 = min(y + h, if (inner) IY1 else FY1)
         if (x1 > x0 && y1 > y0) s.rect(c, x0.toFloat(), y0.toFloat(), (x1 - x0).toFloat(), (y1 - y0).toFloat())
     }
 
@@ -393,8 +398,9 @@ private class WormRenderer(
         val hx = hx0; val hy = hy0 - 1f
         for (sd in -1..1 step 2) {
             val ax = hx + sd * 3 - dx * 2; val wob = sin(g.t * 8f + sd) * 1.2f
-            dot(GameColors.outline, rnd(ax), rnd(hy - 10f), 1, 4)
-            dot(GameColors.yellow, rnd(ax + wob - 1f), rnd(hy - 12f), 2, 2)
+            // The antennae stop at the rail's inner edge instead of poking into the wall.
+            dot(GameColors.outline, rnd(ax), rnd(hy - 10f), 1, 4, inner = true)
+            dot(GameColors.yellow, rnd(ax + wob - 1f), rnd(hy - 12f), 2, 2, inner = true)
         }
         if (g.over && floor(g.dead * 8f).toInt() % 2 == 1) { cheeks(hx, hy); return } // blinks out after the crash
         for (sd in -1..1 step 2) {
@@ -416,6 +422,8 @@ private class WormRenderer(
 
     private companion object {
         const val FX0 = 8; const val FY0 = 28; const val FX1 = 312; const val FY1 = 172
+        /** The open area inside the rails of game_worm_board.png (the field above reaches 2-3 px into the rails). */
+        const val IX0 = 10; const val IY0 = 31; const val IX1 = 310; const val IY1 = 170
         val BOB = intArrayOf(0, -1, -2, -1)
         val WRAP_X = floatArrayOf(300f, -300f, 0f, 0f)
         val WRAP_Y = floatArrayOf(0f, 0f, 140f, -140f)
