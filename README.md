@@ -4,100 +4,119 @@
 
 <h1 align="center">Speed Compile</h1>
 
-<p align="center">Compiles the Android TV apps you pick ahead of time, and again after each update.</p>
+<p align="center">Compiles the Android TV apps you pick ahead of time, and again after each update. It runs on the TV, so you don't need a computer.</p>
 
 <p align="center">
+  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest"><img src="https://img.shields.io/github/v/release/k45sle/android-tv-speed-compiler?include_prereleases&color=123524" alt="Latest release"></a>
   <a href="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml"><img src="https://github.com/k45sle/android-tv-speed-compiler/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Android%20TV-11%2B-123524" alt="Android TV 11 or later">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-123524" alt="MIT license"></a>
 </p>
 
-> [!IMPORTANT]
-> **This app was written entirely by AI.** All of its code, tests and documentation were written by Claude (Anthropic's AI) in Claude Code, and the original logo art was made with Google Gemini. I am not a programmer. What I did:
->
-> - Came up with the idea, mostly so Nuvio and apps like it would run better on my TV.
-> - Decided to drop the first version, a Docker service you ran on a computer, in favour of an app that runs on the TV itself.
-> - Approved the screen designs before any of them were built.
-> - Turned down "TV Speed" for sounding like a scam, and picked the name.
-> - Made the logo, then rejected four fonts and one embossing experiment for the banner until it had no text left on it.
-> - Asked for a retro pixel-art look, then picked the pixel logo and the banner with its pixel wordmark from Claude's candidates.
-> - Set a budget of under $1 for the whole project and held Claude to it.
-> - Reviewed the work and pushed back on anything that looked like AI slop.
-
 <p align="center">
-  <img src="docs/media/banner.gif" width="640" height="360" alt="Speed Compile banner: a gold pixel-art chevron rolls over streaming cream dashes next to the words SPEED COMPILE in pixel letters, on dark green">
-</p>
-
-<p align="center">
-  <img src="docs/media/hero.gif" width="640" height="412" alt="Demo: from Apps, pick Nuvio and press Optimize now. The Working screen opens its arcade for a moment, the job finishes, and after Done, Home lists Nuvio as optimized">
-  <br>
-  <a href="docs/media/demo.mp4">Watch the 36-second demo (MP4)</a>
+  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk"><b>Download the APK</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/k45sle/android-tv-speed-compiler/releases/latest">All releases</a>
+  &nbsp;·&nbsp;
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler">Add to Obtainium</a>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/media/home-light.png">
-    <img src="docs/media/home-dark.png" width="800" alt="Home screen: auto-optimize is on and connected, two apps waiting, and a list of recently optimized apps">
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/hero.png">
+    <img src="docs/media/hero.gif" width="640" height="412" alt="Demo: from Apps, pick Nuvio and press Optimize now. The Working screen opens its arcade for a moment, the job finishes, and after Done, Home lists Nuvio as optimized">
   </picture>
+  <br>
+  <sub>Pick an app, press Optimize now, and it is done in about a minute. <a href="docs/media/demo.mp4">Watch the full demo (MP4)</a>.</sub>
 </p>
 
-<h3 align="center">Setup</h3>
+Android normally compiles an app a bit at a time, based on how you use it. Speed Compile asks the TV to compile the apps you choose in full, with Android's `speed` profile, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging.
 
-<table align="center">
+Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes up a bit more storage.
+
+It was written with Nuvio in mind (people who sideload the GitHub build run `pm compile` by hand after every update), but it works with any app on the TV.
+
+## How it goes
+
+<table>
   <tr>
-    <td><img src="docs/media/setup-welcome-dark.png" width="400" alt="Setup welcome page: Compile your apps ahead of time, with a Start button"></td>
-    <td><img src="docs/media/setup-pair-dark.png" width="400" alt="Setup pairing page: a QR code and an address to open on your phone, with steps for typing the 6-digit pairing code"></td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/setup.png">
+        <img src="docs/media/setup.gif" width="100%" alt="Setup clip: the TV shows a QR code, the phone opens the pairing page and types the 6-digit code, and the TV moves on to the app picker">
+      </picture>
+      <b>Set it up once.</b> Turn on Wireless debugging, scan the QR code with your phone and type the pairing code.
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/hero.png">
+        <img src="docs/media/hero.gif" width="100%" alt="Picking Nuvio in Apps and pressing Optimize now">
+      </picture>
+      <b>Pick your apps.</b> Choose the ones that feel slow. Speed Compile watches them from then on.
+    </td>
   </tr>
   <tr>
-    <td><img src="docs/media/setup-apps-dark.png" width="400" alt="Setup app picker: a list of recent apps, with Nuvio selected"></td>
-    <td><img src="docs/media/setup-done-dark.png" width="400" alt="Setup is done: Nuvio and 1 other will be optimized when nothing is playing, with Optimize now and Done buttons"></td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/arcade.png">
+        <img src="docs/media/arcade.gif" width="100%" alt="Arcade clip: while Nuvio compiles, the player walks up to a cabinet and plays a round of Alien Run">
+      </picture>
+      <b>Play while you wait.</b> A compile can take a few minutes, so there are three small games.
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/handsoff.png">
+        <img src="docs/media/handsoff.gif" width="100%" alt="Hands-off clip: an app updates, Speed Compile queues it, waits until nothing is playing and compiles it again">
+      </picture>
+      <b>Then forget about it.</b> After an update it waits until nothing is playing, compiles the app again and reconnects by itself after a restart.
+    </td>
   </tr>
 </table>
 
-<h3 align="center">Everyday</h3>
+## Screenshots
 
-<table align="center">
+<table>
   <tr>
-    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/apps-light.png"><img src="docs/media/apps-dark.png" width="400" alt="Apps screen: a searchable list of apps with their banners, each marked Optimized or Queued"></picture></td>
-    <td><img src="docs/media/appdetail-dark.png" width="400" alt="App detail for Nuvio: optimized 20 minutes ago, with Optimize now, Stop watching and an auto-optimize switch"></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/home-light.png"><img src="docs/media/home-dark.png" width="100%" alt="Home screen: auto-optimize is on and connected, two apps waiting, and a list of recently optimized apps"></picture><br><sub>Home: what's connected, what's waiting, what's done.</sub></td>
+    <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/apps-light.png"><img src="docs/media/apps-dark.png" width="100%" alt="Apps screen: a searchable list of apps with their banners, each marked Optimized or Queued"></picture><br><sub>Apps: search and pick what to watch.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/media/activity-dark.png" width="400" alt="Activity screen: a queue with Cancel buttons, and a history of finished jobs, one failed with Connection lost and a Retry button"></td>
-    <td><img src="docs/media/settings-plum.png" width="400" alt="Settings in the Plum colour preset: when to optimize, pause, theme and accent colour"></td>
+    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/appdetail-light.png"><img src="docs/media/appdetail-dark.png" width="100%" alt="App detail for Nuvio: optimized 20 minutes ago, with Optimize now, Stop watching and an auto-optimize switch"></picture><br><sub>App detail: optimize now, reset, or stop watching.</sub></td>
+    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/activity-light.png"><img src="docs/media/activity-dark.png" width="100%" alt="Activity screen: a queue with Cancel buttons, and a history of finished jobs, one failed with Connection lost and a Retry button"></picture><br><sub>Activity: the queue and every finished job, with the reason when one fails.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/help-dark.png" width="100%" alt="Help screen: a list of common setup problems, each with its fix"><br><sub>Help: the usual setup problems and their fixes.</sub></td>
+    <td><img src="docs/media/diagnostics-dark.png" width="100%" alt="Diagnostics screen: a QR code and a short address for downloading a diagnostics file to the phone"><br><sub>Diagnostics: send a cleaned-up log file to your phone.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/quickrepair-dark.png" width="100%" alt="Quick re-pair screen: a QR code to scan with the phone after the TV forgot the app"><br><sub>Quick re-pair: if the TV forgets the app, pairing again takes one scan.</sub></td>
+    <td><img src="docs/media/phone-pair.png" width="100%" alt="The phone pairing page: a field for the 6-digit code and a Pair button"><br><sub>The pairing page as your phone shows it.</sub></td>
   </tr>
 </table>
 
-<h3 align="center">While you wait</h3>
-
-<table align="center">
-  <tr>
-    <td><img src="docs/media/working-dark.png" width="400" alt="Working screen: Nuvio being optimized, with a timer, a Leave button and an arcade room of three game cabinets"></td>
-    <td><img src="docs/media/alienrun-dark.png" width="400" alt="Alien Run: a green alien in a space helmet runs across a pixel-art desert, jumping cacti, while a strip at the top says Nuvio is still optimizing"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/media/stararrow-dark.png" width="400" alt="Star Arrow: a gold chevron ship flies between columns of tumbling asteroids past a ringed planet, with a round shield gauge at 100 percent"></td>
-    <td><img src="docs/media/cosmicworm-dark.png" width="400" alt="Cosmic Worm: a blue worm crawls across a purple space board toward a star, with gates on the walls"></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/media/presets.png" width="100%" alt="The colour presets side by side: the same screen in each accent colour">
+  <br>
+  <sub>Eight accent colours plus a custom one, in light or dark.</sub>
+</p>
 
 <p align="center"><sub>The Nuvio name and logo belong to the Nuvio project (GPL-3.0, <a href="https://github.com/NuvioMedia/NuvioTV">github.com/NuvioMedia/NuvioTV</a>) and the art is used only by the screenshot tests. Other apps in the screenshots are made up.</sub></p>
 
-## About this app
+> [!NOTE]
+> **Written by AI.** All the code, tests and docs were written by Claude (Anthropic's AI) in Claude Code, and the first logo art came from Google Gemini. I'm not a programmer. I had the idea, chose to build an app on the TV instead of a Docker service on a computer, approved every screen design before it was built, picked the name and the pixel look, kept the whole project under $1, and pushed back on anything that looked like AI slop.
 
-Android normally compiles an app bit by bit, based on how you use it. Speed Compile asks the TV to compile the apps you choose fully, using Android's `speed` profile, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging, so it needs no computer once it is set up.
+## Does it help?
 
-Results vary by app and by TV. Some apps open or scroll more smoothly; some show no difference. Each compiled app takes a bit more storage.
-
-The app was written with the Nuvio community in mind, but it works with any app on the TV.
+Not measured on a real TV yet. So far it has run only on the Android TV emulator. Numbers from a real TV (cold start and janky frames, before and after) will go here.
 
 ## What it does
 
 - Watches the apps you pick and queues a compile when one of them updates.
-- Waits until nothing is playing, or until a time window you set, so it does not slow down what you are watching.
+- Waits until nothing is playing, or for a time window you set, so it doesn't slow down what you're watching.
+- Checks once a week that each watched app is still compiled, and compiles it again if not.
 - Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging back on at those moments (you can turn this off in Settings).
 - Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
-- Shows a history of each job, with the reason when one fails.
-- Has eight accent colours plus a custom one, and light and dark themes.
+- Keeps a history of each job, with the reason when one fails.
 
 ## Data safety
 
@@ -107,13 +126,34 @@ The app was written with the Nuvio community in mind, but it works with any app 
 - A diagnostics export holds settings, the queue, recent events and the package names of the apps involved. Addresses, codes, serial numbers and device names are removed before it is written.
 - The phone pairing page uses plain HTTP on your local network, so someone on the same Wi-Fi could in theory read the 6-digit code while you type it. The code works only for a short time. Pair on a network you trust.
 
+### Checking a download
+
+Each release has a `SHA256SUMS` file and a build provenance attestation from GitHub Actions, and its release notes list the SHA-256 fingerprint of the signing certificate.
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+```bash
+gh attestation verify speed-compile.apk --repo k45sle/android-tv-speed-compiler
+```
+
+To compare the signing certificate with the one in the release notes:
+
+```bash
+apksigner verify --print-certs speed-compile.apk
+```
+
 ## Install
 
-1. Download the APK from [Releases](https://github.com/k45sle/android-tv-speed-compiler/releases) onto the TV, for example with the Downloader app, or send it from your phone with Send Files to TV.
+1. Get the APK onto the TV. In the Downloader app, type the stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk`. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
 2. Open the APK on the TV and allow installs from that source if asked.
-3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code: scan it with your phone and type the 6-digit pairing code from the TV.
+3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
 
-## Setup help
+<details>
+<summary><b>Setup help</b></summary>
+
+<br>
 
 If setup gets stuck, these are the usual causes.
 
@@ -128,24 +168,46 @@ If setup gets stuck, these are the usual causes.
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
 
+</details>
+
 ## Compatibility
 
 Speed Compile needs Android TV or Google TV 11 or later, because Wireless debugging arrived in Android 11.
 
-So far it has been tested on the Android TV emulator (API 34) only. Reports from real TVs and streaming boxes are welcome in [Issues](https://github.com/k45sle/android-tv-speed-compiler/issues).
+| Device | Android | Worked? |
+| --- | --- | --- |
+| Android TV emulator | 14 (API 34) | Yes |
+| Fire TV | Fire OS 8 | Untested |
 
-## FAQ
+If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
+
+<details>
+<summary><b>FAQ</b></summary>
+
+<br>
 
 **Will it make my TV faster?**
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
+**What exactly does it change on the TV?**
+For each app you pick, it runs `cmd package compile -m speed -f` on that app. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. Nothing else.
+
 **Why does it need Developer options?**
-Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. Through that connection it also changes two TV settings so it keeps working on its own. Both are on by default:
+Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. The two settings above are on by default:
 
-- **Keep Wireless debugging on.** Each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself.
-- **Keep this TV trusting the app.** Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again.
+- Keep Wireless debugging on: each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself.
+- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again.
 
-You can turn either one off in the app's Settings. That's optional, and it can make things less convenient later. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
+You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
+
+**Does a system update undo it?**
+It can. A system update may throw away compiled code. The weekly check notices when a watched app is no longer at `speed` and queues it again. This hasn't been checked on a real TV yet.
+
+**Does it work on Ethernet?**
+Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, the Device report form has room to say how it went.
+
+**How is this different from running `pm compile` myself, or from other ADB tools?**
+The compile is the same. The difference is that Speed Compile runs on the TV, does it again after every update without a laptop, waits until nothing is playing, and reconnects after reboots.
 
 **Is it safe?**
 It runs Android's own compiler through the standard `cmd package compile` command, only for the apps you pick. You can stop it at any time by uninstalling the app, or by turning off Keep Wireless debugging on in Settings and then switching off Wireless debugging. Wireless debugging and the trust setting stay as they are after an uninstall; switch them off in Developer options if you no longer want them.
@@ -153,7 +215,12 @@ It runs Android's own compiler through the standard `cmd package compile` comman
 **How do I undo it?**
 Open the app in Apps and choose Reset. The app also stops being watched. Uninstalling Speed Compile does not undo it.
 
-## Build from source
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
+
+<br>
 
 ```bash
 ./gradlew assembleDebug
@@ -169,13 +236,15 @@ To run the same checks as CI on every pull request (lint, the unit tests and the
 
 Release builds are signed only when `releaseStoreFile`, `releaseStorePassword` and `releaseKeyAlias` are set in `~/.gradle/gradle.properties`. Without them the release APK is unsigned.
 
-The README screenshots and demo clip are Robolectric tests that run only with `-Pmedia`. To record the screenshots again:
+The README screenshots and clips are Robolectric tests that run only with `-Pmedia`. To record the screenshots again:
 
 ```bash
 README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests '*ReadmeScreenshotsTest' -Pmedia -Proborazzi.record
 ```
 
 `tools/demo.sh` records the README clips and writes their GIFs and posters into `docs/media`, and the MP4s outside the repo. See the script for how to attach the MP4s to a release.
+
+</details>
 
 ## License
 
