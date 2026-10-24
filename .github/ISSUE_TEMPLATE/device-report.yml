@@ -24,7 +24,7 @@ body:
     id: app-version
     attributes:
       label: Speed Compile version
-      description: The number in the APK file name, for example 2.0.0 from speed-compile-v2.0.0.apk.
+      description: Shown at the top of Settings in the app, for example Version 1.0.0.
     validations:
       required: true
   - type: dropdown
