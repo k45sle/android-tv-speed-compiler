@@ -73,9 +73,47 @@ class CosmicWormTest {
         g.step(Input.UP) // column 7 has no gate
         assertFalse(g.over)
         assertEquals(7 to 0, g.head())
-        while (g.acc < CosmicWorm.STEP && !g.over) g.step(null)
+        while (g.acc < CosmicWorm.STEP) g.step(null)
+        assertFalse(g.over) // the drawing has just reached (7,0); the head now bumps the wall
+        assertEquals(0f, g.bumpY(), 0.05f)
+        while (g.acc < CosmicWorm.STEP + CosmicWorm.GRACE - 1e-4f) { assertFalse(g.over); g.step(null) }
         assertTrue(g.over)
         assertEquals(7 to 0, g.head())
+        assertEquals(-CosmicWorm.BUMP, g.bumpY(), 1e-6f)
+    }
+
+    @Test
+    fun aTurnJustAfterHittingAWallStillSavesTheWorm() {
+        val g = CosmicWorm(Random(1))
+        g.foodX = 0; g.foodY = 6
+        g.move(); g.move(); g.move(Input.UP); g.move(); g.move() // (6,0), heading up into a wall with no gate
+        var before: Float
+        do { before = g.acc; g.step(null) } while (g.acc >= before) // up to the next step boundary, where the move is blocked
+        assertFalse(g.over) // the head bumps the wall first
+        assertEquals(g.moves + 1f, g.travel(), 0f) // the body stands at its last cell, so its specks stand too
+        g.step(null)
+        assertEquals(g.moves + 1f, g.travel(), 0f)
+        val push = g.bumpY()
+        assertTrue(push < 0f)
+        g.step(Input.RIGHT)
+        assertEquals(7 to 0, g.head())
+        assertEquals(0f, g.bumpY(), 0f)
+        // Glides on from the pushed spot toward (7,0): one tick in, the head is still almost as far up, not snapped back.
+        assertEquals(push, g.slideY(0, g.slide()), 0.03f)
+        repeat(10) { g.step(null) }
+        assertFalse(g.over)
+    }
+
+    @Test
+    fun pressingIntoTheWallAgainDoesNotPutOffTheCrash() {
+        fun ticksToDie(press: Boolean): Int {
+            val g = alongTheTopWall()
+            g.step(Input.UP)
+            var n = 0
+            while (!g.over) { g.step(if (press) Input.UP else null); n++ }
+            return n
+        }
+        assertEquals(ticksToDie(false), ticksToDie(true))
     }
 
     @Test

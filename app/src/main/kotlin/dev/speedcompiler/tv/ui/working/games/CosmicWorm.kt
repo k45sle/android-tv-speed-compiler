@@ -37,6 +37,9 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     private var plain = false
     /** The next move is blocked, but the drawing has not reached the last cell yet; see [move]. */
     private var crash = false
+    /** While [crash]: the direction that is blocked, and the [acc] at which the worm dies. */
+    private var bumpDir = -1
+    private var crashEnd = 0f
     /** Turns taken at once in this step; a third waits for the step to end. */
     private var turns = 0
     /** A second quick turn pressed within one step, played on the next step; -1 if none. */
@@ -114,6 +117,28 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         a0 = acc
     }
 
+    /**
+     * How far the head is drawn past its last cell toward [bumpDir], in cells: once the drawing reaches that cell the head
+     * pushes on over [GRACE] until it touches the wall or body, so the worm never dies short of what it hit.
+     */
+    fun bump(): Float = when {
+        bumpDir < 0 -> 0f
+        over -> BUMP
+        else -> ((acc - (crashEnd - GRACE)) / GRACE).coerceIn(0f, 1f) * BUMP
+    }
+
+    /**
+     * Cells the body has travelled, for the specks riding on it. acc runs below 0 during a turn's longer slide, so this stays
+     * continuous through a turn; a body standing at its last cell (crashing or dead) has finished its move.
+     */
+    fun travel(): Float {
+        val standing = over || (crash && fx[0] == bx[0].toFloat() && fy[0] == by[0].toFloat())
+        return moves + if (standing) 1f else min(1f, acc / STEP)
+    }
+
+    fun bumpX() = if (bumpDir < 0) 0f else DX[bumpDir] * bump()
+    fun bumpY() = if (bumpDir < 0) 0f else DY[bumpDir] * bump()
+
     private fun die() {
         crash = false
         dead = 1e-6f
@@ -143,20 +168,23 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
                     // Early in a step the last move is redone toward the turn (never for a second turn: that would undo the
                     // first); otherwise the next move happens now and its slide also covers the rest of this step, so the
                     // worm keeps its speed and reaches each cell on the beat.
+                    val pushX = bumpX(); val pushY = bumpY() // nonzero only while crashing
                     hold()
-                    val redo = turns == 0 && acc < STEP / 2 && redirect(d)
+                    // While crashing the head may already sit on its last cell, so a redo would pull it back a cell.
+                    val redo = !crash && turns == 0 && acc < STEP / 2 && redirect(d)
                     turns++
                     if (!redo) {
                         want = d; acc -= STEP; a0 -= STEP
                         move()
                         if (over) return
                         if (crash) { acc += STEP; a0 += STEP } // the move did not happen, so the glide keeps its pace
+                        else { fx[0] += pushX; fy[0] += pushY } // a saving turn glides on from where the bump had pushed the head
                     }
                 }
             }
         }
         acc += DT
-        if (crash) { if (acc >= STEP) die(); return }
+        if (crash) { if (acc >= crashEnd) die(); return }
         if (acc < STEP) return
         acc -= STEP
         turns = 0
@@ -171,16 +199,21 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         dir = want
         if (queued >= 0) { want = queued; queued = -1 }
         val n = neighbour(bx[0], by[0], dir)
+        val wasCrash = crash
         crash = false
         // The tail cell frees up as the worm moves on, so it does not count.
         if (n < 0 || onBody(n % W, n / W, len - 1)) {
-            // The moves can run ahead of the drawing; then the worm glides on to its last cell and dies there (at the end of
-            // the step), and a turn before that still saves it. The blocked move is undone so the turn checks hold.
+            // The worm glides on to its last cell (the moves can run ahead of the drawing), bumps into what blocks it and dies
+            // [GRACE] later; a turn before then still saves it. The blocked move is undone so the turn checks hold.
+            val blocked = dir
             dir = prevDir; prevDir = before; want = dir; queued = -1
-            if (fx[0] == bx[0].toFloat() && fy[0] == by[0].toFloat()) die() else crash = true
+            if (!wasCrash) crashEnd = (if (fx[0] == bx[0].toFloat() && fy[0] == by[0].toFloat()) acc else STEP) + GRACE
+            if (!wasCrash) bumpDir = blocked // a second blocked turn keeps the first push, so the head does not jump sideways
+            crash = true
             return
         }
         val nx = n % W; val ny = n / W
+        bumpDir = -1
         if (abs(nx - bx[0]) > 1 || abs(ny - by[0]) > 1) {
             val pair = if (abs(nx - bx[0]) > 1) 2 + GATE_Y.indexOf(ny) else GATE_X.indexOf(nx)
             for (i in 0 until PORTALS) if (P_PAIR[i] == pair) flash[i] = 0f
@@ -201,6 +234,9 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
     companion object {
         const val DT = 1f / 30f
         const val STEP = 0.17f
+        /** Seconds a crash takes from the drawn head reaching its last cell to death, and how far it pushes on, in cells. */
+        const val GRACE = 0.1f
+        const val BUMP = 0.25f
         const val W = 15
         const val H = 7
         const val CELLS = W * H
@@ -261,10 +297,12 @@ private class WormRenderer(
             s.img(star, (floor(g.t * 3f).toInt() % 2) * 9, 0, 9, 9, (cx - 4).toFloat(), (cy - 8 + BOB[floor(g.t * 5f).toInt() % 4]).toFloat())
         }
         path(g, g.slide())
-        // acc runs below 0 during a turn's longer slide, so this stays continuous through a turn.
-        val travel = (g.moves + if (g.over) 1f else g.acc / CosmicWorm.STEP) * 20f
+        val travel = g.travel() * 20f
         // The unwrapped line can sit one board away on both axes after two gate passes, so try all nine copies; most are culled.
-        for (oy in -1..1) for (ox in -1..1) tube(g, ox * 300f, oy * 140f, travel)
+        tube(g, 0f, 0f, travel)
+        // The crash bump pushes the head past the force field; only the copy in place shows it, not a far-side copy.
+        if (g.bump() > 0f) path(g, g.slide(), bump = false)
+        for (oy in -1..1) for (ox in -1..1) if (ox != 0 || oy != 0) tube(g, ox * 300f, oy * 140f, travel)
         val pf = floor(g.t * 8f).toInt() % 4
         for (i in 0 until CosmicWorm.PORTALS) {
             val wide = CosmicWorm.P_WIDE[i]
@@ -283,10 +321,11 @@ private class WormRenderer(
     private fun grow(a: FloatArray, need: Int) = if (a.size >= need) a else a.copyOf(max(need, a.size * 2))
 
     /** The centre line, unwrapped so it stays continuous through a gate, resampled about every 2 px into [ptX]/[ptY]. */
-    private fun path(g: CosmicWorm, p: Float) {
+    private fun path(g: CosmicWorm, p: Float, bump: Boolean = true) {
         val len = g.len
         kx = grow(kx, len); ky = grow(ky, len)
         for (i in 0 until len) { kx[i] = 20 + 20 * g.slideX(i, p); ky[i] = 40 + 20 * g.slideY(i, p) }
+        if (bump) { kx[0] += 20 * g.bumpX(); ky[0] += 20 * g.bumpY() }
         for (i in 1 until len) for (k in 0 until 4) {
             val dx = WRAP_X[k]; val dy = WRAP_Y[k]
             val qx = kx[i - 1]; val qy = ky[i - 1]
