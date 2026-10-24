@@ -6,6 +6,7 @@ import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -38,6 +39,8 @@ private const val RETRY_WORK = "retry"
 private const val KEY_BUILD = "build_fingerprint"
 private const val KEY_PACKAGE = "package"
 private const val RETRY_DELAY_HOURS = 6L
+private const val REFUSED_WORK = "refused"
+private const val REFUSED_RETRY_MINUTES = 15L
 private const val MAX_CONNECTION_TRIES = 5
 private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(90)
 
@@ -153,6 +156,16 @@ private fun enqueueRetryLater(context: Context, packageName: String) {
     WorkManager.getInstance(context).enqueueUniqueWork("$RETRY_WORK:$packageName", ExistingWorkPolicy.REPLACE, request)
 }
 
+/** Runs the same row again after a fixed delay. Its own work name, so it never touches the optimize worker's REPLACE. */
+private fun enqueueRefusedRetry(context: Context, itemId: Long) {
+    val request = OneTimeWorkRequestBuilder<OptimizeWorker>()
+        .setInitialDelay(REFUSED_RETRY_MINUTES, TimeUnit.MINUTES)
+        .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
+        .setInputData(workDataOf(KEY_ITEM_ID to itemId))
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork("$REFUSED_WORK:$itemId", ExistingWorkPolicy.REPLACE, request)
+}
+
 /** Queues the app again if it is still watched and installed. */
 class RetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -234,12 +247,13 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 return Result.retry()
             }
         }
-        // The TV's own background dexopt can collide with ours and make it refuse: one try after WorkManager's 15 min backoff, behind the gate.
+        // The TV's own background dexopt can collide with ours and make it refuse: one try after a fixed 15 min (Result.retry would grow linearly), still behind the gate.
         val refusedKey = refusedKey(pkg)
         if (result.refused && sync.get(refusedKey) != "1") {
             sync.put(SyncState(refusedKey, "1"))
             dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
-            return Result.retry()
+            enqueueRefusedRetry(applicationContext, id)
+            return Result.success()
         }
         resetConnectionTries(g, pkg)
         val now = g.clock.nowMillis()

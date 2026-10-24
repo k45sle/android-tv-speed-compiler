@@ -11,6 +11,11 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
 private const val DUMP_TTL_MILLIS = 5 * 60 * 1000L
+private val GENERIC_FAILURE = Regex("\\bFailure\\b")
+private val SPECIFIC_ERROR = Regex("not found|unknown package|error:", RegexOption.IGNORE_CASE)
+
+/** ART's bare "Failure", as when the TV's own dexopt ran at the same moment; a named error will not pass on its own. */
+private fun isGenericRefusal(output: String) = GENERIC_FAILURE.containsMatchIn(output) && !SPECIFIC_ERROR.containsMatchIn(output)
 
 class OptimizerImpl(
     private val shell: AdbShell,
@@ -86,7 +91,7 @@ class OptimizerImpl(
         // exitCode -1 means the TV gave no code; the word Success then decides alone.
         if (res.exitCode > 0 || !compileSucceeded(res.output)) {
             val said = scrub(res.output.lineSequence().firstOrNull { it.isNotBlank() }?.trim())?.take(120)
-            return finish(pkg, false, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, said), "optimize_failed", refused = true)
+            return finish(pkg, false, withSaid(DID_NOT_FINISH + REFUSED_FINISH_TAIL, said), "optimize_failed", refused = isGenericRefusal(res.output))
         }
         val filter = try {
             verify(pkg)
