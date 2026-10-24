@@ -9,6 +9,11 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
@@ -201,12 +206,19 @@ class HomeActivityTest : ComposeTestBase() {
         assertEquals("Auto-optimize is off", etaText(res, Eta.Paused))
     }
 
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test
     fun retryIsReachableByFocus() {
-        val history = listOf(QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 6_000, failureReason = "Connection lost"))
-        show { ActivityContent(queue, history, events, look, {}, {}, now, utc) }
-        rule.onNodeWithContentDescription("Retry Alpha").performScrollTo().requestFocus()
-        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused()
+        // Enough finished jobs that the failed row starts below the viewport.
+        val done = (1L..12).map { QueueItem(it, "p.app$it", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 2_000, finishedAt = 3_000) }
+        val failed = QueueItem(99, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 2_500, failureReason = "Connection lost")
+        show { ActivityContent(queue, done + failed, events, look, {}, {}, now, utc) }
+        val row = "Alpha, Failed, ${clockText(2_500, utc)}, Connection lost"
+        rule.onNode(hasScrollAction()).performScrollToNode(hasContentDescription(row))
+        rule.onNodeWithContentDescription(row).requestFocus()
+        rule.onNodeWithContentDescription(row).performKeyInput { keyDown(Key.DirectionDown); keyUp(Key.DirectionDown) }
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused().assertIsDisplayed()
     }
 
     @Test

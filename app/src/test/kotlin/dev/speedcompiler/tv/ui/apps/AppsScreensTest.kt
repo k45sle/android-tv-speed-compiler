@@ -350,6 +350,15 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun focusReturnsToSelectAfterABatchAction() {
+        content()
+        click("Select")
+        click("Alpha")
+        click("Optimize selected")
+        rule.onNodeWithText("Select", ignoreCase = true).assertIsFocused()
+    }
+
+    @Test
     fun optimizeSelectedEnqueuesEachAppOnTheScheduler() {
         listScreen()
         click("Select")
