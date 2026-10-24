@@ -326,6 +326,18 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun backInSelectModeOnlyLeavesSelectMode() {
+        var left = false
+        show { AppsContent(apps, emptyMap(), emptyMap(), emptyMap(), 1_800_000_000_000, java.time.ZoneOffset.UTC, {}, {}, {}, { _, _ -> }, onBack = { left = true }, startSelecting = true, startSelected = setOf("a.alpha")) }
+        rule.onNodeWithText("Optimize selected", ignoreCase = true).assertIsDisplayed()
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+        rule.onNodeWithText("Optimize selected", ignoreCase = true).assertDoesNotExist()
+        rule.onNodeWithText("Select", ignoreCase = true).assertIsFocused()
+        assertTrue(!left)
+    }
+
+    @Test
     fun selectingThreeAppsQueuesAllThree() {
         val queued = mutableListOf<String>()
         content(onQueue = { queued += it })

@@ -178,8 +178,9 @@ fun ActivityContent(
                         QueueState.SKIPPED -> Tone.Warn
                         else -> Tone.Neutral
                     }))
-                    if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
                 }
+                // Own line under the row: the row itself is a focus stop, so Down reaches Retry and the list scrolls it into view.
+                if (h.state == QueueState.FAILED) Button({ refocus = historyHeader; onRetry(h.id) }, Modifier.padding(horizontal = Space.x2).semantics { contentDescription = retryDesc }) { Text(stringResource(R.string.common_retry).upper()) }
                 if (open == h.id) {
                     val from = h.startedAt ?: h.enqueuedAt
                     val to = h.finishedAt ?: Long.MAX_VALUE

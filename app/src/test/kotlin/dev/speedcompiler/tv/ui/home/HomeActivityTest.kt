@@ -7,6 +7,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
@@ -197,6 +199,14 @@ class HomeActivityTest : ComposeTestBase() {
         assertEquals("Waiting for playback to stop", etaText(res, Eta.WaitingForPlayback))
         assertEquals("#2 in queue, about 4 min", etaText(res, Eta.InQueue(1, 240_000)))
         assertEquals("Auto-optimize is off", etaText(res, Eta.Paused))
+    }
+
+    @Test
+    fun retryIsReachableByFocus() {
+        val history = listOf(QueueItem(7, "a.alpha", QueueSource.AUTO, QueueState.FAILED, 1_000, startedAt = 2_000, finishedAt = 6_000, failureReason = "Connection lost"))
+        show { ActivityContent(queue, history, events, look, {}, {}, now, utc) }
+        rule.onNodeWithContentDescription("Retry Alpha").performScrollTo().requestFocus()
+        rule.onNodeWithContentDescription("Retry Alpha").assertIsFocused()
     }
 
     @Test
