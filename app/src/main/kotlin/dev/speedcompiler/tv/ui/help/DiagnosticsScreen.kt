@@ -96,6 +96,60 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { share.requestFocus() } }
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
 
+    DiagnosticsContent(
+        url, note, share, onBack,
+        onShare = {
+            note = res.getString(R.string.diag_preparing)
+            scope.launch {
+                val json = buildCappedJson(collect(graph, version), deviceNames(context), SHARE_MAX_CHARS)
+                note = null
+                try {
+                    context.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, json),
+                            res.getString(R.string.diag_share_diagnostics),
+                        ),
+                    )
+                } catch (_: RuntimeException) { // no handler, or TransactionTooLargeException
+                    note = res.getString(R.string.diag_share_failed)
+                }
+            }
+        },
+        onDownload = {
+            scope.launch {
+                val old = server
+                server = null // so the old server's onFinished does not clear the new url
+                old?.stop()
+                url = null
+                note = res.getString(R.string.diag_preparing)
+                val json = buildDiagnosticsJson(collect(graph, version), deviceNames(context))
+                val ref = arrayOfNulls<DiagnosticsServer>(1)
+                val made = withContext(Dispatchers.IO) {
+                    val ip = localIp() ?: return@withContext null
+                    val s = DiagnosticsServer(json, PairingSession(graph.clock), onFinished = { if (server === ref[0]) url = null })
+                    ref[0] = s
+                    s.start()
+                    s to "http://$ip:${s.port}/${s.token}"
+                }
+                note = null
+                if (made == null) {
+                    note = res.getString(R.string.diag_connect_network)
+                } else {
+                    server = made.first
+                    url = made.second
+                }
+            }
+        },
+    )
+}
+
+/** The screen without its graph and server, so a test can show it with a made-up address. */
+@Composable
+fun DiagnosticsContent(
+    url: String?, note: String?, share: FocusRequester, onBack: () -> Unit,
+    onShare: () -> Unit = {}, onDownload: () -> Unit = {},
+) {
+    val res = LocalResources.current
     val scroll = rememberScrollState()
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
@@ -114,51 +168,11 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
         ArcadeButton(
-            onClick = {
-                note = res.getString(R.string.diag_preparing)
-                scope.launch {
-                    val json = buildCappedJson(collect(graph, version), deviceNames(context), SHARE_MAX_CHARS)
-                    note = null
-                    try {
-                        context.startActivity(
-                            Intent.createChooser(
-                                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, json),
-                                res.getString(R.string.diag_share_diagnostics),
-                            ),
-                        )
-                    } catch (_: RuntimeException) { // no handler, or TransactionTooLargeException
-                        note = res.getString(R.string.diag_share_failed)
-                    }
-                }
-            },
+            onClick = onShare,
             modifier = Modifier.focusRequester(share).semantics { contentDescription = res.getString(R.string.diag_share_diagnostics) },
         ) { Text(stringResource(R.string.diag_share).upper()) }
         ArcadeButton(
-            onClick = {
-                scope.launch {
-                    val old = server
-                    server = null // so the old server's onFinished does not clear the new url
-                    old?.stop()
-                    url = null
-                    note = res.getString(R.string.diag_preparing)
-                    val json = buildDiagnosticsJson(collect(graph, version), deviceNames(context))
-                    val ref = arrayOfNulls<DiagnosticsServer>(1)
-                    val made = withContext(Dispatchers.IO) {
-                        val ip = localIp() ?: return@withContext null
-                        val s = DiagnosticsServer(json, PairingSession(graph.clock), onFinished = { if (server === ref[0]) url = null })
-                        ref[0] = s
-                        s.start()
-                        s to "http://$ip:${s.port}/${s.token}"
-                    }
-                    note = null
-                    if (made == null) {
-                        note = res.getString(R.string.diag_connect_network)
-                    } else {
-                        server = made.first
-                        url = made.second
-                    }
-                }
-            },
+            onClick = onDownload,
             modifier = Modifier.semantics { contentDescription = res.getString(R.string.diag_download_desc) },
         ) { Text(stringResource(R.string.diag_download_phone).upper()) }
         note?.let { Text(it) }

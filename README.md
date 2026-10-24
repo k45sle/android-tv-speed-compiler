@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="640" height="360" alt="Demo: from Home, open Apps, pick Nuvio and press Optimize now. While it compiles, the Working screen's arcade plays a few seconds each of Alien Run, Star Arrow and Cosmic Worm, going back to the arcade between games. The job finishes during Cosmic Worm; press Done, and Home now lists Nuvio as optimized">
+  <img src="docs/media/hero.gif" width="640" height="412" alt="Demo: from Apps, pick Nuvio and press Optimize now. The Working screen opens its arcade for a moment, the job finishes, and after Done, Home lists Nuvio as optimized">
   <br>
   <a href="docs/media/demo.mp4">Watch the 36-second demo (MP4)</a>
 </p>
@@ -175,7 +175,7 @@ The README screenshots and demo clip are Robolectric tests that run only with `-
 README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitTest --tests '*ReadmeScreenshotsTest' -Pmedia -Proborazzi.record
 ```
 
-`tools/demo.sh` builds the demo clip outside the repo. See the script for how to attach `demo.mp4` to a release.
+`tools/demo.sh` records the README clips and writes their GIFs and posters into `docs/media`, and the MP4s outside the repo. See the script for how to attach the MP4s to a release.
 
 ## License
 

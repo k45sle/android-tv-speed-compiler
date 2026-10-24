@@ -15,6 +15,8 @@ import dev.speedcompiler.tv.ui.working.WorkingHost
 import dev.speedcompiler.tv.ui.Routes
 import com.github.takahirom.roborazzi.recordRoboVideo
 import com.github.takahirom.roborazzi.RoboVideoOptions
+import com.github.takahirom.roborazzi.RoboVideoRecorderScope
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -58,12 +60,18 @@ import dev.speedcompiler.tv.ui.working.games.StarArrowDef
 import dev.speedcompiler.tv.ui.working.GameKind
 import dev.speedcompiler.tv.ui.home.ActivityContent
 import dev.speedcompiler.tv.ui.setup.FakeSetupEnv
+import dev.speedcompiler.tv.ui.setup.QuickRepairScreen
+import dev.speedcompiler.tv.ui.help.DiagnosticsContent
+import dev.speedcompiler.tv.ui.help.HelpContent
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
 import dev.speedcompiler.tv.ui.setup.SetupApp
 import dev.speedcompiler.tv.ui.setup.SetupDeps
 import dev.speedcompiler.tv.ui.setup.SetupMode
 import dev.speedcompiler.tv.ui.setup.SetupScreen
 import android.graphics.BitmapFactory
 import androidx.compose.ui.test.onNodeWithText
+import dev.speedcompiler.tv.web.PairingWebServer
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.FakeScheduler
@@ -202,7 +210,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun appsDark() = shoot("apps-dark", true) { AppsScreen({}, {}, appsDeps()) }
     @Test fun appsLight() = shoot("apps-light", false) { AppsScreen({}, {}, appsDeps()) }
 
-    @Test fun appDetailDark() = shoot("appdetail-dark", true) {
+    @Composable private fun AppDetailShot() {
         val d = demo[2]
         AppDetailContent(
             AppInfo(d.pkg, d.label, "3.2", nowMs - 9L * 24 * 60 * min, banner = { banner(d) }),
@@ -210,7 +218,10 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         )
     }
 
-    @Test fun activityDark() = shoot("activity-dark", true) {
+    @Test fun appDetailDark() = shoot("appdetail-dark", true) { AppDetailShot() }
+    @Test fun appDetailLight() = shoot("appdetail-light", false) { AppDetailShot() }
+
+    @Composable private fun ActivityShot() {
         val history = listOf(
             q(5, "com.example.streambox", QueueState.DONE).copy(startedAt = nowMs - 22 * min, finishedAt = nowMs - 20 * min),
             q(4, "com.example.weather", QueueState.FAILED).copy(startedAt = nowMs - 95 * min, finishedAt = nowMs - 94 * min, failureReason = "Connection lost"),
@@ -219,6 +230,9 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         val s = homeState()
         ActivityContent(s.queue, history, s.events, ::look, {}, {}, now, utc)
     }
+
+    @Test fun activityDark() = shoot("activity-dark", true) { ActivityShot() }
+    @Test fun activityLight() = shoot("activity-light", false) { ActivityShot() }
 
     private fun nuvioWorking() = WorkingState("Nuvio", banner(demo[2]).asImageBitmap(), JobView.Running, 72_000, 120_000)
 
@@ -252,6 +266,50 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
 
     private val plum = Presets.indexOfFirst { it.name == "Plum" }
 
+    @Test fun settingsLight() = shoot("settings-light", false) {
+        val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Light))
+        SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
+    }
+
+    @Test fun helpDark() = shoot("help-dark", true) { HelpContent({}) }
+
+    // The address and token are made up (192.0.2.x is the documentation range, RFC 5737).
+    @Test fun diagnosticsDark() = shoot("diagnostics-dark", true) {
+        DiagnosticsContent("http://192.0.2.10:38417/6b1e0c94d2a85f37a9c4e8d1b0f27a53", null, remember { FocusRequester() }, {})
+    }
+
+    @Test fun quickRepairDark() = shoot("quickrepair-dark", true) { QuickRepairScreen({}, setupDeps(false, PAIR_URL)) }
+
+    /** One Home thumbnail per preset (5x2), made by capturing the same screen under each preset in turn. */
+    @Test fun presets() {
+        val tw = 320; val th = 180; val gap = 8; val label = 22
+        val sheet = Bitmap.createBitmap(5 * tw + 6 * gap, 2 * (th + label) + 3 * gap, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(sheet)
+        canvas.drawColor(Color.rgb(11, 32, 23))
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(242, 230, 196); textSize = 15f; typeface = Typeface.DEFAULT_BOLD }
+        var preset by mutableStateOf(0)
+        val state = homeState()
+        rule.mainClock.autoAdvance = false
+        rule.setContent { SpeedTheme(ThemeChoice.Dark, SeedChoice.Preset(preset)) { HomeContent(state, {}, now, utc) } }
+        Presets.forEachIndexed { i, p ->
+            preset = i
+            rule.mainClock.advanceTimeBy(600)
+            val full = File("build/outputs/roborazzi/readme/presets-$i.png")
+            rule.onRoot().captureRoboImage(full.path)
+            // Halving first averages the pixels; one big filtered step would skip most of them and mangle the text.
+            var shot = BitmapFactory.decodeFile(full.path)
+            while (shot.width / 2 >= tw) shot = Bitmap.createScaledBitmap(shot, shot.width / 2, shot.height / 2, true)
+            shot = Bitmap.createScaledBitmap(shot, tw, th, true)
+            full.delete()
+            val x = gap + (i % 5) * (tw + gap); val y = gap + (i / 5) * (th + label + gap)
+            canvas.drawBitmap(shot, x.toFloat(), y.toFloat(), null)
+            canvas.drawText(p.name, x.toFloat(), (y + th + 16).toFloat(), text)
+        }
+        val out = File("build/outputs/roborazzi/readme/presets.png").apply { parentFile!!.mkdirs() }
+        out.outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        if (System.getProperty("roborazzi.test.record") == "true") System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "presets.png").absoluteFile, overwrite = true) }
+    }
+
     // The one non-default preset in the README, so a theme regression outside the default palette shows up in review.
     @Test fun settingsPlum() = shoot("settings-plum", true, seed = SeedChoice.Preset(plum)) {
         val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Dark, accentPreset = plum))
@@ -275,46 +333,77 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun setupWelcomeDark() = shoot("setup-welcome-dark", true) { SetupScreen({}, deps = setupDeps(false)) }
     @Test fun setupPairDark() = shoot("setup-pair-dark", true) {
         // 192.0.2.x is the documentation range (RFC 5737), and the token is made up.
-        SetupScreen({}, SetupMode.Repair, setupDeps(false, "http://192.0.2.10:41237/3f9c2a7be15d4086c4e1a9b2d7f05c63"))
+        SetupScreen({}, SetupMode.Repair, setupDeps(false, PAIR_URL))
     }
     @Test fun setupAppsDark() = shoot("setup-apps-dark", true, act = ::pickApps) { SetupScreen({}, deps = setupDeps(true)) }
     @Test fun setupDoneDark() = shoot("setup-done-dark", true, act = {
         pickApps(); rule.onNodeWithText("Continue (2 selected)", ignoreCase = true).performSemanticsAction(SemanticsActions.OnClick)
     }) { SetupScreen({}, deps = setupDeps(true)) }
 
-    private enum class Step { Home, Apps, Detail, Working, HomeDone }
+    private enum class Step { Home, Apps, Detail, Working, Activity, Setup }
+
+    // State the clip screens read; each clip test sets what it needs, then starts the runner.
+    private var step by mutableStateOf(Step.Home)
+    private var home by mutableStateOf(homeState())
+    private var activityEvents by mutableStateOf(emptyList<Event>())
+    private var run = q(9, NUVIO, QueueState.RUNNING).copy(source = QueueSource.MANUAL, runNow = true)
+    private val queue = MutableStateFlow(emptyList<QueueEntry>())
+    private val history = MutableStateFlow(emptyList<QueueItem>())
+    private val setupEnv = FakeSetupEnv(false, false, setupApps)
+    private val setupConn = MutableStateFlow(ConnectionState.Unpaired)
+    private val setupUrl = MutableStateFlow<String?>(null)
+    private fun clock() = nowMs + rule.mainClock.currentTime
+
+    // Key events go to whatever has focus, as with a remote.
+    @OptIn(ExperimentalTestApi::class)
+    private fun press(key: Key = Key.DirectionCenter) = rule.onRoot().performKeyInput { pressKey(key) }
+
+    private val oldEvents = listOf(
+        Event(1, nowMs - 20 * min, "com.example.streambox", "optimize_verified", "Optimized (checked)"),
+        Event(2, nowMs - 180 * min, "com.example.retroarcade", "optimize_verified", "Optimized (checked)"),
+        Event(3, nowMs - 26 * 60 * min, "com.example.musichub", "optimize_verified", "Optimized (checked)"),
+    )
+
+    /** Home and Activity for the hands-off clip: Nuvio was optimized three days ago, or just now when [nuvioDone]. */
+    private fun handsoff(q: List<QueueEntry>, events: List<Event>, nuvioDone: Boolean = false) {
+        val watched = listOf(
+            optimized("com.example.streambox", 20), optimized("com.example.retroarcade", 180),
+            optimized(NUVIO, if (nuvioDone) 0 else 3 * 24 * 60), optimized("com.example.musichub", 26 * 60),
+        )
+        queue.value = q; activityEvents = events
+        home = HomeState(ConnectionState.Connected, true, watched, q, events, ::look)
+    }
 
     /**
-     * README demo clip: Home, Apps, Nuvio, Optimize now, the Working screen and a few seconds of each game (Back to the arcade
-     * between them), the job finishing during Cosmic Worm, Done, and Home with Nuvio optimized. Runs only with DEMO_FLOW_GIF=<absolute path>; tools/demo.sh builds the video.
+     * The one runner behind every clip: sets up the screens at [start], the keyboard input mode and window focus, the game seeds
+     * and the fake setup state, then records [script] into <DEMO_CLIPS_DIR>/[name].gif. Skipped without that env var (absolute dir),
+     * so the stills run never records. tools/demo.sh runs all clips and builds the media.
      */
     @OptIn(ExperimentalTestApi::class)
-    @Config(qualifiers = "w960dp-h540dp-mdpi") // 960x540 like the old demo; 1080p frames run out of heap
-    @Test fun demoFlow() {
-        val path = System.getenv("DEMO_FLOW_GIF")
-        assumeNotNull(path)
+    private fun clip(name: String, start: Step, script: RoboVideoRecorderScope.() -> Unit) {
+        val dir = System.getenv("DEMO_CLIPS_DIR")
+        assumeNotNull(dir)
         val nuvio = demo[2]
-        val clock = { nowMs + rule.mainClock.currentTime }
-        var run = q(9, nuvio.pkg, QueueState.RUNNING).copy(source = QueueSource.MANUAL, runNow = true)
-        val queue = MutableStateFlow(emptyList<QueueEntry>())
-        val history = MutableStateFlow(emptyList<QueueItem>())
-        var step by mutableStateOf(Step.Home)
+        step = start
         rule.mainClock.autoAdvance = false // the games and the Working banner never go idle
         rule.setContent {
             // Robolectric starts in touch mode, where the clickable rows cannot take focus; a TV remote is keyboard mode.
             val input = LocalInputModeManager.current
             LaunchedEffect(Unit) { input.requestInputMode(InputMode.Keyboard) }
+            val q by queue.collectAsState()
+            val h by history.collectAsState()
             SpeedTheme(ThemeChoice.Dark) {
                 when (step) {
-                    Step.Home -> HomeContent(homeState(), { if (it == Routes.Apps) step = Step.Apps }, now, utc)
+                    Step.Home -> HomeContent(home, { step = when (it) { Routes.Apps -> Step.Apps; Routes.Activity -> Step.Activity; else -> step } }, now, utc)
                     Step.Apps -> AppsScreen({ if (it == Routes.appDetail(nuvio.pkg)) step = Step.Detail }, {}, appsDeps())
                     Step.Detail -> AppDetailContent(
                         AppInfo(nuvio.pkg, nuvio.label, "3.2", nowMs - 27L * 24 * 60 * min, banner = { banner(nuvio) }),
                         WatchedApp(nuvio.pkg, "1"), null, QueueEntry(nuvioEntry.item.copy(state = QueueState.QUEUED), 0, Eta.InQueue(0, 60_000)), nowMs, utc,
                         { run = run.copy(startedAt = clock()); queue.value = listOf(QueueEntry(run, 0, Eta.None)); step = Step.Working }, {}, {},
                     )
-                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, clock) { step = Step.HomeDone }
-                    Step.HomeDone -> HomeContent(homeState(nuvioDone = true), {}, now, utc)
+                    Step.Working -> WorkingHost(nuvio.pkg, look(nuvio.pkg), queue, history, ::clock, verified = flowOf(true)) { home = homeState(nuvioDone = true); step = Step.Home }
+                    Step.Activity -> ActivityContent(q, h, activityEvents, ::look, {}, {}, now, utc)
+                    Step.Setup -> SetupScreen({}, deps = SetupDeps(setupEnv, setupConn, setupUrl))
                 }
             }
         }
@@ -322,61 +411,133 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         // Robolectric's window never gets focus, and the screens wait for it before taking their first focus.
         rule.runOnUiThread { rule.activity.window.decorView.dispatchWindowFocusChanged(true) }
         rule.mainClock.advanceTimeByFrame()
-        // Key events go to whatever has focus, as with a remote.
-        fun press(key: Key = Key.DirectionCenter) = rule.onRoot().performKeyInput { pressKey(key) }
-        CosmicWormDef.seed = 270 // picked by simulation: the gate loop below eats two stars on it
+        CosmicWormDef.seed = 270 // picked by simulation: the gate loop in the arcade clip eats two stars on it
         AlienRunDef.seed = 7; StarArrowDef.seed = 7
         try {
-            rule.onRoot().recordRoboVideo(rule, File(path), RoboVideoOptions(fps = 15, settleTimeoutMillis = 100)) {
-                // The first focus shows no ring under Robolectric, so step off the Apps button and back.
-                delay(1_200)
-                press(Key.DirectionRight)
-                delay(600)
-                press(Key.DirectionLeft)
-                delay(900)
-                press()
-                delay(1_000)
-                repeat(3) { press(Key.DirectionDown); delay(500) }
-                delay(500)
-                press()
-                delay(2_500)
-                press()
-                delay(2_000)
-                // After Back the picker focuses its first cabinet (Cosmic Worm), then Alien Run and Star Arrow to its right.
-                press(Key.DirectionRight)
-                delay(600)
-                press()
-                delay(1_600) // the first cactus reaches the alien at about 2.1 s
-                press()
-                delay(1_600)
-                press(Key.Back)
-                delay(900)
-                repeat(2) { press(Key.DirectionRight); delay(400) }
-                delay(300)
-                press()
-                delay(500)
-                // About 2 s of flight, out before the first rock column: the video's frame steps make longer blind flapping drift into the rocks.
-                repeat(3) { press(); delay(600) }
-                press(Key.Back)
-                delay(900)
-                press()
-                // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
-                delay(1_000)
-                press(Key.DirectionUp)
-                delay(7_000)
-                queue.value = emptyList()
-                history.value = listOf(run.copy(state = QueueState.DONE, finishedAt = clock()))
-                delay(2_000)
-                press(Key.Back)
-                delay(1_500)
-                press()
-                delay(3_000)
-            }
+            rule.onRoot().recordRoboVideo(rule, File(dir, "$name.gif"), RoboVideoOptions(fps = 15, settleTimeoutMillis = 100)) { script() }
         } finally { CosmicWormDef.seed = null; AlienRunDef.seed = null; StarArrowDef.seed = null }
+    }
+
+    /** Apps, Nuvio, Optimize now, a second of the arcade, the job finishing, Done, and Home with Nuvio optimized. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi") // 960x540; 1080p frames run out of heap
+    @Test fun hero() = clip("hero", Step.Apps) {
+        delay(700)
+        repeat(3) { press(Key.DirectionDown); delay(350) }
+        delay(250)
+        press() // Nuvio
+        delay(1_300)
+        press() // Optimize now
+        delay(600)
+        press() // the first cabinet
+        delay(1_000)
+        queue.value = emptyList()
+        history.value = listOf(run.copy(state = QueueState.DONE, finishedAt = clock()))
+        delay(1_200)
+        press(Key.Back)
+        delay(1_000)
+        press() // Done
+        delay(2_400)
+    }
+
+    /** The arcade picker, then about 3 s each of Alien Run, Star Arrow and Cosmic Worm while the job strip ticks. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun arcade() {
+        run = run.copy(startedAt = clock())
+        queue.value = listOf(QueueEntry(run, 0, Eta.None))
+        clip("arcade", Step.Working) {
+            delay(600)
+            press(Key.DirectionRight)
+            delay(200)
+            press() // Alien Run
+            delay(1_600) // the first cactus reaches the alien at about 2.1 s
+            press()
+            delay(700)
+            press(Key.Back)
+            delay(600)
+            press(Key.DirectionRight) // after Back the picker keeps focus on the cabinet just played
+            delay(300)
+            press() // Star Arrow
+            delay(300)
+            // Out before the first rock column: the video's frame steps make longer blind flapping drift into the rocks.
+            repeat(3) { press(); delay(600) }
+            press(Key.Back)
+            delay(600)
+            repeat(2) { press(Key.DirectionLeft); delay(250) }
+            press() // Cosmic Worm
+            // The head starts at (4, 3) going right, a cell every 0.17 s: the turn up comes at x = 10.
+            delay(1_000)
+            press(Key.DirectionUp)
+            delay(500) // the worm hits the wall about 0.8 s after this turn, so the clip ends first
+        }
+    }
+
+    /** An app update is detected, waits as Queued until nothing is playing, runs, and Activity shows it done. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun handsoff() {
+        handsoff(emptyList(), oldEvents)
+        clip("handsoff", Step.Home) {
+            delay(800)
+            press(Key.DirectionRight); delay(400); press(Key.DirectionLeft) // the first focus shows no ring under Robolectric
+            delay(600)
+            // The engine writes no event for a detected update; the card going from Optimized to Queued shows it.
+            val detected = oldEvents
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.QUEUED), 0, Eta.None)), detected)
+            delay(1_200)
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.WAITING_GATE), 0, Eta.WaitingForPlayback)), detected)
+            delay(1_000)
+            press(Key.DirectionRight); delay(300); press() // Activity
+            delay(1_700)
+            handsoff(listOf(QueueEntry(q(10, NUVIO, QueueState.RUNNING).copy(startedAt = clock()), 0, Eta.None)), detected)
+            delay(1_000)
+            val item = q(10, NUVIO, QueueState.DONE).copy(startedAt = clock() - 90_000, finishedAt = clock())
+            history.value = listOf(item)
+            handsoff(emptyList(), listOf(Event(6, clock(), NUVIO, "optimize_verified", "Optimized (checked)")) + detected, nuvioDone = true)
+            delay(1_800)
+        }
+    }
+
+    /** Welcome, Developer options, Wireless debugging, the pair page with its QR code (the phone page is shown beside it by demo.sh), allowed, picking apps, Done. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun setup() = clip("setup", Step.Setup) {
+        delay(900)
+        press() // Start
+        delay(1_000)
+        setupEnv.developerOptions = true // the screen polls twice a second
+        delay(1_100)
+        setupEnv.wireless = true
+        delay(700)
+        // 192.0.2.x is the documentation range (RFC 5737), and the token is made up.
+        setupUrl.value = PAIR_URL
+        delay(3_000) // demo.sh shows the phone page beside the TV for this stretch
+        setupConn.value = ConnectionState.Connecting
+        setupUrl.value = null // the session ended: pairing worked
+        delay(1_000)
+        setupConn.value = ConnectionState.Connected
+        delay(1_000)
+        press() // Nuvio
+        delay(300)
+        repeat(2) { press(Key.DirectionDown); delay(300) }
+        press() // Retro Arcade
+        delay(400)
+        press(Key.DirectionRight) // jumps to Continue
+        delay(300)
+        press()
+        delay(1_500)
+    }
+
+    /** The page a phone gets after scanning the QR code, with made-up code and port filled in, for demo.sh to render. */
+    @Test fun phonePage() {
+        val dir = System.getenv("DEMO_CLIPS_DIR")
+        assumeNotNull(dir)
+        val html = PairingWebServer.page(ApplicationProvider.getApplicationContext<Context>().resources)
+            .replace("id=\"code\" ", "id=\"code\" value=\"482916\" ")
+            .replace("name=\"port\" ", "name=\"port\" value=\"37215\" ")
+        File(dir, "phone.html").writeText(html)
     }
 
     private companion object {
         const val NUVIO = "com.nuvio.tv"
+        const val PAIR_URL = "http://192.0.2.10:41237/3f9c2a7be15d4086c4e1a9b2d7f05c63"
         @JvmStatic @BeforeClass fun mediaOnly() = assumeTrue(System.getProperty("media") != null)
     }
 }
