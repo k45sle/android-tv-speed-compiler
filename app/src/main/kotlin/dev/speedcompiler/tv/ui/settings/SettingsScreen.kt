@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.settings
 
+import dev.speedcompiler.tv.theme.scrollbar
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -108,12 +109,13 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
         ThemeChoice.Light -> stringResource(R.string.settings_theme_light)
         ThemeChoice.Dark -> stringResource(R.string.settings_theme_dark)
     }
+    val scroll = rememberScrollState()
     RoomBackdrop {
         Column(Modifier.padding(horizontal = 48.dp).padding(top = 16.dp, bottom = 8.dp), Arrangement.spacedBy(Space.x1)) {
             Marquee(stringResource(R.string.nav_settings), compact = true, onBack = back) { PixelText(stringResource(R.string.settings_version, deps.version), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Column(
                 Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, c.hairline)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = Space.x2, vertical = Space.x1),
+                    .scrollbar(scroll).verticalScroll(scroll).padding(horizontal = Space.x2, vertical = Space.x1),
             ) {
                 Heading(stringResource(R.string.settings_heading_when))
                 SwitchRow(

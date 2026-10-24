@@ -123,8 +123,9 @@ fun ArcadePicker(
             val i = focused
             if (i < 0) return@Canvas
             val x = CAB_X[i]
-            art(GameColors.gold, x - 3, CAB_Y - 3, 108, 2, u); art(GameColors.gold, x - 3, CAB_Y + 151, 108, 2, u)
-            art(GameColors.gold, x - 3, CAB_Y - 3, 2, 156, u); art(GameColors.gold, x + 103, CAB_Y - 3, 2, 156, u)
+            art(GameColors.gold, x - 3, CAB_Y - 3, 100, 2, u); art(GameColors.gold, x - 3, CAB_Y + 151, 108, 2, u)
+            art(GameColors.gold, x - 3, CAB_Y - 3, 2, 156, u); art(GameColors.gold, x + 103, CAB_Y + 3, 2, 150, u)
+            for (k in 0..6) art(GameColors.gold, x + 97 + k, CAB_Y - 3 + k, 2, 2, u) // follows the cabinet's slanted top-right corner
             if (tick / 3 % 2 == 0) artText(pressSelect, x + 48 - (12 * 4 - 1) / 2, CAB_Y + 102, GameColors.yellow, u)
         }
     }

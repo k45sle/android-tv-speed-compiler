@@ -47,9 +47,12 @@ def cabinet(key, lit):
         for x in range(96, 102):
             if y >= (x - 96): put(im, x, y, dark)
     for y in range(H):
-        put(im, 0, y, "outline"); put(im, 95, y, "outline"); put(im, 101, y, "outline")
+        put(im, 0, y, "outline"); put(im, 95, y, "outline")
+        if y >= 5: put(im, 101, y, "outline")
         for x in range(2, 5): put(im, x, y, light)  # front edge stripe
-    for x in range(102): put(im, x, 0, "outline"); put(im, x, H - 1, "outline")
+    for x in range(102): put(im, x, H - 1, "outline")
+    for x in range(97): put(im, x, 0, "outline")
+    for x in range(96, 102): put(im, x, x - 96, "outline")  # the side face's slanted top
     # marquee
     for y in range(4, 24):
         for x in range(6, 90): put(im, x, y, (mq if lit else dark) if 5 < y < 23 and 6 < x < 89 else "outline")

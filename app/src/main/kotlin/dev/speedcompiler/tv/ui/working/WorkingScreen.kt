@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.working
 
+import dev.speedcompiler.tv.theme.scrollbar
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -222,9 +223,10 @@ fun WorkingContent(s: WorkingState, back: () -> Unit, saveBest: (String, Int) ->
         }
         return
     }
+    val scroll = rememberScrollState()
     RoomBackdrop {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 48.dp, top = 6.dp, end = 48.dp), // header 104 (grows for a 2-line status) + gap 6 + room 380 + top 6 fits the 500 dp above the floor bar
+            Modifier.fillMaxSize().scrollbar(scroll).verticalScroll(scroll).padding(start = 48.dp, top = 6.dp, end = 34.dp), // end 34 + the 14 dp scroll bar keeps the 864 dp picker whole; header 104 (grows for a 2-line status) + gap 6 + room 380 + top 6 fits the 500 dp above the floor bar
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             WorkingHeader(s, back, done, first)

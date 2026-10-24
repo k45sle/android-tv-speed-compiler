@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.help
 
+import dev.speedcompiler.tv.theme.scrollbar
+import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -64,8 +66,10 @@ fun HelpContent(go: (String) -> Unit, onBack: () -> Unit = {}) {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
         Marquee(stringResource(R.string.help_title), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
+        val list = rememberLazyListState()
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline),
+            Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline).scrollbar(list),
+            state = list,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {

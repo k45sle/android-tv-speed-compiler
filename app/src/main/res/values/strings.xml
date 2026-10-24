@@ -144,7 +144,7 @@
         <item quantity="one">%1$d selected</item>
         <item quantity="other">%1$d selected</item>
     </plurals>
-    <string name="apps_hold_ok_hint">Hold OK on an app for more options</string>
+    <string name="apps_hold_ok_hint">Hold select on an app for more options</string>
     <string name="apps_loading">Loading apps…</string>
     <string name="apps_no_match">No apps match your search.</string>
     <string name="apps_open_menu">Open menu</string>
@@ -191,7 +191,7 @@
         <item quantity="one">Time estimate, %1$d of %2$d blocks</item>
         <item quantity="other">Time estimate, %1$d of %2$d blocks</item>
     </plurals>
-    <string name="working_estimate">Estimate: usually about %1$d min</string>
+    <string name="working_estimate">Usually about %1$d min</string>
     <string name="working_working_desc">Working</string>
     <string name="working_leave">Leave</string>
     <string name="working_leave_desc">Leave, optimizing continues</string>

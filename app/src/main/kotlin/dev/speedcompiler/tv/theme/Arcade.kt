@@ -283,6 +283,7 @@ fun CabinetCard(
             }
             Row(
                 Modifier.fillMaxWidth().height(36.dp).background(Color(Cabinet.GREY)).padding(horizontal = 10.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Lamp(toneColor(tone))
@@ -482,6 +483,7 @@ object Cabinet {
     const val BLUE = 0xFF3B6FA8.toInt()
     const val ORANGE = 0xFFB5543A.toInt()
     const val PLUM = 0xFF5A4A7A.toInt()
+    const val GREEN = 0xFF2E6B4A.toInt()
     const val LOGO = Retro.LOGO_BASE
     const val CREAM = Retro.CREAM
     const val GREY = 0xFFC7CCD1.toInt()

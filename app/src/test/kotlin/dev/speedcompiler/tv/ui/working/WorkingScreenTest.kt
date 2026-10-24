@@ -89,7 +89,7 @@ class WorkingScreenTest : ComposeTestBase() {
     fun runningShowsHonestProgressAndScreenshot() {
         show()
         rule.onNodeWithText("Optimizing Alpha", ignoreCase = true).assertIsDisplayed()
-        rule.onNodeWithText("Estimate: usually about 2 min").assertIsDisplayed()
+        rule.onNodeWithText("Usually about 2 min").assertIsDisplayed()
         rule.onNodeWithText("00:00").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Cosmic Worm. Eat stars, use the gates").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play Alien Run. Jump the cacti").assertIsDisplayed()

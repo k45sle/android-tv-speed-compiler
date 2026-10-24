@@ -66,7 +66,7 @@ class ContrastTest {
             } + listOf(p.accent to p.background, p.accent to p.container, p.onAccent to p.accent)
             for ((fg, bg) in pairs) assertTrue("$name %08x on %08x".format(fg, bg), contrast(fg, bg) >= 4.5)
         }
-        for (body in listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.PLUM, Cabinet.LOGO))
+        for (body in listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.PLUM, Cabinet.GREEN, Cabinet.LOGO))
             assertTrue("cream on %08x".format(body), contrast(Cabinet.CREAM, body) >= 3.0)
         assertTrue(contrast(Cabinet.INK, Cabinet.GREY) >= 4.5)
     }

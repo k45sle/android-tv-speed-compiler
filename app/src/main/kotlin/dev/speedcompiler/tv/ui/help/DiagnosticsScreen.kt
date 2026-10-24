@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.help
 
+import dev.speedcompiler.tv.theme.scrollbar
 import androidx.compose.ui.platform.LocalResources
 import dev.speedcompiler.tv.theme.upper
 import android.content.Context
@@ -95,13 +96,14 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { runCatching { share.requestFocus() } }
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
 
+    val scroll = rememberScrollState()
     RoomBackdrop {
       Column(Modifier.padding(horizontal = 48.dp, vertical = 12.dp)) {
         Marquee(stringResource(R.string.diag_title), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
         Column(
             Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background).border(2.dp, LocalSpeedColors.current.hairline)
-                .verticalScroll(rememberScrollState()).padding(16.dp),
+                .scrollbar(scroll).verticalScroll(scroll).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x2),
         ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.x4)) {
