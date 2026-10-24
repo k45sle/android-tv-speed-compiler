@@ -293,6 +293,8 @@ class SchedulingTest {
         g.scheduler.retry(1)
         infos("a").filter { !it.state.isFinished }.forEach { driver.setAllConstraintsMet(it.id) }
         await("second run") { optimizer.optimized.size == 2 }
+        assertEquals(QueueState.FAILED, state(1)) // the failed row stays in the history
+        assertEquals("a", g.database.queue().get(2)!!.packageName)
     }
 
     @Test fun systemUpdateIsReportedOnce() = runBlocking {
@@ -515,7 +517,7 @@ class SchedulingTest {
         await("failed") { state(1) == QueueState.FAILED }
         g.scheduler.retry(1)
         skipDelay("a")
-        await("done") { state(1) == QueueState.DONE }
+        await("done") { state(2) == QueueState.DONE }
         await("retry cancelled") { wm.getWorkInfosForUniqueWork("retry:a").get().single().state == WorkInfo.State.CANCELLED }
     }
 

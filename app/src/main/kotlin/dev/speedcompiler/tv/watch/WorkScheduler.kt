@@ -138,9 +138,8 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         if (item.state != QueueState.FAILED && item.state != QueueState.SKIPPED) return
         if (queueDao.activeFor(item.packageName) != null) return
         resetConnectionTries(graph, item.packageName)
-        val queued = item.copy(state = QueueState.QUEUED, finishedAt = null, failureReason = null)
-        queueDao.update(queued)
-        schedule(queued)
+        // A new row, so the failed one stays in the history as a record.
+        schedule(insert(item.packageName, item.source, item.runNow))
     }
 
     private suspend fun insert(packageName: String, source: QueueSource, runNow: Boolean): QueueItem {
