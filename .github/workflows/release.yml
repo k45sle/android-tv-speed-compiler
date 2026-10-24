@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -36,17 +38,37 @@ jobs:
           ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.RELEASE_STORE_PASSWORD }}
           ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.RELEASE_KEY_ALIAS }}
         run: ./gradlew lint testDebugUnitTest assembleRelease "-PappVersion=${GITHUB_REF_NAME#v}"
-      - name: Verify signature
+      - name: Verify signature and write checksums
         run: |
           apk="speed-compile-${GITHUB_REF_NAME}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
-          # No --print-certs: the certificate names its owner and the logs are public.
-          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify "$apk"
+          # Stable name so releases/latest/download/speed-compile.apk always works.
+          cp "$apk" speed-compile.apk
+          apksigner="$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$apksigner" verify "$apk"
+          # Keep only the digest line: the full --print-certs output names the certificate's owner and the logs are public.
+          cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || { echo "Could not read the signing certificate digest"; exit 1; }
+          sha256sum "$apk" speed-compile.apk > SHA256SUMS
+          {
+            echo "Signing certificate SHA-256: \`$cert\`"
+            echo
+            echo "To check a download, run \`sha256sum -c SHA256SUMS\` and \`gh attestation verify speed-compile.apk -R $GITHUB_REPOSITORY\`."
+            echo
+          } > "$RUNNER_TEMP/notes.md"
           echo "APK=$apk" >> "$GITHUB_ENV"
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            speed-compile-*.apk
+            speed-compile.apk
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        # A suffix (v2.0.0-rc1) marks a pre-release, so test tags never become "Latest".
-        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --generate-notes $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
+        # A suffix (v2.0.0-rc1) marks a pre-release, so test tags never become "Latest". With --generate-notes, --notes-file text comes first.
+        run: |
+          flags=()
+          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" "$APK" speed-compile.apk SHA256SUMS --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}"
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
