@@ -10,3 +10,5 @@ done
 magick tools/pixel/banner.xpm -scale 1000% "$res/drawable-xhdpi/banner.png"
 magick tools/pixel/icon.xpm -scale 1600% docs/media/icon.png
 cp "$res/drawable-xhdpi/banner.png" docs/media/banner.png
+python3 -I tools/pixel/bezel.py
+magick tools/pixel/bezel.xpm -transparent '#153C29' -scale 400% PNG32:tools/pixel/bezel.png

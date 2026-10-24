@@ -66,6 +66,7 @@ import dev.speedcompiler.tv.ui.setup.SetupMode
 import dev.speedcompiler.tv.ui.setup.SetupScreen
 import android.graphics.BitmapFactory
 import androidx.compose.ui.test.onNodeWithText
+import dev.speedcompiler.tv.web.PairingWebServer
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.FakeScheduler
@@ -277,7 +278,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun setupWelcomeDark() = shoot("setup-welcome-dark", true) { SetupScreen({}, deps = setupDeps(false)) }
     @Test fun setupPairDark() = shoot("setup-pair-dark", true) {
         // 192.0.2.x is the documentation range (RFC 5737), and the token is made up.
-        SetupScreen({}, SetupMode.Repair, setupDeps(false, "http://192.0.2.10:41237/3f9c2a7be15d4086c4e1a9b2d7f05c63"))
+        SetupScreen({}, SetupMode.Repair, setupDeps(false, PAIR_URL))
     }
     @Test fun setupAppsDark() = shoot("setup-apps-dark", true, act = ::pickApps) { SetupScreen({}, deps = setupDeps(true)) }
     @Test fun setupDoneDark() = shoot("setup-done-dark", true, act = {
@@ -389,29 +390,29 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         run = run.copy(startedAt = clock())
         queue.value = listOf(QueueEntry(run, 0, Eta.None))
         clip("arcade", Step.Working) {
-            delay(800)
+            delay(600)
             press(Key.DirectionRight)
-            delay(300)
+            delay(200)
             press() // Alien Run
             delay(1_600) // the first cactus reaches the alien at about 2.1 s
             press()
-            delay(900)
+            delay(700)
             press(Key.Back)
-            delay(800)
+            delay(600)
             press(Key.DirectionRight) // after Back the picker keeps focus on the cabinet just played
             delay(300)
             press() // Star Arrow
-            delay(500)
+            delay(300)
             // Out before the first rock column: the video's frame steps make longer blind flapping drift into the rocks.
-            repeat(4) { press(); delay(600) }
+            repeat(3) { press(); delay(600) }
             press(Key.Back)
-            delay(800)
-            repeat(2) { press(Key.DirectionLeft); delay(300) }
+            delay(600)
+            repeat(2) { press(Key.DirectionLeft); delay(250) }
             press() // Cosmic Worm
             // The head starts at (4, 3) going right, a cell every 0.17 s: at x = 10 turn up through the gate and loop the board.
-            delay(1_000)
+            delay(900)
             press(Key.DirectionUp)
-            delay(1_700)
+            delay(1_400)
         }
     }
 
@@ -439,8 +440,48 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         }
     }
 
+    /** Welcome, Developer options, Wireless debugging, the pair page with its QR code (the phone page is shown beside it by demo.sh), allowed, picking apps, Done. */
+    @Config(qualifiers = "w960dp-h540dp-mdpi")
+    @Test fun setup() = clip("setup", Step.Setup) {
+        delay(900)
+        press() // Start
+        delay(1_000)
+        setupEnv.developerOptions = true // the screen polls twice a second
+        delay(1_100)
+        setupEnv.wireless = true
+        delay(700)
+        // 192.0.2.x is the documentation range (RFC 5737), and the token is made up.
+        setupUrl.value = PAIR_URL
+        delay(3_000) // demo.sh shows the phone page beside the TV for this stretch
+        setupConn.value = ConnectionState.Connecting
+        setupUrl.value = null // the session ended: pairing worked
+        delay(1_000)
+        setupConn.value = ConnectionState.Connected
+        delay(1_000)
+        press() // Nuvio
+        delay(300)
+        repeat(2) { press(Key.DirectionDown); delay(300) }
+        press() // Retro Arcade
+        delay(400)
+        press(Key.DirectionRight) // jumps to Continue
+        delay(300)
+        press()
+        delay(1_500)
+    }
+
+    /** The page a phone gets after scanning the QR code, with made-up code and port filled in, for demo.sh to render. */
+    @Test fun phonePage() {
+        val dir = System.getenv("DEMO_CLIPS_DIR")
+        assumeNotNull(dir)
+        val html = PairingWebServer.page(ApplicationProvider.getApplicationContext<Context>().resources)
+            .replace("id=\"code\" ", "id=\"code\" value=\"482916\" ")
+            .replace("name=\"port\" ", "name=\"port\" value=\"37215\" ")
+        File(dir, "phone.html").writeText(html)
+    }
+
     private companion object {
         const val NUVIO = "com.nuvio.tv"
+        const val PAIR_URL = "http://192.0.2.10:41237/3f9c2a7be15d4086c4e1a9b2d7f05c63"
         @JvmStatic @BeforeClass fun mediaOnly() = assumeTrue(System.getProperty("media") != null)
     }
 }

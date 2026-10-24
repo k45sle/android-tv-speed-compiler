@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/hero.gif" width="640" height="360" alt="Demo: from Apps, pick Nuvio and press Optimize now. The Working screen opens its arcade for a moment, the job finishes, and after Done, Home lists Nuvio as optimized">
+  <img src="docs/media/hero.gif" width="640" height="412" alt="Demo: from Apps, pick Nuvio and press Optimize now. The Working screen opens its arcade for a moment, the job finishes, and after Done, Home lists Nuvio as optimized">
   <br>
   <a href="docs/media/demo.mp4">Watch the 36-second demo (MP4)</a>
 </p>
