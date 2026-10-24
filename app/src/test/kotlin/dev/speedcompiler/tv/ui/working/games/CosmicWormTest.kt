@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.ui.working.games
 
+import kotlin.math.abs
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,11 +36,55 @@ class CosmicWormTest {
     @Test
     fun twoQuickTurnsWithinOneStepMakeAUTurn() {
         val g = CosmicWorm(Random(1))
-        g.step(Input.UP); g.step(Input.LEFT) // both before the next move; LEFT alone would be a reversal
+        g.step(Input.UP); g.step(Input.LEFT) // both within one step; LEFT alone would be a reversal
+        assertEquals(4 to 2, g.head()) // the first turn moves at once
         g.move()
-        assertEquals(4 to 2, g.head())
-        g.move()
-        assertEquals(3 to 2, g.head())
+        assertEquals(3 to 2, g.head()) // the second waits for the step to end
+        assertFalse(g.over)
+    }
+
+    @Test
+    fun aSecondQuickTurnAlsoMovesAtOnce() {
+        val g = CosmicWorm(Random(1))
+        g.foodX = 0; g.foodY = 0
+        g.move() // (4,3) -> (5,3), a plain move
+        g.step(Input.UP) // early in the step: the move is redone from (4,3) to (4,2)
+        g.step(Input.RIGHT) // a staircase, not an undo of the first turn
+        assertEquals(5 to 2, g.head())
+        assertEquals(4 to 2, g.bx[1] to g.by[1])
+        g.step(Input.UP) // a third turn this soon waits for the step to end
+        assertEquals(5 to 2, g.head())
+        assertFalse(g.over)
+    }
+
+    /** Head at (7,0) heading right along the top wall, just past a step boundary. */
+    private fun alongTheTopWall(): CosmicWorm {
+        val g = CosmicWorm(Random(1))
+        g.foodX = 0; g.foodY = 6
+        g.move(); g.move(); g.move(Input.UP); g.move(); g.move(); g.move(Input.RIGHT)
+        assertEquals(7 to 0, g.head())
+        while (g.acc < CosmicWorm.STEP / 2) g.step(null)
+        return g
+    }
+
+    @Test
+    fun aTurnIntoAWallDiesOnlyWhenTheDrawingGetsThere() {
+        val g = alongTheTopWall()
+        g.step(Input.UP) // column 7 has no gate
+        assertFalse(g.over)
+        assertEquals(7 to 0, g.head())
+        while (g.acc < CosmicWorm.STEP && !g.over) g.step(null)
+        assertTrue(g.over)
+        assertEquals(7 to 0, g.head())
+    }
+
+    @Test
+    fun aTurnBeforeTheDrawingGetsThereSavesTheWorm() {
+        val g = alongTheTopWall()
+        g.step(Input.UP)
+        g.step(Input.DOWN)
+        assertEquals(7 to 1, g.head())
+        repeat(10) { g.step(null) }
         assertFalse(g.over)
     }
 
@@ -64,10 +109,37 @@ class CosmicWormTest {
         assertEquals(4 to 2, g.head()) // turned from (4,3), where the head was drawn
         assertEquals(4 to 3, g.bx[1] to g.by[1])
         assertEquals(3, g.dir)
-        g.step(Input.LEFT) // the reverse of the move before: waits for the boundary, a U-turn
-        g.move()
+        g.step(Input.LEFT) // the reverse of the move before, so not a redo: the U-turn moves on at once
         assertEquals(3 to 2, g.head())
         assertFalse(g.over)
+    }
+
+    /** Drawn head (i = 0) or body cell position, in cells. */
+    private fun CosmicWorm.drawn(i: Int) = slideX(i, slide()) to slideY(i, slide())
+
+    @Test
+    fun aTurnAtAnyPointInAStepGlidesWithoutAJump() {
+        for (input in listOf(Input.UP, Input.DOWN)) for (at in 0..5) {
+            val g = CosmicWorm(Random(1))
+            g.foodX = 0; g.foodY = 0
+            g.move()
+            repeat(at) { g.step(null) }
+            val m = g.moves
+            var last = (0 until g.len).map { g.drawn(it) }
+            for (tick in 0 until 10) {
+                g.step(if (tick == 0) input else null)
+                if (tick == 0) assertTrue("the head heads $input at once (at $at)", g.dir == if (input == Input.UP) 3 else 1)
+                val now = (0 until g.len).map { g.drawn(it) }
+                for (i in now.indices) {
+                    val d = abs(now[i].first - last[i].first) + abs(now[i].second - last[i].second)
+                    // A plain slide covers 0.2 cell a tick; the head may hurry to cut its corner, the body never jumps.
+                    assertTrue("cell $i moved $d at tick $tick (press at $at, $input)", d <= if (i == 0) 0.7f else 0.25f)
+                }
+                last = now
+            }
+            assertFalse(g.over)
+            assertTrue(g.moves > m)
+        }
     }
 
     @Test
