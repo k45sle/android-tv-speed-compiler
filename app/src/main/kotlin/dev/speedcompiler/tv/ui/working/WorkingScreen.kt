@@ -287,7 +287,9 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
                 JobView.Running -> line(stringResource(R.string.working_optimizing_continues), cs.onSurface)
             }
             if (s.batch != null) Text(s.batch, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Waiting for the user to open the app has no duration to show.
+            val launchWait = (s.job as? JobView.Waiting)?.eta == Eta.WaitingForLaunch
+            if (!launchWait) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val elapsedDesc = stringResource(R.string.working_elapsed, elapsedText(s.elapsedMillis))
                 if (s.job != JobView.CouldntStart) PixelText(
                     elapsedText(s.elapsedMillis), color = cs.onSurface,

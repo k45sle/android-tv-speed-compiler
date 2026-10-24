@@ -2,6 +2,7 @@ package dev.speedcompiler.tv.watch
 
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.engine.GateStatus
+import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,8 @@ sealed interface Eta {
     data object Paused : Eta
     /** Automatic job held back by low storage. */
     data object WaitingForStorage : Eta
+    /** The last compile found no usage profile: the app has not been opened since its install or update. */
+    data object WaitingForLaunch : Eta
     data object WaitingForConnection : Eta
     data object Connecting : Eta
     /** Connected, but the first gate check has not come back yet. */
@@ -43,6 +46,7 @@ fun etaFor(
 ): Eta {
     if (item.state != QueueState.QUEUED && item.state != QueueState.WAITING_GATE) return Eta.None
     val wait = position * avgDurationMillis
+    if (item.state == QueueState.WAITING_GATE && item.failureReason == NO_PROFILE_YET) return Eta.WaitingForLaunch
     if (item.runNow) return Eta.InQueue(position, wait)
     if (storageLow) return Eta.WaitingForStorage
     return when (gate) {

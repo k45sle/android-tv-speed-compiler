@@ -28,7 +28,7 @@
   <sub>Pick an app, press Optimize now, and it is done in about a minute. <a href="docs/media/demo.mp4">Watch the full demo (MP4)</a>.</sub>
 </p>
 
-Android normally compiles an app a bit at a time, based on how you use it. Speed Compile asks the TV to compile the apps you choose in full, with Android's `speed` profile, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging.
+Android normally compiles an app a bit at a time, based on how you use it. Speed Compile asks the TV to compile the apps you choose ahead of time, with Android's `speed-profile` filter (it falls back to `speed`, see below), and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging.
 
 Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes up a bit more storage.
 
@@ -105,7 +105,22 @@ It was written with Nuvio in mind (people who sideload the GitHub build run `pm 
 
 ## Does it help?
 
-Not measured on a real TV yet. So far it has run only on the Android TV emulator. Numbers from a real TV (cold start and janky frames, before and after) will go here.
+Measured on one Android 14 TV box (4x Cortex-A55, 3.5 GB RAM). Cold start is the median of 5 launches, before any compile (`verify`) and after each filter.
+
+| App | `verify` | `speed-profile` (default) | `speed` |
+| --- | --- | --- | --- |
+| Nuvio | 2.07 s | 1.12 s | 1.45 s |
+| SmartTube | 0.80 s | 0.63 s | 0.80 s |
+| Jellyfin | 0.86 s | 0.72 s | 0.74 s |
+| VLC | 0.75 s | 0.64 s | 0.71 s |
+| Just Player | 0.57 s | 0.49 s | 0.58 s |
+| Aerial Views | 0.31 s | 0.27 s | 0.32 s |
+
+`speed-profile` started fastest in every app. Compared with `speed` it used half the storage or less (Nuvio 57 MB against 127 MB, SmartTube 31 MB against 82 MB, Jellyfin 56 MB against 120 MB) and compiled several times faster (Nuvio 22 s against 86 s, SmartTube 5 s against 37 s, Aerial Views 6 s against 17 s). While scrolling Nuvio's home rows, 58-68% of frames were janky at `verify`, 31-34% at `speed-profile` and 28-30% at `speed`.
+
+`speed-profile` compiles the parts of an app you actually use, so it needs a usage profile. Installing or updating an app empties it, and the app builds a new one the first time you open it. Until then the compile changes nothing, so Speed Compile waits for that first launch, tries again every hour, and compiles with `speed` if the app still has no profile after 7 days. Android never compiles debug builds of apps ahead of time, so Speed Compile skips those and says so.
+
+These numbers come from one TV. Other TVs and apps will differ.
 
 ## What it does
 
@@ -188,7 +203,7 @@ If you try it on a real TV or streaming box, please fill in the [Device report f
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
 **What exactly does it change on the TV?**
-For each app you pick, it runs `cmd package compile -m speed -f` on that app. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. Nothing else.
+For each app you pick, it runs `cmd package compile -m speed-profile -f` on that app (or `-m speed` when the app still has no usage profile a week after an install or update). Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. Nothing else.
 
 **Why does it need Developer options?**
 Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. The two settings above are on by default:
@@ -199,7 +214,7 @@ Only the debugging connection can ask Android to compile another app. Speed Comp
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
 **Does a system update undo it?**
-It can. A system update may throw away compiled code. The weekly check notices when a watched app is no longer at `speed` and queues it again. This hasn't been checked on a real TV yet.
+It can. A system update may throw away compiled code. The weekly check notices when a watched app is no longer at `speed-profile` or `speed` and queues it again. This hasn't been checked on a real TV yet.
 
 **Does it work on Ethernet?**
 Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.

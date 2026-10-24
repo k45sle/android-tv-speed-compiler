@@ -7,10 +7,14 @@ class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimiz
     /** Runs at the start of each optimize, so a test can block it or change the world mid-compile. */
     var before: suspend (String) -> Unit = {}
     override suspend fun verify(packageName: String) = filters[packageName]
-    override suspend fun optimize(packageName: String): OptimizeResult {
+    val usedFilters = mutableListOf<String>()
+    /** Overrides [result] per call when set. */
+    var resultFor: (String) -> OptimizeResult = { result }
+    override suspend fun optimize(packageName: String, filter: String): OptimizeResult {
         before(packageName)
         optimized += packageName
-        return result
+        usedFilters += filter
+        return resultFor(filter)
     }
 }
 

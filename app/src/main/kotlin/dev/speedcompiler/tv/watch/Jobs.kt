@@ -1,6 +1,8 @@
 package dev.speedcompiler.tv.watch
 
 import dev.speedcompiler.tv.engine.NOT_INSTALLED
+import dev.speedcompiler.tv.engine.DEBUG_BUILD
+import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
 import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
@@ -41,6 +43,9 @@ private const val KEY_PACKAGE = "package"
 private const val RETRY_DELAY_HOURS = 6L
 private const val REFUSED_WORK = "refused"
 private const val REFUSED_RETRY_MINUTES = 15L
+private const val LAUNCH_WORK = "launch"
+private const val LAUNCH_RETRY_MINUTES = 60L
+private const val NO_PROFILE_FALLBACK_MILLIS = 7 * 24 * 60 * 60 * 1000L
 private const val MAX_CONNECTION_TRIES = 5
 private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(90)
 
@@ -78,7 +83,8 @@ suspend fun runDetect(g: AppGraph) {
     for (item in g.database.queue().activeNow()) {
         if (item.packageName !in installed) g.scheduler.cancel(item.id)
         // A gate that opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.
-        else if (item.state == QueueState.WAITING_GATE && g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open) {
+        // A row waiting for the app's first launch has its own hourly try; restarting it here would compile every 30 min.
+        else if (item.state == QueueState.WAITING_GATE && item.failureReason != NO_PROFILE_YET && g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open) {
             g.scheduler.enqueue(item.packageName, item.source)
         }
     }
@@ -89,16 +95,16 @@ suspend fun runDetect(g: AppGraph) {
         }
 }
 
-/** Queues every auto-optimized app the TV no longer reports at `speed`. */
+/** Queues every auto-optimized app the TV no longer reports at `speed` or `speed-profile`. */
 suspend fun runVerify(g: AppGraph) {
     val cutoff = g.clock.nowMillis() - RETENTION_MILLIS
     g.database.events().pruneBefore(cutoff)
     g.database.queue().pruneFinished(cutoff)
     val installed = g.packageSystem.installed().map { it.packageName }.toSet()
     for (app in g.database.watchedApps().list()) {
-        if (!app.autoOptimize || app.packageName !in installed) continue
+        if (!app.autoOptimize || app.packageName !in installed || g.packageSystem.isDebuggable(app.packageName)) continue
         when (g.optimizer.verify(app.packageName)) {
-            "speed" -> {}
+            "speed", "speed-profile" -> {}
             // Unreadable output must not re-queue every app each week.
             null -> g.database.events().insert(
                 Event(timeMillis = g.clock.nowMillis(), packageName = app.packageName, kind = "verify_unknown", message = VERIFY_UNKNOWN),
@@ -141,6 +147,10 @@ class VerifyWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 fun lostKey(pkg: String) = "lost:$pkg"
 fun retriedKey(pkg: String) = "retried:$pkg"
 private fun refusedKey(pkg: String) = "refused:$pkg"
+private fun noProfileKey(pkg: String) = "noprofile:$pkg"
+
+/** Delayed reruns of one row, under their own work names; a cancel must stop them too. */
+fun followUpWorkNames(itemId: Long) = listOf("$REFUSED_WORK:$itemId", "$LAUNCH_WORK:$itemId")
 
 suspend fun resetConnectionTries(g: AppGraph, packageName: String) {
     g.database.syncState().put(SyncState(lostKey(packageName), "0"))
@@ -164,6 +174,16 @@ private fun enqueueRefusedRetry(context: Context, itemId: Long) {
         .setInputData(workDataOf(KEY_ITEM_ID to itemId))
         .build()
     WorkManager.getInstance(context).enqueueUniqueWork("$REFUSED_WORK:$itemId", ExistingWorkPolicy.REPLACE, request)
+}
+
+/** Waits for the app's first launch: same row again after a fixed delay, under its own work name. */
+private fun enqueueLaunchRetry(context: Context, itemId: Long) {
+    val request = OneTimeWorkRequestBuilder<OptimizeWorker>()
+        .setInitialDelay(LAUNCH_RETRY_MINUTES, TimeUnit.MINUTES)
+        .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
+        .setInputData(workDataOf(KEY_ITEM_ID to itemId))
+        .build()
+    WorkManager.getInstance(context).enqueueUniqueWork("$LAUNCH_WORK:$itemId", ExistingWorkPolicy.REPLACE, request)
 }
 
 /** Queues the app again if it is still watched and installed. */
@@ -226,6 +246,11 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             dao.update(item.copy(state = QueueState.SKIPPED, finishedAt = g.clock.nowMillis(), failureReason = NOT_INSTALLED))
             return Result.success()
         }
+        if (g.packageSystem.isDebuggable(pkg)) { // ART stops at verify for these, so a compile can only fail
+            resetConnectionTries(g, pkg)
+            dao.update(item.copy(state = QueueState.FAILED, finishedAt = g.clock.nowMillis(), failureReason = DEBUG_BUILD))
+            return Result.success()
+        }
         if (!item.runNow) {
             // Checked after taking the lock: the window may have closed while this job waited its turn.
             val gate = g.gate.status(ignorePause = item.source == QueueSource.MANUAL)
@@ -235,8 +260,22 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             }
         }
         dao.update(item.copy(state = QueueState.RUNNING, startedAt = g.clock.nowMillis(), failureReason = null))
-        val result = g.optimizer.optimize(pkg)
+        var result = g.optimizer.optimize(pkg)
         val sync = g.database.syncState()
+        if (result.noProfile) {
+            // Profiles are emptied by an update: wait for a launch, and after 7 days settle for plain speed.
+            val key = noProfileKey(pkg)
+            val now = g.clock.nowMillis()
+            val stored = sync.get(key)?.split('|')
+            val firstSeen = if (stored?.size == 2 && stored[0] == fingerprint) stored[1].toLongOrNull() else null
+            if (firstSeen == null) sync.put(SyncState(key, "$fingerprint|$now"))
+            if (now - (firstSeen ?: now) < NO_PROFILE_FALLBACK_MILLIS) {
+                dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
+                enqueueLaunchRetry(applicationContext, id)
+                return Result.success()
+            }
+            result = g.optimizer.optimize(pkg, "speed")
+        }
         val lostKey = lostKey(pkg) // counted here, not by runAttemptCount: gate waits retry too, and a detect pass starts a fresh worker
         if (result.connectionLost) {
             val tries = (sync.get(lostKey)?.toIntOrNull() ?: 0) + 1
@@ -256,6 +295,8 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return Result.success()
         }
         resetConnectionTries(g, pkg)
+        // Cleared only when a compile finishes: Optimize now on a waiting row must not restart the 7-day clock.
+        sync.put(SyncState(noProfileKey(pkg), ""))
         val now = g.clock.nowMillis()
         // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
         // next full compare (or the weekly verify, if an incremental detect already moved past it) queues it again.

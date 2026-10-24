@@ -65,6 +65,8 @@ class StoredTextTest {
             OPTIMIZED_CHECKED to "Optimized (checked)",
             VERIFY_UNKNOWN to "The TV did not report this app's compiler filter.",
             NOT_INSTALLED to "Not installed",
+            NO_PROFILE_YET to "Waiting for the app's first launch.",
+            DEBUG_BUILD to "Didn't finish: this is a debug build, and Android never compiles debug builds ahead of time.",
         )
         for ((built, stored) in all) {
             assertEquals(stored, built)

@@ -6,9 +6,10 @@ data class InstalledPackage(val packageName: String, val fingerprint: String)
 
 /**
  * [connectionLost]: the compile failed because the ADB link dropped, so the job should retry after a reconnect.
+ * [noProfile]: the app has no usage profile yet (it was never launched since its last update), so speed-profile did nothing.
  * [terminal]: the failure needs the user to act, so a later automatic retry would only fail again.
  */
-data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false, val terminal: Boolean = false, val refused: Boolean = false)
+data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false, val terminal: Boolean = false, val refused: Boolean = false, val noProfile: Boolean = false)
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 
@@ -16,7 +17,7 @@ enum class Wakefulness { Awake, Dozing, Asleep }
 const val RESET_UNSUPPORTED = "Didn't reset: not supported here."
 
 interface Optimizer {
-    suspend fun optimize(packageName: String): OptimizeResult
+    suspend fun optimize(packageName: String, filter: String = "speed-profile"): OptimizeResult
 
     /** The compiler filter the TV reports for [packageName], or null when unknown. */
     suspend fun verify(packageName: String): String? = null

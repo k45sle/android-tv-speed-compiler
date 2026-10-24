@@ -32,11 +32,11 @@ class OptimizerImpl(
     private var dumpGeneration = 0
 
 
-    override suspend fun optimize(packageName: String): OptimizeResult {
+    override suspend fun optimize(packageName: String, filter: String): OptimizeResult {
         if (!isValidPackageId(packageName)) {
             return finish(null, false, DID_NOT_FINISH + INVALID_APP_TAIL, "optimize_failed")
         }
-        return compile(packageName)
+        return compile(packageName, filter)
     }
 
     /** The compiler filter the TV reports for [packageName], or null if it does not report one. */
@@ -77,9 +77,9 @@ class OptimizerImpl(
         return finish(packageName, true, RESET_DONE, "reset_done")
     }
 
-    private suspend fun compile(pkg: String): OptimizeResult {
+    private suspend fun compile(pkg: String, wanted: String): OptimizeResult {
         val res = try {
-            withTimeout(timeoutMillis) { shell.run(compileCommand(pkg)) }
+            withTimeout(timeoutMillis) { shell.run(compileCommand(pkg, wanted)) }
         } catch (e: Exception) {
             return adbFailed(pkg, e, DID_NOT_FINISH, tookMinutes(timeoutMillis / 60_000), "optimize_failed")
         } finally {
@@ -100,9 +100,11 @@ class OptimizerImpl(
         } catch (e: Exception) {
             null
         }
-        return when (filter) {
-            null -> finish(pkg, true, OPTIMIZED_UNVERIFIED, "optimize_unverified")
-            "speed" -> finish(pkg, true, OPTIMIZED_CHECKED, "optimize_verified")
+        return when {
+            filter == null -> finish(pkg, true, OPTIMIZED_UNVERIFIED, "optimize_unverified")
+            filter == "speed" || (wanted == "speed-profile" && filter == "speed-profile") -> finish(pkg, true, OPTIMIZED_CHECKED, "optimize_verified")
+            // An empty profile leaves the app at verify; other states (run-from-apk) are real failures.
+            wanted == "speed-profile" && filter.endsWith(" is verify") -> finish(pkg, false, NO_PROFILE_YET, "optimize_no_profile", noProfile = true)
             else -> finish(pkg, false, notSpeed(filter), "optimize_failed")
         }
     }
@@ -116,8 +118,8 @@ class OptimizerImpl(
         else -> finish(pkg, false, prefix + LOST_TAIL, kind, connectionLost = true)
     }
 
-    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false, refused: Boolean = false): OptimizeResult {
+    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false, refused: Boolean = false, noProfile: Boolean = false): OptimizeResult {
         events.insert(Event(timeMillis = clock.nowMillis(), packageName = pkg, kind = kind, message = detail))
-        return OptimizeResult(ok, detail, connectionLost, terminal, refused)
+        return OptimizeResult(ok, detail, connectionLost, terminal, refused, noProfile)
     }
 }

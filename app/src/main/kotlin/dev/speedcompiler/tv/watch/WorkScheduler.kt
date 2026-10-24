@@ -125,6 +125,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private suspend fun doCancel(id: Long) {
         val item = queueDao.get(id)?.takeIf { it.state.isActive } ?: return
         work.cancelUniqueWork(workName(item.packageName))
+        followUpWorkNames(id).forEach { work.cancelUniqueWork(it) }
         resetConnectionTries(graph, item.packageName)
         // Drop any waiting reason, so the row reads as cancelled.
         queueDao.update(item.copy(state = QueueState.SKIPPED, finishedAt = graph.clock.nowMillis(), failureReason = null))

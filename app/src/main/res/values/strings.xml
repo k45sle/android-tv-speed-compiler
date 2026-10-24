@@ -12,6 +12,7 @@
     <string name="home_eta_waiting_idle">Waiting for the TV to be idle</string>
     <string name="home_eta_waiting_playback">Waiting for playback to stop</string>
     <string name="home_eta_waiting_storage">Waiting for free storage</string>
+    <string name="home_eta_waiting_launch">Waiting for you to open the app once</string>
     <string name="home_eta_waiting_connection">Waiting for the connection</string>
     <string name="home_connecting_to_tv">Connecting to the TV</string>
     <string name="home_eta_checking">Checking the TV</string>
@@ -165,7 +166,7 @@
     <string name="apps_ago_days">%1$d d ago</string>
     <string name="apps_pill_eta">%1$s · %2$s</string>
     <string name="detail_optimizing_now">Optimizing now</string>
-    <string name="detail_optimized_checked">Optimized for speed · checked %1$s</string>
+    <string name="detail_optimized_checked">Optimized · checked %1$s</string>
     <string name="detail_resetting">Resetting…</string>
     <string name="detail_didnt_reset">Didn\'t reset: %1$s.</string>
     <string name="detail_unexpected_error">something went wrong. Try again</string>
@@ -173,7 +174,7 @@
     <string name="detail_version_updated">Version %1$s · Updated %2$s</string>
     <string name="detail_version_unknown">unknown</string>
     <string name="detail_reset">Reset</string>
-    <string name="detail_reset_body">Reset removes the speed compile, so the TV goes back to how it normally runs this app. The app also stops being watched, so updates are no longer optimized automatically.</string>
+    <string name="detail_reset_body">Reset removes the compile, so the TV goes back to how it normally runs this app. The app also stops being watched, so updates are no longer optimized automatically.</string>
     <string name="detail_auto_optimize">Auto-optimize this app</string>
     <string name="detail_auto_sublabel">Optimize again after each update</string>
     <string name="detail_runs">Runs</string>
@@ -271,7 +272,7 @@
     <string name="help_not_finished_body">The TV stopped or refused the job. Try again when the TV is idle.</string>
     <string name="help_not_checked_title">Optimized, but not checked</string>
     <string name="help_not_checked_body">This TV does not report the result. The app may still start faster.</string>
-    <string name="help_changes_title">What speed compile changes</string>
+    <string name="help_changes_title">What optimizing changes</string>
     <string name="help_changes_body">It uses more storage. The first launch after an app update is slower again until the app is optimized again. Results vary by app and TV.</string>
     <string name="help_undo_title">How to undo it</string>
     <string name="help_undo_body">Open the app in Apps and choose Reset. The app also stops being watched. Uninstalling Speed Compile does not undo it.</string>
@@ -330,9 +331,11 @@
     <string name="stored_finish_not_speed">Didn\'t finish: the TV only partly optimized this app. Try again when the TV is idle.</string>
     <string name="stored_finish_unexpected">Didn\'t finish: something went wrong. Try again from the app.</string>
     <string name="stored_optimized_unverified">Optimized (this TV doesn\'t report the result)</string>
+    <string name="stored_no_profile">Waiting for the app\'s first launch. Open the app once and this finishes on its own.</string>
     <string name="stored_optimized_checked">Optimized (checked)</string>
     <string name="stored_verify_unknown">The TV did not report the result for this app.</string>
     <string name="stored_not_installed">Not installed</string>
+    <string name="stored_debug_build">Didn\'t finish: this is a debug build, and Android never compiles debug builds ahead of time.</string>
     <!-- review fixes -->
     <string name="common_footer_hint">"▲▼ choose  ● select  ◀ back"</string>
     <string name="setup_pick_footer_hint">"▲▼ choose  ● select  ◀ back  ▶ next"</string>

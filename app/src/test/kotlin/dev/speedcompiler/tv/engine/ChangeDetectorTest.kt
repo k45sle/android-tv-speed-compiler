@@ -18,6 +18,7 @@ private class FakeSystem : PackageSystem {
     override fun bootCount() = boot
     override fun installed() = prints.map { InstalledPackage(it.key, it.value) }
     override fun fingerprint(packageName: String) = prints[packageName]
+    override fun isDebuggable(packageName: String) = false
     override fun changedSince(sequence: Int): PackageChanges? {
         requested = sequence
         return if (touched.isEmpty()) null else PackageChanges(seq, touched.toList())
