@@ -7,6 +7,7 @@ import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
 import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -38,6 +39,8 @@ import kotlinx.coroutines.sync.withLock
 private const val DETECT_WORK = "detect"
 private const val VERIFY_WORK = "verify"
 private const val RETRY_WORK = "retry"
+private const val OPEN_GATES_WORK = "open-gates"
+private const val OPEN_GATES_SETTLE_SECONDS = 5L
 private const val KEY_BUILD = "build_fingerprint"
 private const val KEY_PACKAGE = "package"
 private const val RETRY_DELAY_HOURS = 6L
@@ -68,6 +71,17 @@ fun enqueueDetectNow(context: Context) {
         .enqueueUniqueWork("$DETECT_WORK-once", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<DetectWorker>().build())
 }
 
+/**
+ * Screen off or screensaver start: check the gates in a few seconds. The delay lets dumpsys power report the new
+ * wakefulness; going through WorkManager keeps the process alive until the check ran.
+ */
+fun enqueueOpenGatesCheck(context: Context) {
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        OPEN_GATES_WORK, ExistingWorkPolicy.KEEP,
+        OneTimeWorkRequestBuilder<OpenGatesWorker>().setInitialDelay(OPEN_GATES_SETTLE_SECONDS, TimeUnit.SECONDS).build(),
+    )
+}
+
 private fun enqueueVerifyNow(context: Context) {
     WorkManager.getInstance(context)
         .enqueueUniqueWork("$VERIFY_WORK-once", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<VerifyWorker>().build())
@@ -82,17 +96,28 @@ suspend fun runDetect(g: AppGraph) {
     val installed = g.packageSystem.installed().map { it.packageName }.toSet()
     for (item in g.database.queue().activeNow()) {
         if (item.packageName !in installed) g.scheduler.cancel(item.id)
-        // A gate that opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.
-        // A row waiting for the app's first launch has its own hourly try; restarting it here would compile every 30 min.
-        else if (item.state == QueueState.WAITING_GATE && item.failureReason != NO_PROFILE_YET && g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open) {
-            g.scheduler.enqueue(item.packageName, item.source)
-        }
     }
+    restartOpenedGates(g, installed)
     val watched = g.database.watchedApps()
     ChangeDetector(g.packageSystem, g.database.syncState()) { watched.list().filter { it.autoOptimize } }
         .detect { changed -> // the stored position advances only after these are persisted
             changed.filter { it in installed }.forEach { g.scheduler.enqueue(it, QueueSource.AUTO) }
         }
+}
+
+/**
+ * Runs rows whose gate opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.
+ * Called by every detect and when the screen turns off, so the idle gate starts its jobs within seconds.
+ */
+suspend fun restartOpenedGates(g: AppGraph, installed: Set<String> = g.packageSystem.installed().map { it.packageName }.toSet()) {
+    for (item in g.database.queue().activeNow()) {
+        // A row waiting for the app's first launch has its own hourly try; restarting it here would compile every 30 min.
+        if (item.packageName in installed && item.state == QueueState.WAITING_GATE && item.failureReason != NO_PROFILE_YET &&
+            g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open
+        ) {
+            g.scheduler.enqueue(item.packageName, item.source)
+        }
+    }
 }
 
 /** Queues every auto-optimized app the TV no longer reports at `speed` or `speed-profile`. */
@@ -129,6 +154,19 @@ class DetectWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         if (g.connectionKeeper.status.value != KeeperStatus.Connected) g.connectionKeeper.reconnect()
         runDetect(g)
         if (systemUpdated(g.database.syncState(), Build.FINGERPRINT)) enqueueVerifyNow(applicationContext)
+        return Result.success()
+    }
+}
+
+class OpenGatesWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        try {
+            restartOpenedGates(applicationContext.graph)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) { // best effort: the backoff and the 30 min detect still catch it
+            Log.w("OpenGatesWorker", "gate check failed: ${e.javaClass.simpleName}")
+        }
         return Result.success()
     }
 }
