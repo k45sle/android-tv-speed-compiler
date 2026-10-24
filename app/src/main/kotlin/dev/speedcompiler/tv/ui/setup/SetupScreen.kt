@@ -320,8 +320,8 @@ private fun PairStep(deps: SetupDeps, helpOffer: (() -> Unit)?, onPaired: () -> 
             for (c in listOf(Cabinet.ORANGE, Cabinet.LOGO, Cabinet.BLUE)) Box(Modifier.size(14.dp).background(Color(c)))
         }
     }) {
-        Body(stringResource(R.string.setup_pair_body_phone))
-        Body(stringResource(R.string.setup_pair_body_tv))
+        Body(stringResource(R.string.setup_pair_body_phone), 0)
+        Body(stringResource(R.string.setup_pair_body_tv), 1)
         PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(deps.env::openDeveloperOptions))
         Text(url ?: stringResource(R.string.setup_starting), style = MonoStyle, color = LocalSpeedColors.current.accent)
         Waiting()
@@ -424,8 +424,20 @@ private fun Page(
 }
 
 @Composable
-private fun Body(text: String) =
-    Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun Body(text: String, n: Int = -1) {
+    val sentence = @Composable {
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (n < 0) return sentence()
+    Row(
+        Modifier.fillMaxWidth().border(2.dp, LocalSpeedColors.current.hairline).padding(Space.x2),
+        horizontalArrangement = Arrangement.spacedBy(Space.x2),
+    ) {
+        val color = listOf(Cabinet.BLUE, Cabinet.ORANGE, Cabinet.LOGO)[n % 3]
+        Box(Modifier.size(28.dp).background(Color(color)), Alignment.Center) { PixelText("${n + 1}", color = Color(Cabinet.CREAM)) }
+        Box(Modifier.weight(1f)) { sentence() }
+    }
+}
 
 /** Counts one failure each time [NoProgressMs] pass on the step without it finishing. */
 @Composable
