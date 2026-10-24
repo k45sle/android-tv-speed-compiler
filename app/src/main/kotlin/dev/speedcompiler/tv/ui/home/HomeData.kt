@@ -1,6 +1,20 @@
 package dev.speedcompiler.tv.ui.home
 
+import dev.speedcompiler.tv.engine.DID_NOT_FINISH
+import dev.speedcompiler.tv.engine.DID_NOT_RESET
+import dev.speedcompiler.tv.engine.INVALID_APP_TAIL
+import dev.speedcompiler.tv.engine.LOST_TAIL
+import dev.speedcompiler.tv.engine.NOT_ALLOWED_TAIL
+import dev.speedcompiler.tv.engine.NOT_INSTALLED
+import dev.speedcompiler.tv.engine.NOT_PAIRED_TAIL
+import dev.speedcompiler.tv.engine.OPTIMIZED_CHECKED
+import dev.speedcompiler.tv.engine.OPTIMIZED_UNVERIFIED
+import dev.speedcompiler.tv.engine.REFUSED_FINISH_TAIL
+import dev.speedcompiler.tv.engine.REFUSED_RESET_TAIL
+import dev.speedcompiler.tv.engine.RESET_DONE
 import dev.speedcompiler.tv.engine.RESET_UNSUPPORTED
+import dev.speedcompiler.tv.engine.TOOK_TOO_LONG_RESET_TAIL
+import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
 import android.content.Context
 import android.content.res.Resources
 import androidx.annotation.StringRes
@@ -157,23 +171,23 @@ fun jobResult(lastResult: String?, queueState: QueueState?): JobResult? = when {
 }
 
 private val StoredFixed = mapOf(
-    "Didn't finish: that is not a valid app name." to R.string.stored_finish_invalid_app,
-    "Didn't reset: that is not a valid app name." to R.string.stored_reset_invalid_app,
-    "Didn't reset: the TV took too long." to R.string.stored_reset_too_long,
-    "Didn't reset: the TV no longer trusts this app. Choose Fix connection in Settings." to R.string.stored_reset_not_paired,
-    "Didn't reset: the TV has not allowed this app. Accept the debugging prompt on the TV." to R.string.stored_reset_not_allowed,
-    "Didn't reset: lost the connection to the TV." to R.string.stored_reset_lost,
-    "Didn't reset: the TV refused." to R.string.stored_reset_refused,
+    DID_NOT_FINISH + INVALID_APP_TAIL to R.string.stored_finish_invalid_app,
+    DID_NOT_RESET + INVALID_APP_TAIL to R.string.stored_reset_invalid_app,
+    DID_NOT_RESET + TOOK_TOO_LONG_RESET_TAIL to R.string.stored_reset_too_long,
+    DID_NOT_RESET + NOT_PAIRED_TAIL to R.string.stored_reset_not_paired,
+    DID_NOT_RESET + NOT_ALLOWED_TAIL to R.string.stored_reset_not_allowed,
+    DID_NOT_RESET + LOST_TAIL to R.string.stored_reset_lost,
+    DID_NOT_RESET + REFUSED_RESET_TAIL to R.string.stored_reset_refused,
     RESET_UNSUPPORTED to R.string.stored_reset_unsupported,
-    "Reset done. The TV chooses how to run this app again." to R.string.stored_reset_done,
-    "Didn't finish: the TV no longer trusts this app. Choose Fix connection in Settings." to R.string.stored_finish_not_paired,
-    "Didn't finish: the TV has not allowed this app. Accept the debugging prompt on the TV." to R.string.stored_finish_not_allowed,
-    "Didn't finish: lost the connection to the TV." to R.string.stored_finish_lost,
-    "Didn't finish: the TV refused to optimize this app." to R.string.stored_finish_refused,
-    "Optimized (this TV doesn't report the result)" to R.string.stored_optimized_unverified,
-    "Optimized (checked)" to R.string.stored_optimized_checked,
-    "The TV did not report this app's compiler filter." to R.string.stored_verify_unknown,
-    "Not installed" to R.string.stored_not_installed,
+    RESET_DONE to R.string.stored_reset_done,
+    DID_NOT_FINISH + NOT_PAIRED_TAIL to R.string.stored_finish_not_paired,
+    DID_NOT_FINISH + NOT_ALLOWED_TAIL to R.string.stored_finish_not_allowed,
+    DID_NOT_FINISH + LOST_TAIL to R.string.stored_finish_lost,
+    DID_NOT_FINISH + REFUSED_FINISH_TAIL to R.string.stored_finish_refused,
+    OPTIMIZED_UNVERIFIED to R.string.stored_optimized_unverified,
+    OPTIMIZED_CHECKED to R.string.stored_optimized_checked,
+    VERIFY_UNKNOWN to R.string.stored_verify_unknown,
+    NOT_INSTALLED to R.string.stored_not_installed,
 )
 
 private val StoredDynamic = listOf(
@@ -184,12 +198,18 @@ private val StoredDynamic = listOf(
     Regex("Didn't finish: (.*), not speed\\.", RegexOption.DOT_MATCHES_ALL) to R.string.stored_finish_not_speed,
 )
 
-/** Display text for a message the engine stored in Room (always English); anything unknown comes back as stored. */
-fun storedText(res: Resources, text: String): String {
-    StoredFixed[text]?.let { return res.getString(it) }
+/** The resource and its argument for a message the engine stored, or null when the text is unknown. */
+internal fun storedResource(text: String): Pair<Int, String?>? {
+    StoredFixed[text]?.let { return it to null }
     for ((re, id) in StoredDynamic) {
         val arg = re.matchEntire(text)?.groupValues?.get(1) ?: continue
-        return res.getString(id, arg)
+        return id to arg
     }
-    return text
+    return null
+}
+
+/** Display text for a message the engine stored in Room (always English); anything unknown comes back as stored. */
+fun storedText(res: Resources, text: String): String {
+    val (id, arg) = storedResource(text) ?: return text
+    return if (arg == null) res.getString(id) else res.getString(id, arg)
 }
