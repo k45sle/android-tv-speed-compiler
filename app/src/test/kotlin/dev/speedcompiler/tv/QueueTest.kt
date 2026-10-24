@@ -9,6 +9,7 @@ import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.etaFor
+import dev.speedcompiler.tv.adb.ConnectionState
 import java.time.Instant
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -59,6 +60,22 @@ class QueueTest {
     @Test
     fun runNowSkipsTheGate() {
         for (gate in allGates) assertEquals(Eta.InQueue(1, 120_000), etaFor(item(runNow = true), gate, 1))
+    }
+
+    @Test
+    fun lowStorageHoldsAutomaticJobsButNotOptimizeNow() {
+        for (gate in allGates) {
+            assertEquals(Eta.WaitingForStorage, etaFor(item(), gate, 1, storageLow = true))
+            assertEquals(Eta.InQueue(1, 120_000), etaFor(item(runNow = true), gate, 1, storageLow = true))
+        }
+    }
+
+    @Test
+    fun missingGateIsExplainedByTheConnection() {
+        assertEquals(Eta.WaitingForConnection, etaFor(item(), null, 0, connection = ConnectionState.Disconnected))
+        assertEquals(Eta.WaitingForConnection, etaFor(item(), null, 0, connection = ConnectionState.Unpaired))
+        assertEquals(Eta.Connecting, etaFor(item(), null, 0, connection = ConnectionState.Connecting))
+        assertEquals(Eta.Checking, etaFor(item(), null, 0, connection = ConnectionState.Connected))
     }
 
     @Test

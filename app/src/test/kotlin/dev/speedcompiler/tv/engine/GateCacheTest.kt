@@ -69,19 +69,19 @@ class GateCacheTest {
             override suspend fun wakefulness(): Wakefulness? { delay(10_000); return Wakefulness.Dozing }
         }
         val q = withTimeout(100) { queueOver(slow, FakeConnectionMonitor(ConnectionState.Connected)).first() }
-        assertEquals(Eta.Unknown, q.single().eta)
+        assertEquals(Eta.Checking, q.single().eta)
     }
 
     @Test
-    fun disconnectedQueueIsUnknownThenFollowsReconnect() = runBlocking {
+    fun disconnectedQueueWaitsForConnectionThenFollowsReconnect() = runBlocking {
         val idle = object : GateSignals {
             override suspend fun musicActive() = false
             override suspend fun wakefulness() = Wakefulness.Dozing
         }
         val monitor = FakeConnectionMonitor(ConnectionState.Disconnected)
         val q = queueOver(idle, monitor)
-        assertEquals(Eta.Unknown, q.first().single().eta)
+        assertEquals(Eta.WaitingForConnection, q.first().single().eta)
         monitor.flow.value = ConnectionState.Connected
-        assertEquals(Eta.InQueue(0, 0), withTimeout(2_000) { q.first { it.single().eta != Eta.Unknown } }.single().eta)
+        assertEquals(Eta.InQueue(0, 0), withTimeout(2_000) { q.first { it.single().eta == Eta.InQueue(0, 0) } }.single().eta)
     }
 }

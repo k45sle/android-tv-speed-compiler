@@ -57,6 +57,14 @@ suspend fun reconnectWithRetry(
     }
 }
 
+/** Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on. */
+fun enableWifiAdb(context: Context) {
+    try {
+        Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1)
+    } catch (_: SecurityException) {
+    }
+}
+
 /** Reconnects the app's ADB link; the keeper's status carries any failure to the UI. */
 class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -64,13 +72,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
         reconnectWithRetry(
             turnOnWifiAdb = graph.settings.values.first().keepWifiDebugging,
             waitForNetwork = { awaitNetwork(applicationContext, NETWORK_WAIT_MS) },
-            enableWifiAdb = {
-                // Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on.
-                try {
-                    Settings.Global.putInt(applicationContext.contentResolver, "adb_wifi_enabled", 1)
-                } catch (_: SecurityException) {
-                }
-            },
+            enableWifiAdb = { enableWifiAdb(applicationContext) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
         )

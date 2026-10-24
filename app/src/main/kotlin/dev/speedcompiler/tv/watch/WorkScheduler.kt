@@ -1,6 +1,8 @@
 package dev.speedcompiler.tv.watch
 
 import android.content.Context
+import android.os.Environment
+import android.os.StatFs
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -39,12 +41,18 @@ fun workName(packageName: String) = "optimize:$packageName"
 val QueueState.isActive get() = this == QueueState.QUEUED || this == QueueState.WAITING_GATE || this == QueueState.RUNNING
 
 /** Entries with ETAs from [cache], which refreshes on every queue change, on a connection change and every 30 s while collected. */
-fun queueWithEta(active: Flow<List<QueueItem>>, connection: Flow<ConnectionState>, cache: GateCache): Flow<List<QueueEntry>> = flow {
+fun queueWithEta(
+    active: Flow<List<QueueItem>>,
+    connection: Flow<ConnectionState>,
+    cache: GateCache,
+    storageLow: () -> Boolean = { false },
+): Flow<List<QueueEntry>> = flow {
     coroutineScope {
         launch { connection.distinctUntilChanged().collect { cache.refreshIfStale(force = true) } }
         launch { while (true) { delay(GATE_TICK_MILLIS); cache.refreshIfStale() } }
-        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status) { items, gate ->
-            items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i)) }
+        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status, connection.distinctUntilChanged()) { items, gate, conn ->
+            val low = storageLow()
+            items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i, connection = conn, storageLow = low)) }
         })
     }
 }
@@ -62,7 +70,13 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         }
     }
 
-    override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache)
+    override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache, ::storageLow)
+
+    /** Mirrors the system's low-storage test (free < min(10% of data, 500 MB)), which WorkManager's constraint follows. */
+    private fun storageLow(): Boolean {
+        val fs = StatFs(Environment.getDataDirectory().path)
+        return fs.availableBytes < minOf(fs.totalBytes / 10, 500L * 1024 * 1024)
+    }
 
     override val history: Flow<List<QueueItem>> get() = queueDao.history()
 
@@ -134,10 +148,12 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     private fun schedule(item: QueueItem, debounce: Boolean = true) {
         val request = OneTimeWorkRequestBuilder<OptimizeWorker>()
             .setInputData(workDataOf(KEY_ITEM_ID to item.id))
-            .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setBackoffCriteria(BackoffPolicy.LINEAR, BACKOFF_MINUTES, TimeUnit.MINUTES)
-        if (item.runNow) request.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-        else if (debounce) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
+        if (item.runNow) request.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) // not held by low storage: runs or fails with a reason
+        else {
+            request.setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
+            if (debounce) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
+        }
         work.enqueueUniqueWork(workName(item.packageName), ExistingWorkPolicy.REPLACE, request.build())
     }
 }

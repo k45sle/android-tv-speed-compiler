@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.watch
 
+import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.engine.GateStatus
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +15,13 @@ sealed interface Eta {
     data object WaitingForIdle : Eta
     data object WaitingForPlayback : Eta
     data object Paused : Eta
-    /** The gate status is not known yet, for example while the TV is unreachable. */
+    /** Automatic job held back by low storage. */
+    data object WaitingForStorage : Eta
+    data object WaitingForConnection : Eta
+    data object Connecting : Eta
+    /** Connected, but the first gate check has not come back yet. */
+    data object Checking : Eta
+    /** No cause is known. [etaFor] never returns it. */
     data object Unknown : Eta
     data class InQueue(val position: Int, val approxMillis: Long) : Eta
 }
@@ -31,12 +38,19 @@ fun etaFor(
     gate: GateStatus?,
     position: Int,
     avgDurationMillis: Long = DEFAULT_AVG_DURATION_MILLIS,
+    connection: ConnectionState = ConnectionState.Connected,
+    storageLow: Boolean = false,
 ): Eta {
     if (item.state != QueueState.QUEUED && item.state != QueueState.WAITING_GATE) return Eta.None
     val wait = position * avgDurationMillis
     if (item.runNow) return Eta.InQueue(position, wait)
+    if (storageLow) return Eta.WaitingForStorage
     return when (gate) {
-        null -> Eta.Unknown
+        null -> when (connection) {
+            ConnectionState.Unpaired, ConnectionState.Disconnected -> Eta.WaitingForConnection
+            ConnectionState.Connecting -> Eta.Connecting
+            ConnectionState.Connected -> Eta.Checking
+        }
         GateStatus.Open -> Eta.InQueue(position, wait)
         GateStatus.WaitingForIdle -> Eta.WaitingForIdle
         GateStatus.WaitingForPlayback -> Eta.WaitingForPlayback

@@ -15,7 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -38,6 +41,7 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.Fix
@@ -61,6 +65,8 @@ import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.StatusPill
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.theme.focusFx
+import dev.speedcompiler.tv.theme.upper
+import dev.speedcompiler.tv.ui.apps.SimpleDialog
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
 import dev.speedcompiler.tv.theme.seedForHue
@@ -99,6 +105,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
     val v by remember(deps) { deps.values }.collectAsState(SettingsValues())
     val status by remember(deps) { deps.status }.collectAsState(KeeperStatus.Reconnecting)
     val scope = rememberCoroutineScope()
+    var confirmWifiOff by remember { mutableStateOf(false) }
     val set: ((SettingsValues) -> SettingsValues) -> Unit = { f -> scope.launch { deps.update(f) } }
     val mem = rememberFocusMemory("auto")
     val c = LocalSpeedColors.current
@@ -158,7 +165,18 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
                 Heading(stringResource(R.string.settings_heading_connection))
                 SwitchRow(stringResource(R.string.settings_keep_trusting_title), stringResource(R.string.settings_keep_trusting_subtitle), v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
-                SwitchRow(stringResource(R.string.settings_keep_wifi_title), stringResource(R.string.settings_keep_wifi_subtitle), v.keepWifiDebugging) { on -> set { it.copy(keepWifiDebugging = on) } }
+                SwitchRow(stringResource(R.string.settings_keep_wifi_title), stringResource(R.string.settings_keep_wifi_subtitle), v.keepWifiDebugging) { on -> if (on) set { it.copy(keepWifiDebugging = true) } else confirmWifiOff = true }
+                if (confirmWifiOff) {
+                    val ok = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { ok.requestFocus() }
+                    SimpleDialog({ confirmWifiOff = false }) {
+                        Text(stringResource(R.string.settings_keep_wifi_off_body))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
+                            Button({ confirmWifiOff = false; set { it.copy(keepWifiDebugging = false) } }, Modifier.focusRequester(ok)) { Text(stringResource(R.string.common_ok).upper()) }
+                            Button({ confirmWifiOff = false }) { Text(stringResource(R.string.common_cancel).upper()) }
+                        }
+                    }
+                }
                 val failed = status as? KeeperStatus.Failed
                 val (textRes, tone) = when (status) {
                     KeeperStatus.Connected -> R.string.home_connected to Tone.Ok
