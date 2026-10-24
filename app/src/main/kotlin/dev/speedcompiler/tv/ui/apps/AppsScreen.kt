@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.apps
 
+import dev.speedcompiler.tv.theme.scrollbar
+import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.speedcompiler.tv.theme.upper
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -287,7 +289,8 @@ fun AppsContent(
             when { loading -> stringResource(R.string.apps_loading); apps.isEmpty() -> stringResource(R.string.setup_no_apps); else -> stringResource(R.string.apps_no_match) },
             style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+        val list = rememberLazyListState()
+        LazyColumn(Modifier.weight(1f).scrollbar(list), state = list, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(shown, key = { it.packageName }) { app ->
                 val pill = pillFor(res, queue[app.packageName], watched[app.packageName]?.lastResult, optimizedAt[app.packageName], now, zone)
                 SelectRow(

@@ -42,6 +42,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.composed
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -230,4 +234,42 @@ fun Button(
     val cs = MaterialTheme.colorScheme
     if (secondary) ArcadeButton(onClick, modifier, enabled, cs.primaryContainer, cs.onPrimaryContainer, content = content)
     else ArcadeButton(onClick, modifier, enabled, content = content)
+}
+
+private val BarWidth = 6.dp
+private val BarGap = 4.dp
+
+/** Pixel scroll bar at the right edge, shown only while there is more to scroll. Put it before verticalScroll; it reserves its own width so rows never sit under it. */
+fun Modifier.scrollbar(state: ScrollState) = scrollbar(state) {
+    scrollThumb(state.viewportSize.toFloat(), (state.maxValue + state.viewportSize).toFloat(), state.value.toFloat())
+}
+
+fun Modifier.scrollbar(state: LazyListState) = scrollbar(state) {
+    val info = state.layoutInfo
+    val seen = info.visibleItemsInfo
+    if (seen.isEmpty()) null else {
+        // Item sizes vary, so the total is estimated from the rows on screen.
+        val avg = (seen.last().offset + seen.last().size - seen.first().offset).toFloat() / seen.size
+        scrollThumb((info.viewportEndOffset - info.viewportStartOffset).toFloat(), avg * info.totalItemsCount, avg * state.firstVisibleItemIndex + state.firstVisibleItemScrollOffset)
+    }
+}
+
+/** (thumb length, thumb start) as fractions of the track, or null when everything fits. */
+internal fun scrollThumb(viewport: Float, total: Float, offset: Float): Pair<Float, Float>? =
+    if (viewport <= 0f || total <= viewport) null
+    else (viewport / total).coerceAtLeast(0.05f).let { len -> len to (offset / total).coerceIn(0f, 1f - len) }
+
+private fun Modifier.scrollbar(state: ScrollableState, thumb: () -> Pair<Float, Float>?) = composed {
+    val c = LocalSpeedColors.current
+    drawWithContent {
+        drawContent()
+        if (!state.canScrollForward && !state.canScrollBackward) return@drawWithContent
+        val (len, start) = thumb() ?: return@drawWithContent
+        val w = BarWidth.toPx()
+        val gap = BarGap.toPx()
+        val x = size.width - gap - w
+        val h = size.height - 2 * gap
+        drawRect(c.hairline, Offset(x, gap), Size(w, h))
+        drawRect(c.accent, Offset(x, gap + start * h), Size(w, len * h))
+    }.padding(end = BarGap * 2 + BarWidth)
 }

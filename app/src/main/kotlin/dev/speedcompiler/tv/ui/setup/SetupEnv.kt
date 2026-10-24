@@ -15,6 +15,7 @@ import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.ui.apps.AppInfo
 import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class SetupApp(val packageName: String, val label: String)
+typealias SetupApp = AppInfo
 
 /** Everything the setup screens need from Android that a JVM test cannot do: Settings reads and launches. */
 interface SetupEnv {
@@ -86,7 +87,7 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
         val packages = withContext(Dispatchers.IO) {
             context.packageManager.queryIntentActivities(launch, 0).map { it.activityInfo.packageName }.distinct()
         }
-        return loadUserApps(context, packages).sortedByDescending { it.updatedAt }.map { SetupApp(it.packageName, it.label) }
+        return loadUserApps(context, packages).sortedByDescending { it.updatedAt }
     }
 }
 

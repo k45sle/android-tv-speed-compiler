@@ -258,7 +258,8 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
     }
 
-    private val setupApps = listOf(SetupApp(NUVIO, "Nuvio"), SetupApp("com.example.streambox", "StreamBox"), SetupApp("com.example.retroarcade", "Retro Arcade"), SetupApp("com.example.musichub", "Music Hub"))
+    private val setupApps = listOf(NUVIO, "com.example.streambox", "com.example.retroarcade", "com.example.musichub")
+        .map { pkg -> demo.first { it.pkg == pkg }.let { d -> SetupApp(d.pkg, d.label, banner = { banner(d) }) } }
 
     /** Setup with Developer options, Wireless debugging and the connection already done, so Start goes to the app picker. */
     private fun setupDeps(ready: Boolean, url: String? = null) = SetupDeps(

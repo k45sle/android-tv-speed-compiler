@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.home
 
+import dev.speedcompiler.tv.theme.scrollbar
+import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -121,8 +123,10 @@ fun ActivityContent(
       Column(Modifier.padding(horizontal = 48.dp).padding(top = 12.dp, bottom = 12.dp)) {
         Marquee(stringResource(R.string.nav_activity), compact = true, onBack = onBack)
         Spacer(Modifier.height(12.dp))
+        val list = rememberLazyListState()
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().background(cs.background).border(2.dp, sc.hairline),
+            Modifier.weight(1f).fillMaxWidth().background(cs.background).border(2.dp, sc.hairline).scrollbar(list),
+            state = list,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(Space.x1),
         ) {

@@ -1,5 +1,7 @@
 package dev.speedcompiler.tv.ui.setup
 
+import dev.speedcompiler.tv.theme.scrollbar
+import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.speedcompiler.tv.theme.upper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -48,7 +50,9 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.ConnectionState
-import dev.speedcompiler.tv.theme.ListRow
+import dev.speedcompiler.tv.theme.SelectRow
+import dev.speedcompiler.tv.theme.Cartridge
+import dev.speedcompiler.tv.ui.apps.AppBanner
 import dev.speedcompiler.tv.theme.LocalSpeedColors
 import dev.speedcompiler.tv.theme.MonoStyle
 import dev.speedcompiler.tv.theme.QrCard
@@ -331,18 +335,21 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
     val firstRow = remember { FocusRequester() }
     Page(6, stringResource(R.string.setup_pick_title)) {
         if (apps.isEmpty()) Body(stringResource(R.string.setup_no_apps))
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
+        val list = rememberLazyListState()
+        LazyColumn(Modifier.weight(1f).scrollbar(list), state = list, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             items(apps.size, key = { apps[it].packageName }) { i ->
                 val app = apps[i]
                 val on = app.packageName in picked
                 if (i == 0) LaunchedEffect(Unit) { firstRow.requestFocus() }
-                ListRow(
+                SelectRow(
                     app.label,
                     (if (i == 0) Modifier.focusRequester(firstRow) else Modifier)
                         .semantics { role = Role.Checkbox; toggleableState = ToggleableState(on) },
                     subtitle = app.packageName,
                     onClick = { if (on) picked.remove(app.packageName) else picked.add(app.packageName) },
-                ) { if (on) StatusPill(stringResource(R.string.setup_selected), Tone.Ok) else StatusPill(stringResource(R.string.setup_not_selected), Tone.Neutral) }
+                    leading = { Cartridge { AppBanner(app, Modifier.size(width = 72.dp, height = 40.dp)) } },
+                    trailing = { if (on) StatusPill(stringResource(R.string.setup_selected), Tone.Ok) else StatusPill(stringResource(R.string.setup_not_selected), Tone.Neutral) },
+                )
             }
         }
         Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text(pluralStringResource(R.plurals.setup_continue, picked.size, picked.size).upper()) }
