@@ -72,6 +72,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 }
             },
             reconnect = graph.connectionKeeper::reconnect,
+            pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
         )
         return Result.success()
     }

@@ -75,6 +75,33 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun retryPauseShowsConnectingAndCancelRestoresFailure() = runTest(UnconfinedTestDispatcher()) {
+        val k = keeper(FakeAdbShell(), connect = { throw AdbFailure.Timeout() })
+        k.reconnect()
+        assertEquals(ConnectionState.Disconnected, k.state.first())
+        val gate = CompletableDeferred<Unit>()
+        val pause = launch { k.connectingWhile { gate.await() } }
+        assertEquals(ConnectionState.Connecting, k.state.first())
+        pause.cancel()
+        assertEquals(ConnectionState.Disconnected, k.state.first())
+        k.connectingWhile {} // finishes normally: stays Connecting until the next try reports
+        assertEquals(ConnectionState.Connecting, k.state.first())
+    }
+
+    @Test
+    fun cancelledConnectAfterPauseShowsDisconnected() = runTest(UnconfinedTestDispatcher()) {
+        val hang = CompletableDeferred<Unit>()
+        var calls = 0
+        val k = keeper(FakeAdbShell(), connect = { if (calls++ == 0) throw AdbFailure.Timeout() else hang.await() })
+        k.reconnect()
+        k.connectingWhile {}
+        val job = launch { k.reconnect() }
+        assertEquals(ConnectionState.Connecting, k.state.first())
+        job.cancel()
+        assertEquals(ConnectionState.Disconnected, k.state.first())
+    }
+
+    @Test
     fun failuresMapToStateAndFix() = runTest {
         val cases = listOf(
             AdbFailure.NotPaired() to (Fix.QuickRepair to ConnectionState.Unpaired),
