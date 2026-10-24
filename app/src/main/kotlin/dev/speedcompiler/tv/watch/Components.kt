@@ -49,6 +49,7 @@ class PairingService : Service() {
                 host = { d.host ?: localIp() ?: "127.0.0.1" },
                 pairingPort = { d.port },
                 onFinished = { stopSelf() },
+                onPaired = { graph.connectionMonitor.connectNow() },
             )
             try {
                 bind(s)

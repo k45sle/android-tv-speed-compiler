@@ -56,13 +56,14 @@ private fun mapKey(key: Key): Input? = when (key) {
 }
 
 /**
- * Plays [kind] full screen on a Canvas. [paused] freezes the loop, shows DONE and ignores input (the job ended).
+ * Plays [kind] full screen on a Canvas. [paused] freezes the loop and shows DONE (the job ended); SELECT then calls [onPlayOn].
  * [statusHeight] is the status line the caller draws over the top edge; the HUD sits below it.
  * Back calls [onExit]. [onBest] gets the score when a run ends, on Back and when the job ends (it keeps the max).
  */
 @Composable
 fun GamePlayer(
     kind: GameKind, paused: Boolean, best: Int, onBest: (Int) -> Unit, onExit: () -> Unit,
+    onPlayOn: () -> Unit = {},
     modifier: Modifier = Modifier, statusHeight: Dp = 30.dp,
 ) {
     var game by remember(kind) { mutableStateOf(kind.def.create()) }
@@ -75,7 +76,7 @@ fun GamePlayer(
     val top = with(LocalDensity.current) { statusHeight.toPx() }
     val gameDesc = stringResource(R.string.working_game_desc, stringResource(kind.title))
     val doneText = stringResource(R.string.working_done_pixel)
-    val pressBack = stringResource(R.string.working_press_back)
+    val playOn = stringResource(R.string.working_press_select_play_on)
     LaunchedEffect(kind, paused) { runCatching { focus.requestFocus() } }
     LaunchedEffect(kind, paused) {
         if (paused) { onBest(game.score); return@LaunchedEffect }
@@ -102,7 +103,8 @@ fun GamePlayer(
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 if (e.key == Key.Back) { onBest(game.score); onExit(); return@onKeyEvent true }
                 val input = mapKey(e.key) ?: return@onKeyEvent false
-                if (!paused) {
+                if (paused) { if (input == Input.SELECT && e.nativeKeyEvent.repeatCount == 0) onPlayOn() }
+                else {
                     // A held jump key must not skip the death animation and restart at once.
                     if (game.over) { if (game.canRestart && input == Input.SELECT && e.nativeKeyEvent.repeatCount == 0) game = kind.def.create() }
                     else pending = input
@@ -114,7 +116,7 @@ fun GamePlayer(
         drawRect(GameColors.sky3)
         surface.frame(this, top) {
             renderer.draw(surface, game, maxOf(best, game.score))
-            if (paused) surface.banner(doneText, pressBack, -1, GameColors.green3)
+            if (paused) surface.banner(doneText, playOn, -1, GameColors.green3)
         }
     }
 }

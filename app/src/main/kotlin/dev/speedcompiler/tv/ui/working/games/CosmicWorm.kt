@@ -83,7 +83,10 @@ class CosmicWorm(private val rng: Random = Random.Default) : Game {
         val d = when (input) { Input.RIGHT -> 0; Input.DOWN -> 1; Input.LEFT -> 2; Input.UP -> 3; else -> -1 }
         // Reversing into the neck is ignored; a second turn within one step waits for the next step, so UP then LEFT is a quick U-turn.
         if (d >= 0) {
-            if (want == dir) { if ((d + 2) % 4 != dir) want = d }
+            if (want == dir) {
+                // A turn pressed in the second half of a step moves at once: the head snaps up to half a cell, but waits at most half a step.
+                if ((d + 2) % 4 != dir && d != dir) { want = d; if (acc >= STEP / 2) acc = STEP - DT / 2 }
+            }
             else if (queued < 0 && d != want && (d + 2) % 4 != want) queued = d
         }
         acc += DT

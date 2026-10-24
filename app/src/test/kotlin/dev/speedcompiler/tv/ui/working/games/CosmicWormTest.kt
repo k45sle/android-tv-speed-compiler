@@ -43,6 +43,16 @@ class CosmicWormTest {
     }
 
     @Test
+    fun aTurnLateInAStepMovesAtOnce() {
+        val g = CosmicWorm(Random(1))
+        while (g.acc < CosmicWorm.STEP / 2) g.step(null)
+        val m = g.moves
+        g.step(Input.UP)
+        assertEquals(m + 1, g.moves)
+        assertEquals(4 to 2, g.head())
+    }
+
+    @Test
     fun eatsAStarAndGrowsOneCell() {
         val g = CosmicWorm(Random(1))
         g.foodX = 5; g.foodY = 3

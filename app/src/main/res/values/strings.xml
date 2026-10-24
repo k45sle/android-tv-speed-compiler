@@ -51,6 +51,7 @@
     <string name="nav_apps">Apps</string>
     <string name="nav_activity">Activity</string>
     <string name="nav_settings">Settings</string>
+    <string name="nav_arcade">Arcade</string>
     <plurals name="activity_confirm_cancel">
         <item quantity="one">Cancel the %1$d app in the queue?</item>
         <item quantity="other">Cancel all %1$d apps in the queue?</item>
@@ -206,7 +207,7 @@
     <string name="working_game_desc">%1$s game. Arrow keys move, Select to act or restart, Back to stop playing.</string>
     <string name="working_press_select">PRESS SELECT</string>
     <string name="working_done_pixel">DONE</string>
-    <string name="working_press_back">PRESS BACK</string>
+    <string name="working_press_select_play_on">PRESS SELECT TO PLAY ON</string>
     <string name="working_game_over">GAME OVER</string>
     <string name="working_score">"SCORE "</string>
     <string name="working_best">"BEST "</string>
@@ -328,6 +329,7 @@
     <string name="stored_not_installed">Not installed</string>
     <!-- review fixes -->
     <string name="common_footer_hint">"▲▼ choose  ● select  ◀ back"</string>
+    <string name="setup_pick_footer_hint">"▲▼ choose  ● select  ◀ back  ▶ next"</string>
     <string name="common_back_arrow">◀ back</string>
     <string name="common_press_select">▶ press select</string>
     <string name="common_join">%1$s · %2$s</string>

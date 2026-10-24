@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
@@ -333,7 +334,8 @@ private suspend fun Lifecycle.awaitStarted() { currentStateFlow.first { it.isAtL
 @Composable
 private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onContinue: () -> Unit) {
     val firstRow = remember { FocusRequester() }
-    Page(6, stringResource(R.string.setup_pick_title)) {
+    val cont = remember { FocusRequester() }
+    Page(6, stringResource(R.string.setup_pick_title), hint = stringResource(R.string.setup_pick_footer_hint)) {
         if (apps.isEmpty()) Body(stringResource(R.string.setup_no_apps))
         val list = rememberLazyListState()
         LazyColumn(Modifier.weight(1f).scrollbar(list), state = list, verticalArrangement = Arrangement.spacedBy(Space.x1)) {
@@ -344,6 +346,8 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
                 SelectRow(
                     app.label,
                     (if (i == 0) Modifier.focusRequester(firstRow) else Modifier)
+                        // Right jumps from any row to Continue, so a long list need not be scrolled to the end.
+                        .focusProperties { if (picked.isNotEmpty()) right = cont }
                         .semantics { role = Role.Checkbox; toggleableState = ToggleableState(on) },
                     subtitle = app.packageName,
                     onClick = { if (on) picked.remove(app.packageName) else picked.add(app.packageName) },
@@ -352,7 +356,7 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
                 )
             }
         }
-        Button(onClick = onContinue, enabled = picked.isNotEmpty()) { Text(pluralStringResource(R.plurals.setup_continue, picked.size, picked.size).upper()) }
+        Button(onClick = onContinue, Modifier.focusRequester(cont), enabled = picked.isNotEmpty()) { Text(pluralStringResource(R.plurals.setup_continue, picked.size, picked.size).upper()) }
     }
 }
 
@@ -396,10 +400,11 @@ private fun Page(
     step: Int?,
     title: String,
     side: (@Composable ColumnScope.() -> Unit)? = null,
+    hint: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = LocalSpeedColors.current
-    RoomBackdrop {
+    RoomBackdrop(hint = hint) {
         Column(Modifier.fillMaxSize().padding(horizontal = Space.x4, vertical = Space.x1), verticalArrangement = Arrangement.spacedBy(Space.x1)) {
             Marquee(stringResource(R.string.setup_title), compact = true, onBack = LocalPageBack.current, trailing = step?.let {
                 {
