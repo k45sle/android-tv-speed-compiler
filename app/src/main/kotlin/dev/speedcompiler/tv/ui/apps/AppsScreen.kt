@@ -88,6 +88,7 @@ import androidx.annotation.StringRes
 import dev.speedcompiler.tv.R
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
@@ -218,7 +219,11 @@ fun AppsContent(
         apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
             .let { l -> if (sort == Sort.Recent) l.sortedByDescending { it.updatedAt } else l.sortedBy { it.label.lowercase() } }
     }
-    fun finish(act: (List<String>) -> Unit) { act(selected.toList()); selected = emptySet(); selecting = false }
+    val selectBtn = remember { FocusRequester() }
+    // The focused action row disappears with select mode; park focus on the Select/Done button.
+    fun exitSelect() { selected = emptySet(); selecting = false; runCatching { selectBtn.requestFocus() } }
+    fun finish(act: (List<String>) -> Unit) { act(selected.toList()); exitSelect() }
+    BackHandler(enabled = selecting) { exitSelect() }
     val c = LocalSpeedColors.current
     val res = LocalResources.current
     val searchHint = stringResource(R.string.apps_search_hint)
@@ -276,7 +281,7 @@ fun AppsContent(
                     .background(if (sortFocused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                     .border(2.dp, c.hairline).padding(horizontal = Space.x2, vertical = Space.x1),
             ) { Selector(stringResource(R.string.apps_sort_format, stringResource(sort.label)), sortFocused) }
-            Button({ selecting = !selecting; selected = emptySet() }) { Text(stringResource(if (selecting) R.string.common_done else R.string.apps_select).upper()) }
+            Button({ if (selecting) exitSelect() else selecting = true }, Modifier.focusRequester(selectBtn)) { Text(stringResource(if (selecting) R.string.common_done else R.string.apps_select).upper()) }
         }
         if (selecting) Row(horizontalArrangement = Arrangement.spacedBy(Space.x1), verticalAlignment = Alignment.CenterVertically) {
             val none = selected.isEmpty()
