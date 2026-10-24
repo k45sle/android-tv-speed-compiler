@@ -1,0 +1,19 @@
+Android normally compiles an app bit by bit, based on how you use it. Speed Compile asks the TV to compile the apps you choose fully, with Android's speed profile, and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging, so you don't need a computer once it is set up.
+
+Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes a bit more storage.
+
+What it does:
+• Watches the apps you pick and queues a compile when one of them updates.
+• Waits until nothing is playing, or until a time window you set, so it doesn't slow down what you are watching.
+• Reconnects by itself after the TV restarts, and turns Wireless debugging back on when it needs it (you can turn this off in Settings).
+• Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
+• Keeps a history of each job, with the reason when one fails.
+• Comes in light and dark themes, with eight accent colours plus a custom one.
+
+Setup walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
+
+No account, no ads, no analytics. The app connects only to the TV it runs on, and to your phone on the same network while you pair or download diagnostics. The debugging key is made on the TV and stays in the app's private storage.
+
+Needs Android TV or Google TV 11 or later. It has been tested on the Android TV emulator so far, and not yet on Fire TV.
+
+The app's code, tests and docs were written by Claude (Anthropic's AI) in Claude Code. It is free and open source under the MIT license.

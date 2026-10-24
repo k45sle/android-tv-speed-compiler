@@ -1,0 +1,1 @@
+First release. Pick your apps once and Speed Compile compiles them with the speed profile, then again after each update, waiting until nothing is playing. Includes three small games to play while a compile runs.
