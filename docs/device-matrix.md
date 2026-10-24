@@ -22,7 +22,10 @@ Amlogic S905X4 (4x Cortex-A55), 3.5 GB RAM, Wi-Fi. Checked in October 2026 with 
 | Activity Retry with the D-pad | Works. RIGHT focuses Retry, OK queues the app again. |
 | Reset | Works. The app goes back to the TV's own compile choice. |
 | Compile while playing an arcade game | Compile time unchanged (22-23 s against 23-24 s idle). The game had 0-0.4% janky frames, 90th percentile 11 ms. |
-| Reboot, real power-off, standby wake-up | Not checked yet. |
-| Ethernet, Wi-Fi network change | Not checked yet. |
+| Reboot (`adb reboot`, twice) | Works. Speed Compile reconnected by itself 69 s and 72 s after the reboot (30-35 s after boot finished), without being opened. Home then showed Connected. |
+| Standby (TV switched off, box sleeps over HDMI-CEC) | Works. Speed Compile kept its connection while the box slept, and two queued apps had compiled within 11 minutes of it going to sleep. A wake-up key event sent over adb woke it. |
+| Screensaver opened by the launcher | The AT4K launcher opens Aerial Views as a normal app that holds a screen-on wake lock, and Android stayed awake for the 60 minutes observed. Two apps reinstalled just before stayed uncompiled for that hour, and at the end of it Home showed them queued with "Waiting for the TV to be idle". |
+| Real power-off, Keep trusting off | Not checked yet. |
+| Ethernet, Wi-Fi network change, router restart | Not checked yet. |
 
 Cold start, size and compile time per app are in the README under "Does it help?".
