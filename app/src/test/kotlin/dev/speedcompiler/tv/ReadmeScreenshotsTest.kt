@@ -60,6 +60,11 @@ import dev.speedcompiler.tv.ui.working.games.StarArrowDef
 import dev.speedcompiler.tv.ui.working.GameKind
 import dev.speedcompiler.tv.ui.home.ActivityContent
 import dev.speedcompiler.tv.ui.setup.FakeSetupEnv
+import dev.speedcompiler.tv.ui.setup.QuickRepairScreen
+import dev.speedcompiler.tv.ui.help.DiagnosticsContent
+import dev.speedcompiler.tv.ui.help.HelpContent
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
 import dev.speedcompiler.tv.ui.setup.SetupApp
 import dev.speedcompiler.tv.ui.setup.SetupDeps
 import dev.speedcompiler.tv.ui.setup.SetupMode
@@ -205,7 +210,7 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun appsDark() = shoot("apps-dark", true) { AppsScreen({}, {}, appsDeps()) }
     @Test fun appsLight() = shoot("apps-light", false) { AppsScreen({}, {}, appsDeps()) }
 
-    @Test fun appDetailDark() = shoot("appdetail-dark", true) {
+    @Composable private fun AppDetailShot() {
         val d = demo[2]
         AppDetailContent(
             AppInfo(d.pkg, d.label, "3.2", nowMs - 9L * 24 * 60 * min, banner = { banner(d) }),
@@ -213,7 +218,10 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         )
     }
 
-    @Test fun activityDark() = shoot("activity-dark", true) {
+    @Test fun appDetailDark() = shoot("appdetail-dark", true) { AppDetailShot() }
+    @Test fun appDetailLight() = shoot("appdetail-light", false) { AppDetailShot() }
+
+    @Composable private fun ActivityShot() {
         val history = listOf(
             q(5, "com.example.streambox", QueueState.DONE).copy(startedAt = nowMs - 22 * min, finishedAt = nowMs - 20 * min),
             q(4, "com.example.weather", QueueState.FAILED).copy(startedAt = nowMs - 95 * min, finishedAt = nowMs - 94 * min, failureReason = "Connection lost"),
@@ -222,6 +230,9 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
         val s = homeState()
         ActivityContent(s.queue, history, s.events, ::look, {}, {}, now, utc)
     }
+
+    @Test fun activityDark() = shoot("activity-dark", true) { ActivityShot() }
+    @Test fun activityLight() = shoot("activity-light", false) { ActivityShot() }
 
     private fun nuvioWorking() = WorkingState("Nuvio", banner(demo[2]).asImageBitmap(), JobView.Running, 72_000, 120_000)
 
@@ -254,6 +265,50 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     }
 
     private val plum = Presets.indexOfFirst { it.name == "Plum" }
+
+    @Test fun settingsLight() = shoot("settings-light", false) {
+        val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Light))
+        SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
+    }
+
+    @Test fun helpDark() = shoot("help-dark", true) { HelpContent({}) }
+
+    // The address and token are made up (192.0.2.x is the documentation range, RFC 5737).
+    @Test fun diagnosticsDark() = shoot("diagnostics-dark", true) {
+        DiagnosticsContent("http://192.0.2.10:38417/6b1e0c94d2a85f37a9c4e8d1b0f27a53", null, remember { FocusRequester() }, {})
+    }
+
+    @Test fun quickRepairDark() = shoot("quickrepair-dark", true) { QuickRepairScreen({}, setupDeps(false, PAIR_URL)) }
+
+    /** One Home thumbnail per preset (5x2), made by capturing the same screen under each preset in turn. */
+    @Test fun presets() {
+        val tw = 320; val th = 180; val gap = 8; val label = 22
+        val sheet = Bitmap.createBitmap(5 * tw + 6 * gap, 2 * (th + label) + 3 * gap, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(sheet)
+        canvas.drawColor(Color.rgb(11, 32, 23))
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(242, 230, 196); textSize = 15f; typeface = Typeface.DEFAULT_BOLD }
+        var preset by mutableStateOf(0)
+        val state = homeState()
+        rule.mainClock.autoAdvance = false
+        rule.setContent { SpeedTheme(ThemeChoice.Dark, SeedChoice.Preset(preset)) { HomeContent(state, {}, now, utc) } }
+        Presets.forEachIndexed { i, p ->
+            preset = i
+            rule.mainClock.advanceTimeBy(600)
+            val full = File("build/outputs/roborazzi/readme/presets-$i.png")
+            rule.onRoot().captureRoboImage(full.path)
+            // Halving first averages the pixels; one big filtered step would skip most of them and mangle the text.
+            var shot = BitmapFactory.decodeFile(full.path)
+            while (shot.width / 2 >= tw) shot = Bitmap.createScaledBitmap(shot, shot.width / 2, shot.height / 2, true)
+            shot = Bitmap.createScaledBitmap(shot, tw, th, true)
+            full.delete()
+            val x = gap + (i % 5) * (tw + gap); val y = gap + (i / 5) * (th + label + gap)
+            canvas.drawBitmap(shot, x.toFloat(), y.toFloat(), null)
+            canvas.drawText(p.name, x.toFloat(), (y + th + 16).toFloat(), text)
+        }
+        val out = File("build/outputs/roborazzi/readme/presets.png").apply { parentFile!!.mkdirs() }
+        out.outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        if (System.getProperty("roborazzi.test.record") == "true") System.getenv("README_SHOTS_DIR")?.let { out.copyTo(File(it, "presets.png").absoluteFile, overwrite = true) }
+    }
 
     // The one non-default preset in the README, so a theme regression outside the default palette shows up in review.
     @Test fun settingsPlum() = shoot("settings-plum", true, seed = SeedChoice.Preset(plum)) {
