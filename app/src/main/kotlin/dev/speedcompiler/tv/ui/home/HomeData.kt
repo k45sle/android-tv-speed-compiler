@@ -82,6 +82,10 @@ fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId
     Eta.WaitingForIdle -> res.getString(R.string.home_eta_waiting_idle)
     Eta.WaitingForPlayback -> res.getString(R.string.home_eta_waiting_playback)
     Eta.Paused -> res.getString(R.string.home_auto_off)
+    Eta.WaitingForStorage -> res.getString(R.string.home_eta_waiting_storage)
+    Eta.WaitingForConnection -> res.getString(R.string.home_eta_waiting_connection)
+    Eta.Connecting -> res.getString(R.string.home_connecting_to_tv)
+    Eta.Checking -> res.getString(R.string.home_eta_checking)
     Eta.Unknown -> res.getString(R.string.home_eta_unknown)
     is Eta.InQueue -> res.getString(R.string.home_eta_in_queue, eta.position + 1, (eta.approxMillis / 60_000).coerceAtLeast(1))
 }

@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -111,6 +112,8 @@ suspend fun systemUpdated(state: SyncStateDao, current: String): Boolean {
 class DetectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val g = applicationContext.graph
+        // Not gated on the keeper: it can still say Connected after Wireless debugging was switched off.
+        if (g.settings.values.first().keepWifiDebugging) enableWifiAdb(applicationContext)
         if (g.connectionKeeper.status.value != KeeperStatus.Connected) g.connectionKeeper.reconnect()
         runDetect(g)
         if (systemUpdated(g.database.syncState(), Build.FINGERPRINT)) enqueueVerifyNow(applicationContext)

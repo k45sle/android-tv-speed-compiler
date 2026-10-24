@@ -178,7 +178,13 @@ class SettingsScreenTest : ComposeTestBase() {
         click("Keep this TV trusting the app")
         assertEquals(false, state.value.keepTrusting)
         click("Keep Wireless debugging on")
+        click("Cancel")
+        assertEquals(true, state.value.keepWifiDebugging)
+        click("Keep Wireless debugging on")
+        click("OK")
         assertEquals(false, state.value.keepWifiDebugging)
+        click("Keep Wireless debugging on")
+        assertEquals(true, state.value.keepWifiDebugging)
     }
 
     @Test

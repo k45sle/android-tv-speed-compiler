@@ -224,6 +224,11 @@ class SchedulingTest {
         assertTrue(infos("a").single().constraints.requiresStorageNotLow())
     }
 
+    @Test fun optimizeNowIsNotHeldByLowStorage() = runBlocking {
+        g.scheduler.optimizeNow("a")
+        assertFalse(infos("a").single().constraints.requiresStorageNotLow())
+    }
+
     @Test fun aStoppedWorkerDoesNotLeaveTheRowRunning() = runBlocking {
         optimizer.before = { CompletableDeferred<Unit>().await() }
         g.scheduler.enqueue("a")
