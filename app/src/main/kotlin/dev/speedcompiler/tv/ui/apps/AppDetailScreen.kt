@@ -81,19 +81,23 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val resetting = stringResource(R.string.detail_resetting)
     var confirmReset by remember(packageName) { mutableStateOf(false) }
     val reset: () -> Unit = {
-        if (resetNote != resetting) scope.launch {
-            resetNote = resetting
-            // Cancel a queued compile first so it cannot redo speed after the reset; unwatch only once the reset worked,
-            // so a failure leaves the app watched. NonCancellable so Back does not stop it halfway.
-            val active = queue.firstOrNull { it.item.packageName == packageName }?.item?.id
-            resetNote = try {
-                withContext(NonCancellable) {
-                    active?.let { deps.scheduler.cancel(it) }
-                    deps.reset(packageName).also { if (it.ok) deps.scheduler.unwatch(packageName) }
-                }.detail.let { storedText(res, it) }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))
+        if (resetNote != resetting) {
+            resetNote = resetting // set before launch so a second tap cannot start another reset
+            scope.launch {
+                // Cancel a queued compile first so it cannot redo speed after the reset; on success unwatch, on failure
+                // put the compile back so the app is left as it was. NonCancellable so Back does not stop it halfway.
+                val active = queue.firstOrNull { it.item.packageName == packageName }?.item?.id
+                resetNote = try {
+                    withContext(NonCancellable) {
+                        active?.let { deps.scheduler.cancel(it) }
+                        val r = runCatching { deps.reset(packageName) }
+                        if (r.getOrNull()?.ok == true) deps.scheduler.unwatch(packageName) else active?.let { deps.scheduler.retry(it) }
+                        r.getOrThrow()
+                    }.detail.let { storedText(res, it) }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))
+                }
             }
         }
     }

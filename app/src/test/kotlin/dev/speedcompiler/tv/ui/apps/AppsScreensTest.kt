@@ -227,6 +227,17 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun failedResetPutsTheQueuedCompileBack() {
+        val reset = mutableListOf<String>()
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        kotlinx.coroutines.runBlocking { scheduler.enqueue("a.alpha") }
+        scheduler.calls.clear()
+        detailScreen(d = resetDeps(reset, false))
+        click("Reset"); click("OK")
+        assertEquals(listOf("cancel:1", "retry:1"), scheduler.calls)
+    }
+
+    @Test
     fun cancelOnTheResetBoxDoesNothing() {
         val reset = mutableListOf<String>()
         detailScreen(d = resetDeps(reset, true))
