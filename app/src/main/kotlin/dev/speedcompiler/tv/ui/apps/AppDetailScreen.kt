@@ -83,9 +83,14 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val reset: () -> Unit = {
         if (resetNote != resetting) scope.launch {
             resetNote = resetting
-            // NonCancellable so Back does not stop it halfway; unwatch only once the reset worked, so a failure leaves the app watched.
+            // Cancel a queued compile first so it cannot redo speed after the reset; unwatch only once the reset worked,
+            // so a failure leaves the app watched. NonCancellable so Back does not stop it halfway.
+            val active = queue.firstOrNull { it.item.packageName == packageName }?.item?.id
             resetNote = try {
-                withContext(NonCancellable) { deps.reset(packageName).also { if (it.ok) deps.scheduler.unwatch(packageName) } }.detail.let { storedText(res, it) }
+                withContext(NonCancellable) {
+                    active?.let { deps.scheduler.cancel(it) }
+                    deps.reset(packageName).also { if (it.ok) deps.scheduler.unwatch(packageName) }
+                }.detail.let { storedText(res, it) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 res.getString(R.string.detail_didnt_reset, e.message ?: res.getString(R.string.detail_unexpected_error))

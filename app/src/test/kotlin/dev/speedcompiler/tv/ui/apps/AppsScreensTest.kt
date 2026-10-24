@@ -216,6 +216,17 @@ class AppsScreensTest : ComposeTestBase() {
     }
 
     @Test
+    fun resetCancelsAQueuedCompileFirst() {
+        val reset = mutableListOf<String>()
+        watched.value = listOf(WatchedApp("a.alpha", "f"))
+        kotlinx.coroutines.runBlocking { scheduler.enqueue("a.alpha") }
+        scheduler.calls.clear()
+        detailScreen(d = resetDeps(reset, true))
+        click("Reset"); click("OK")
+        assertEquals(listOf("cancel:1", "unwatch:a.alpha"), scheduler.calls)
+    }
+
+    @Test
     fun cancelOnTheResetBoxDoesNothing() {
         val reset = mutableListOf<String>()
         detailScreen(d = resetDeps(reset, true))
