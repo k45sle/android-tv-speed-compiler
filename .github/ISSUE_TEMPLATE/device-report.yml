@@ -1,0 +1,64 @@
+name: Device report
+description: Tell us how Speed Compile went on your TV.
+labels: [device-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Speed Compile. A short report, good or bad, helps us learn which TVs work.
+  - type: input
+    id: model
+    attributes:
+      label: TV or box model
+      placeholder: e.g. Chromecast with Google TV, Shield TV 2019
+    validations:
+      required: true
+  - type: input
+    id: android-version
+    attributes:
+      label: Android TV or Google TV version
+      description: Found in the TV's Settings under About.
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Speed Compile version
+      description: The number in the APK file name, for example 2.0.0 from speed-compile-v2.0.0.apk.
+    validations:
+      required: true
+  - type: dropdown
+    id: pairing
+    attributes:
+      label: Did pairing work?
+      options:
+        - "Yes"
+        - Yes, after retries
+        - "No"
+    validations:
+      required: true
+  - type: input
+    id: apps
+    attributes:
+      label: Which apps did you optimize?
+  - type: dropdown
+    id: faster
+    attributes:
+      label: Did the apps feel faster?
+      options:
+        - "Yes"
+        - A little
+        - "No"
+        - Can't tell
+  - type: textarea
+    id: problems
+    attributes:
+      label: What went wrong?
+      description: Leave this empty if nothing did.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        In the app, open Settings > Export diagnostics and download speed-compile-diagnostics.json. Paste its contents here, or attach it (zip it first if GitHub refuses a .json file).
+        The file lists settings, the queue and recent events. Before posting, look through it and remove any IP address or pairing code.
