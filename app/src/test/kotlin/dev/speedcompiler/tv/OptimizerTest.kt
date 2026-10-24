@@ -231,6 +231,14 @@ class OptimizerTest {
         }
     }
 
+    @Test fun onlyARawFailureCountsAsRefused() = runTest {
+        for ((out, refused) in listOf("Failure\n__rc=1\n" to true, "Error: Package not found\n__rc=1\n" to false, "\n" to false)) {
+            val r = impl(Shell(compile = out), Events()).optimize("dev.speedcompiler.tv")
+            assertFalse(r.ok)
+            assertEquals(out, refused, r.refused)
+        }
+    }
+
     @Test fun failureDetailKeepsTheScrubbedFirstLine() = runTest {
         val said = "Error: pairing code 123456 rejected by emulator-5554 " + "word ".repeat(40)
         val r = impl(Shell(compile = "\n$said\nsecond line\n__rc=1\n"), Events()).optimize("dev.speedcompiler.tv")

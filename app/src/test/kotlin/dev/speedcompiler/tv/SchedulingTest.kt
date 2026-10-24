@@ -352,6 +352,48 @@ class SchedulingTest {
         assertEquals("lost", g.database.queue().get(1)!!.failureReason)
     }
 
+    private suspend fun refuseOnce(): java.util.UUID {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "refused", refused = true)
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("requeued") { wm.getWorkInfosForUniqueWork("refused:1").get().isNotEmpty() }
+        assertEquals(QueueState.WAITING_GATE, state(1))
+        assertEquals(1, optimizer.optimized.size)
+        val retry = wm.getWorkInfosForUniqueWork("refused:1").get().single()
+        assertEquals(15 * 60_000L, retry.initialDelayMillis) // fixed, not WorkManager's growing backoff
+        return retry.id
+    }
+
+    private fun runRefusedRetry(id: java.util.UUID) {
+        driver.setInitialDelayMet(id)
+        driver.setAllConstraintsMet(id)
+    }
+
+    @Test fun aRefusedCompileIsRequeuedOnceThenFails() = runBlocking {
+        runRefusedRetry(refuseOnce())
+        await("failed") { state(1) == QueueState.FAILED }
+        assertEquals(2, optimizer.optimized.size)
+        assertEquals("refused", g.database.queue().get(1)!!.failureReason)
+    }
+
+    @Test fun aSuccessAfterARefusalClearsTheRefusalCount() = runBlocking {
+        val id = refuseOnce()
+        assertEquals("1", g.database.syncState().get("refused:a"))
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true)
+        runRefusedRetry(id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals("0", g.database.syncState().get("refused:a"))
+    }
+
+    @Test fun aNonGenericFailureIsNotRequeued() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "Package not found")
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("failed") { state(1) == QueueState.FAILED }
+        assertTrue(wm.getWorkInfosForUniqueWork("refused:1").get().isEmpty())
+        assertEquals(1, optimizer.optimized.size)
+    }
+
     @Test fun aFailedCompileQueuesOneRetrySixHoursLater() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(false, "nope")
