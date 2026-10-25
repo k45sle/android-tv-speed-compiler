@@ -567,13 +567,14 @@ class SchedulingTest {
 
     @Test fun refreshRule() {
         val day = 24 * 60 * 60 * 1000L
+        val half = 30 * 60 * 1000L
+        assertTrue(refreshDue("1|$day|${day - half}", "1", day)) // as written by a compile: due at once
         assertTrue(refreshDue("1|0|0", "1", day))
-        assertFalse(refreshDue("1|0|0", "1", day - 1)) // refreshed less than 24 h ago
+        assertFalse(refreshDue("1|0|$day", "1", day + half - 1)) // refreshed less than 30 min ago
+        assertTrue(refreshDue("1|0|$day", "1", day + half))
         assertFalse(refreshDue("1|0|day", "1", day)) // unreadable
         assertFalse(refreshDue("1|0|0", "2", day)) // the app was updated
         assertFalse(refreshDue("1|0|0", "1", 7 * day)) // past the 7 days
-        assertFalse(refreshDue("1|0|${6 * day}", "1", 7 * day - 1)) // last refresh too recent
-        assertTrue(refreshDue("1|0|${5 * day}", "1", 6 * day + 1))
         assertFalse(refreshDue("", "1", day))
     }
 
@@ -584,23 +585,24 @@ class SchedulingTest {
         g.scheduler.enqueue("a")
         skipDelay("a")
         await("done") { state(1) == QueueState.DONE }
-        assertEquals("1|1000|1000", g.database.syncState().get("refresh:a"))
-        restartOpenedGates(g) // not due yet
-        assertTrue(optimizer.refreshed.isEmpty())
-        (g.clock as FakeClock).now += day
+        assertEquals("1|1000|${1000 - 30 * 60 * 1000L}", g.database.syncState().get("refresh:a"))
         gate.status = GateStatus.WaitingForIdle
         restartOpenedGates(g)
         assertTrue(optimizer.refreshed.isEmpty())
         gate.status = GateStatus.Open
-        restartOpenedGates(g)
+        restartOpenedGates(g) // the next open pass after the compile
         assertEquals(listOf("a"), optimizer.refreshed)
-        assertEquals("1|1000|${1000 + day}", g.database.syncState().get("refresh:a"))
-        restartOpenedGates(g)
+        assertEquals("1|1000|1000", g.database.syncState().get("refresh:a"))
+        (g.clock as FakeClock).now += 29 * 60 * 1000L
+        restartOpenedGates(g) // too soon
         assertEquals(1, optimizer.refreshed.size)
+        (g.clock as FakeClock).now += 60 * 1000L
+        restartOpenedGates(g)
+        assertEquals(2, optimizer.refreshed.size)
         system.apps["a"] = "2" // updated: the record is dropped
         (g.clock as FakeClock).now += day
         restartOpenedGates(g)
-        assertEquals(1, optimizer.refreshed.size)
+        assertEquals(2, optimizer.refreshed.size)
         assertEquals("", g.database.syncState().get("refresh:a"))
     }
 
