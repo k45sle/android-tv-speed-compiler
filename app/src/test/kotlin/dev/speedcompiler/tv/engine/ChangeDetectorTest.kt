@@ -28,6 +28,7 @@ private class FakeSystem : PackageSystem {
 private class FakeState : SyncStateDao {
     val map = mutableMapOf<String, String>()
     override suspend fun get(key: String) = map[key]
+    override suspend fun withPrefix(prefix: String) = map.filterKeys { it.startsWith(prefix) }.map { SyncState(it.key, it.value) }
     override suspend fun put(state: SyncState) {
         map[state.key] = state.value
     }

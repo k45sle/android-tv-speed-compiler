@@ -19,7 +19,7 @@ sealed interface Eta {
     /** Automatic job held back by low storage. */
     data object WaitingForStorage : Eta
     /** The last compile found no usage profile: the app has not been opened since its install or update. */
-    data object WaitingForLaunch : Eta
+    data class WaitingForLaunch(val fallbackAt: Instant? = null) : Eta
     data object WaitingForConnection : Eta
     data object Connecting : Eta
     /** Connected, but the first gate check has not come back yet. */
@@ -43,10 +43,11 @@ fun etaFor(
     avgDurationMillis: Long = DEFAULT_AVG_DURATION_MILLIS,
     connection: ConnectionState = ConnectionState.Connected,
     storageLow: Boolean = false,
+    launchFallbackAt: Instant? = null,
 ): Eta {
     if (item.state != QueueState.QUEUED && item.state != QueueState.WAITING_GATE) return Eta.None
     val wait = position * avgDurationMillis
-    if (item.state == QueueState.WAITING_GATE && item.failureReason == NO_PROFILE_YET) return Eta.WaitingForLaunch
+    if (item.state == QueueState.WAITING_GATE && item.failureReason == NO_PROFILE_YET) return Eta.WaitingForLaunch(launchFallbackAt)
     if (item.runNow) return Eta.InQueue(position, wait)
     if (storageLow) return Eta.WaitingForStorage
     return when (gate) {

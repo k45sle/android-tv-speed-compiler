@@ -171,6 +171,17 @@ class SettingsScreenTest : ComposeTestBase() {
     }
 
     @Test
+    fun howToOptimizeCyclesBetweenAutomaticAndFull() {
+        show()
+        rule.onNodeWithText("Automatic (recommended)", substring = true, ignoreCase = true).assertExists()
+        click("How to optimize")
+        assertEquals(dev.speedcompiler.tv.engine.OptimizeHow.Full, state.value.optimizeHow)
+        rule.onNodeWithText("Full compile", substring = true, ignoreCase = true).assertExists()
+        click("How to optimize")
+        assertEquals(dev.speedcompiler.tv.engine.OptimizeHow.Automatic, state.value.optimizeHow)
+    }
+
+    @Test
     fun buttonsNavigate() {
         show()
         click("Fix connection"); click("Export diagnostics"); click("Help")

@@ -12,7 +12,8 @@ This will be the first full release. The main differences from the test build:
 - Home has an Arcade button, so you can play a game at any time, not only while a job runs.
 - In Apps you can pick several apps at once and watch or optimize them all together.
 - Reset puts an app back the way the TV had it, if you change your mind.
-- Apps are prepared in a lighter way that covers the parts you actually use. Speed Compile waits until you have opened an app once before preparing it. On our test TV, apps started faster this way and took half the storage or less.
+- Apps are prepared in a lighter way that covers the parts you actually use. On our test TV, apps started faster this way and took half the storage or less.
+- Automatic mode: Speed Compile loads the profile an app ships with, so most apps are ready right after an update, and quietly refreshes them for a week. Apps without one wait for you to use them for about a minute, and are fully compiled after 2 days if you don't. App detail has an Open button for that. Under Advanced in Settings, "How to optimize" can be switched to Full compile for every app.
 - Speed Compile prepares its own code too.
 - A new setting, "Keep Wireless debugging on", lets you choose whether Speed Compile turns Wireless debugging back on by itself when it gets switched off.
 - Each download comes with a file you can use to check it is the real one. The README explains how under "Checking a download".

@@ -26,6 +26,7 @@ class SettingsTest {
         val v = DataStoreSettings(store).values.first()
         assertEquals(true, v.keepTrusting)
         assertEquals(true, v.keepWifiDebugging)
+        assertEquals(dev.speedcompiler.tv.engine.OptimizeHow.Automatic, v.optimizeHow)
     }
 
     @Test
@@ -34,8 +35,9 @@ class SettingsTest {
         val settings = DataStoreSettings(store)
         assertEquals(SettingsValues(), settings.values.first())
 
-        settings.update { it.copy(mode = Mode.Manual, paused = true, theme = ThemeChoice.Dark, accentPreset = 3, customHue = 200f) }
+        settings.update { it.copy(mode = Mode.Manual, paused = true, theme = ThemeChoice.Dark, accentPreset = 3, customHue = 200f, optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
         val v = settings.values.first()
+        assertEquals(dev.speedcompiler.tv.engine.OptimizeHow.Full, v.optimizeHow)
         assertEquals(3, v.accentPreset)
         assertEquals(200f, v.customHue)
         settings.update { it.copy(customHue = null, setupDone = true) }

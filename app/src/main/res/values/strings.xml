@@ -12,7 +12,9 @@
     <string name="home_eta_waiting_idle">Waiting for the TV to be idle</string>
     <string name="home_eta_waiting_playback">Waiting for playback to stop</string>
     <string name="home_eta_waiting_storage">Waiting for free storage</string>
-    <string name="home_eta_waiting_launch">Waiting for you to open the app once</string>
+    <string name="home_eta_waiting_launch">Waiting for you to use %1$s for about a minute. If you don\'t, it compiles fully on %2$s.</string>
+    <string name="home_eta_waiting_launch_short">Waiting for you to use %1$s for about a minute.</string>
+    <string name="home_this_app">this app</string>
     <string name="home_eta_waiting_connection">Waiting for the connection</string>
     <string name="home_connecting_to_tv">Connecting to the TV</string>
     <string name="home_eta_checking">Checking the TV</string>
@@ -174,6 +176,7 @@
     <string name="detail_version_updated">Version %1$s · Updated %2$s</string>
     <string name="detail_version_unknown">unknown</string>
     <string name="detail_reset">Reset</string>
+    <string name="detail_open">Open %1$s</string>
     <string name="detail_reset_body">Reset removes the compile, so the TV goes back to how it normally runs this app. The app also stops being watched, so updates are no longer optimized automatically.</string>
     <string name="detail_auto_optimize">Auto-optimize this app</string>
     <string name="detail_auto_sublabel">Optimize again after each update</string>
@@ -231,6 +234,11 @@
     <string name="settings_heading_appearance">Appearance</string>
     <string name="settings_heading_connection">Connection</string>
     <string name="settings_heading_about">About and help</string>
+    <string name="settings_heading_advanced">Advanced</string>
+    <string name="settings_how_title">How to optimize</string>
+    <string name="settings_how_subtitle">Full compile makes an app ready right after an update, but uses about twice the storage and starts slightly slower</string>
+    <string name="settings_how_auto">Automatic (recommended)</string>
+    <string name="settings_how_full">Full compile</string>
     <string name="settings_run_jobs">Run jobs</string>
     <string name="settings_gate_idle">When the TV is idle</string>
     <string name="settings_gate_nothing_playing">When nothing is playing</string>
@@ -331,7 +339,8 @@
     <string name="stored_finish_not_speed">Didn\'t finish: the TV only partly optimized this app. Try again when the TV is idle.</string>
     <string name="stored_finish_unexpected">Didn\'t finish: something went wrong. Try again from the app.</string>
     <string name="stored_optimized_unverified">Optimized (this TV doesn\'t report the result)</string>
-    <string name="stored_no_profile">Waiting for the app\'s first launch. Open the app once and this finishes on its own.</string>
+    <string name="stored_no_profile">Waiting for you to use the app for about a minute. This finishes on its own afterwards.</string>
+    <string name="stored_refreshed">Asked the TV to refresh this app\'s compiled code.</string>
     <string name="stored_optimized_checked">Optimized (checked)</string>
     <string name="stored_verify_unknown">The TV did not report the result for this app.</string>
     <string name="stored_not_installed">Not installed</string>

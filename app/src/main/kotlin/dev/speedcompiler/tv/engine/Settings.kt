@@ -14,6 +14,9 @@ enum class Mode { Auto, Manual }
 
 enum class ThemeChoice { System, Light, Dark }
 
+/** Automatic loads the app's shipped profile and compiles speed-profile; Full compiles speed for every app. */
+enum class OptimizeHow { Automatic, Full }
+
 data class SettingsValues(
     val mode: Mode = Mode.Auto,
     /** Allowed optimize window as minutes since midnight; default 02:00-06:00. */
@@ -23,6 +26,7 @@ data class SettingsValues(
     val paused: Boolean = false,
     val keepTrusting: Boolean = true,
     val keepWifiDebugging: Boolean = true,
+    val optimizeHow: OptimizeHow = OptimizeHow.Automatic,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
     val accentPreset: Int = 0,
@@ -46,6 +50,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val paused = booleanPreferencesKey("paused")
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val keepWifiDebugging = booleanPreferencesKey("keep_wifi_debugging")
+    private val optimizeHow = stringPreferencesKey("optimize_how")
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
     private val customHue = floatPreferencesKey("custom_hue")
@@ -62,6 +67,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             paused = p[paused] ?: d.paused,
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
             keepWifiDebugging = p[keepWifiDebugging] ?: d.keepWifiDebugging,
+            optimizeHow = p[optimizeHow]?.let { runCatching { OptimizeHow.valueOf(it) }.getOrNull() } ?: d.optimizeHow,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
             customHue = p[customHue],
@@ -83,6 +89,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[paused] = new.paused
             p[keepTrusting] = new.keepTrusting
             p[keepWifiDebugging] = new.keepWifiDebugging
+            p[optimizeHow] = new.optimizeHow.name
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset
             p[setupDone] = new.setupDone

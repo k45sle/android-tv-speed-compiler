@@ -281,14 +281,14 @@ private fun WorkingHeader(s: WorkingState, back: () -> Unit, done: FocusRequeste
             } else when (val j = s.job) {
                 is JobView.Done -> line(stringResource(if (s.verified) R.string.working_optimized_leave else R.string.working_compiled_leave), c.ok)
                 is JobView.Failed -> line(stringResource(R.string.working_failed, storedText(res, j.reason)), c.error)
-                is JobView.Waiting -> line(etaText(res, j.eta).ifEmpty { stringResource(R.string.working_waiting_turn) }, cs.onSurface)
+                is JobView.Waiting -> line(etaText(res, j.eta, app = s.label).ifEmpty { stringResource(R.string.working_waiting_turn) }, cs.onSurface)
                 JobView.CouldntStart -> line(stringResource(R.string.working_couldnt_start), c.error)
                 JobView.Starting -> line(stringResource(R.string.working_starting), cs.onSurface)
                 JobView.Running -> line(stringResource(R.string.working_optimizing_continues), cs.onSurface)
             }
             if (s.batch != null) Text(s.batch, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 1)
             // Waiting for the user to open the app has no duration to show.
-            val launchWait = (s.job as? JobView.Waiting)?.eta == Eta.WaitingForLaunch
+            val launchWait = (s.job as? JobView.Waiting)?.eta is Eta.WaitingForLaunch
             if (!launchWait) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val elapsedDesc = stringResource(R.string.working_elapsed, elapsedText(s.elapsedMillis))
                 if (s.job != JobView.CouldntStart) PixelText(

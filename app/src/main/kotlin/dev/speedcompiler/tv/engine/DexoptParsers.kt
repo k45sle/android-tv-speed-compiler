@@ -5,15 +5,28 @@ private val PACKAGE_ID = Regex("[A-Za-z0-9_.]+")
 private val HEADER = Regex("\\s*\\[([A-Za-z_][A-Za-z0-9_.]+)]\\s*")
 private val FILTER = Regex("(?:compiler[-_ ]filter|filter|status)\\s*[=:]\\s*([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
 private val RC = Regex("__rc=(\\d+)")
+private val BROADCAST_RESULT = Regex("Broadcast completed: result=(\\d+)")
 
 fun isValidPackageId(id: String) = PACKAGE_ID.matches(id)
 
 /** The only compile command this app ever sends. Throws on an invalid id or a filter other than speed-profile or speed. */
-fun compileCommand(pkg: String, filter: String = "speed-profile"): String {
+fun compileCommand(pkg: String, filter: String = "speed-profile", force: Boolean = true): String {
     require(isValidPackageId(pkg)) { "invalid package id" }
     require(filter == "speed-profile" || filter == "speed") { "invalid filter" }
-    return "cmd package compile -m $filter -f $pkg"
+    return "cmd package compile -m $filter ${if (force) "-f " else ""}$pkg"
 }
+
+/** Asks the app's androidx.profileinstaller to install the profile it ships. Throws on an invalid id. */
+fun profileInstallCommand(pkg: String): String {
+    require(isValidPackageId(pkg)) { "invalid package id" }
+    return "am broadcast -a androidx.profileinstaller.action.INSTALL_PROFILE -n $pkg/androidx.profileinstaller.ProfileInstallReceiver"
+}
+
+/** The result code the broadcast ends with, or null when the output has none. */
+fun parseBroadcastResult(text: String): Int? = BROADCAST_RESULT.findAll(text).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()
+
+/** 1 means the profile was installed, 2 that one already exists; 0 means the app has no receiver. */
+fun hasProfile(text: String) = parseBroadcastResult(text).let { it == 1 || it == 2 }
 
 /** Undoes [compileCommand]: the TV goes back to its own compile choice for the app. Throws on an invalid id. */
 fun resetCommand(pkg: String): String {

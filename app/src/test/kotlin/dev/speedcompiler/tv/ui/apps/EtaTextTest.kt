@@ -31,7 +31,11 @@ class EtaTextTest {
         assertEquals("Waiting for playback to stop", text(Eta.WaitingForPlayback))
         assertEquals("Auto-optimize is off", text(Eta.Paused))
         assertEquals("Waiting for free storage", text(Eta.WaitingForStorage))
-        assertEquals("Waiting for you to open the app once", text(Eta.WaitingForLaunch))
+        assertEquals("Waiting for you to use this app for about a minute.", text(Eta.WaitingForLaunch()))
+        assertEquals(
+            "Waiting for you to use Alpha for about a minute. If you don't, it compiles fully on Sat Jan 3 02:00.",
+            etaText(res, Eta.WaitingForLaunch(Instant.parse("2026-01-03T02:00:00Z")), Instant.ofEpochMilli(now), ZoneOffset.UTC, "Alpha"),
+        )
         assertEquals("Waiting for the connection", text(Eta.WaitingForConnection))
         assertEquals("Connecting to the TV", text(Eta.Connecting))
         assertEquals("Checking the TV", text(Eta.Checking))

@@ -8,6 +8,7 @@ import dev.speedcompiler.tv.engine.NOT_ALLOWED_TAIL
 import dev.speedcompiler.tv.engine.NOT_INSTALLED
 import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.NO_PROFILE_YET
+import dev.speedcompiler.tv.engine.REFRESHED
 import dev.speedcompiler.tv.engine.NOT_PAIRED_TAIL
 import dev.speedcompiler.tv.engine.OPTIMIZED_CHECKED
 import dev.speedcompiler.tv.engine.OPTIMIZED_UNVERIFIED
@@ -84,7 +85,7 @@ fun clockText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
     stamp.format(Instant.ofEpochMilli(millis).atZone(zone))
 
 /** Never a percentage. Empty when there is nothing to say (running or finished). */
-fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String = when (eta) {
+fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault(), app: String? = null): String = when (eta) {
     Eta.None -> ""
     is Eta.StartsAt -> {
         val at = eta.at.atZone(zone)
@@ -99,7 +100,12 @@ fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId
     Eta.WaitingForPlayback -> res.getString(R.string.home_eta_waiting_playback)
     Eta.Paused -> res.getString(R.string.home_auto_off)
     Eta.WaitingForStorage -> res.getString(R.string.home_eta_waiting_storage)
-    Eta.WaitingForLaunch -> res.getString(R.string.home_eta_waiting_launch)
+    is Eta.WaitingForLaunch -> {
+        val name = app ?: res.getString(R.string.home_this_app)
+        val at = eta.fallbackAt?.atZone(zone)
+        if (at == null) res.getString(R.string.home_eta_waiting_launch_short, name)
+        else res.getString(R.string.home_eta_waiting_launch, name, "${date.format(at)} ${clock.format(at)}")
+    }
     Eta.WaitingForConnection -> res.getString(R.string.home_eta_waiting_connection)
     Eta.Connecting -> res.getString(R.string.home_connecting_to_tv)
     Eta.Checking -> res.getString(R.string.home_eta_checking)
@@ -191,6 +197,7 @@ private val StoredFixed = mapOf(
     OPTIMIZED_CHECKED to R.string.stored_optimized_checked,
     VERIFY_UNKNOWN to R.string.stored_verify_unknown,
     NO_PROFILE_YET to R.string.stored_no_profile,
+    REFRESHED to R.string.stored_refreshed,
     NOT_INSTALLED to R.string.stored_not_installed,
     DEBUG_BUILD to R.string.stored_debug_build,
 )

@@ -8,8 +8,9 @@ data class InstalledPackage(val packageName: String, val fingerprint: String)
  * [connectionLost]: the compile failed because the ADB link dropped, so the job should retry after a reconnect.
  * [noProfile]: the app has no usage profile yet (it was never launched since its last update), so speed-profile did nothing.
  * [terminal]: the failure needs the user to act, so a later automatic retry would only fail again.
+ * [refreshable]: the app's shipped profile was loaded and the compile reached speed-profile, so a later plain compile can pick up newer profile data.
  */
-data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false, val terminal: Boolean = false, val refused: Boolean = false, val noProfile: Boolean = false)
+data class OptimizeResult(val ok: Boolean, val detail: String = "", val connectionLost: Boolean = false, val terminal: Boolean = false, val refused: Boolean = false, val noProfile: Boolean = false, val refreshable: Boolean = false)
 
 enum class Wakefulness { Awake, Dozing, Asleep }
 
@@ -21,6 +22,9 @@ interface Optimizer {
 
     /** The compiler filter the TV reports for [packageName], or null when unknown. */
     suspend fun verify(packageName: String): String? = null
+
+    /** A plain, non-forced speed-profile compile: ART recompiles only if new profile data was merged. Failures are ignored. */
+    suspend fun refresh(packageName: String) {}
 
     /** Puts [packageName] back to the TV's own compile state. */
     suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, RESET_UNSUPPORTED)

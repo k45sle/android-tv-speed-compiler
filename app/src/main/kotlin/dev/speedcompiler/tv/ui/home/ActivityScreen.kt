@@ -138,7 +138,7 @@ fun ActivityContent(
         if (queue.isEmpty()) item { Text(stringResource(R.string.home_nothing_waiting), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(queue, key = { "q${it.item.id}" }) { e ->
             val l = look(e.item.packageName)
-            val eta = etaText(res, e.eta, now, zone)
+            val eta = etaText(res, e.eta, now, zone, l.label)
             val rowDesc = stringResource(R.string.activity_row_desc, l.label, stateText(res, e.state))
             val cancelDesc = stringResource(R.string.activity_cancel_app, l.label)
             ListRow(

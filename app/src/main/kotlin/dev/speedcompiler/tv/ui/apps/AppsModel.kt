@@ -26,6 +26,7 @@ import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.Scheduler
 import dev.speedcompiler.tv.watch.WatchedApp
+import dev.speedcompiler.tv.watch.dropRefresh
 import java.time.Instant
 import dev.speedcompiler.tv.ui.home.JobResult
 import dev.speedcompiler.tv.ui.home.etaText
@@ -120,7 +121,7 @@ fun rememberAppsDeps(): AppsDeps {
             watched = dao.all(),
             musicActive = { context.getSystemService(AudioManager::class.java).isMusicActive },
             setAutoOptimize = dao::setAutoOptimize,
-            reset = { graph.optimizer.reset(it) },
+            reset = { pkg -> graph.optimizer.reset(pkg).also { if (it.ok) dropRefresh(graph, pkg) } },
             resets = graph.database.events().resets(),
         )
     }

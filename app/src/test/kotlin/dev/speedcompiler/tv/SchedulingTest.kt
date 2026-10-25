@@ -30,6 +30,8 @@ import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WorkScheduler
+import dev.speedcompiler.tv.watch.freeBytes
+import dev.speedcompiler.tv.watch.refreshDue
 import dev.speedcompiler.tv.watch.restartOpenedGates
 import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
@@ -89,6 +91,7 @@ class SchedulingTest {
         g.optimizer = optimizer
         g.gate = gate
         g.scheduler = WorkScheduler(ctx, g)
+        freeBytes = { 10L shl 30 }
     }
 
     @After fun tearDown() = g.database.close()
@@ -492,16 +495,103 @@ class SchedulingTest {
         assertEquals(listOf("speed-profile", "speed-profile"), optimizer.usedFilters)
     }
 
-    @Test fun afterSevenDaysNoProfileCompilesWithSpeed() = runBlocking {
+    @Test fun afterTwoDaysNoProfileCompilesWithSpeed() = runBlocking {
         val id = waitForLaunch()
-        (g.clock as FakeClock).now += 7 * 24 * 60 * 60 * 1000L
+        (g.clock as FakeClock).now += 2 * 24 * 60 * 60 * 1000L
         runRefusedRetry(id)
         await("done") { state(1) == QueueState.DONE }
         assertEquals(listOf("speed-profile", "speed-profile", "speed"), optimizer.usedFilters)
         assertEquals("", g.database.syncState().get("noprofile:a"))
     }
 
-    @Test fun aNewFingerprintRestartsTheSevenDayClock() = runBlocking {
+    @Test fun lowFreeSpaceKeepsWaitingPastTwoDays() = runBlocking {
+        val id = waitForLaunch()
+        freeBytes = { 500L shl 20 }
+        (g.clock as FakeClock).now += 3 * 24 * 60 * 60 * 1000L
+        runRefusedRetry(id)
+        await("second try") { optimizer.usedFilters.size == 2 }
+        await("waiting again") { state(1) == QueueState.WAITING_GATE && wm.getWorkInfosForUniqueWork("launch:1").get().any { !it.state.isFinished } }
+        assertEquals(listOf("speed-profile", "speed-profile"), optimizer.usedFilters)
+        assertEquals(dev.speedcompiler.tv.engine.NO_PROFILE_YET, g.database.queue().get(1)!!.failureReason)
+    }
+
+    @Test fun fullCompileSkipsTheProfileStepsAndCompilesSpeed() = runBlocking {
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("speed"), optimizer.usedFilters)
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
+    }
+
+    @Test fun refreshStopsInFullModeWithAutoOffAfterResetAndUnwatch() = runBlocking {
+        val day = 24 * 60 * 60 * 1000L
+        val sync = g.database.syncState()
+        val fp = system.apps.getValue("a")
+        fun record() = runBlocking { sync.put(dev.speedcompiler.tv.watch.SyncState("refresh:a", "$fp|0|0")) }
+        record()
+        (g.clock as FakeClock).now = day
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed) // Full compile: no refreshes
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
+        g.database.watchedApps().upsert(WatchedApp("a", fp, autoOptimize = false))
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed) // auto-optimize off (or not watched): the record is dropped
+        assertEquals("", sync.get("refresh:a"))
+        g.database.watchedApps().setAutoOptimize("a", true)
+        record()
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        dev.speedcompiler.tv.watch.dropRefresh(g, "a") // as after a Reset
+        (g.clock as FakeClock).now = 2 * day
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        record()
+        g.scheduler.unwatch("a")
+        assertEquals("", sync.get("refresh:a"))
+    }
+
+    @Test fun refreshRule() {
+        val day = 24 * 60 * 60 * 1000L
+        assertTrue(refreshDue("1|0|0", "1", day))
+        assertFalse(refreshDue("1|0|0", "1", day - 1)) // refreshed less than 24 h ago
+        assertFalse(refreshDue("1|0|day", "1", day)) // unreadable
+        assertFalse(refreshDue("1|0|0", "2", day)) // the app was updated
+        assertFalse(refreshDue("1|0|0", "1", 7 * day)) // past the 7 days
+        assertFalse(refreshDue("1|0|${6 * day}", "1", 7 * day - 1)) // last refresh too recent
+        assertTrue(refreshDue("1|0|${5 * day}", "1", 6 * day + 1))
+        assertFalse(refreshDue("", "1", day))
+    }
+
+    @Test fun aRefreshableCompileIsRefreshedWhenTheGateIsOpenAndDue() = runBlocking {
+        val day = 24 * 60 * 60 * 1000L
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true, refreshable = true)
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals("1|1000|1000", g.database.syncState().get("refresh:a"))
+        restartOpenedGates(g) // not due yet
+        assertTrue(optimizer.refreshed.isEmpty())
+        (g.clock as FakeClock).now += day
+        gate.status = GateStatus.WaitingForIdle
+        restartOpenedGates(g)
+        assertTrue(optimizer.refreshed.isEmpty())
+        gate.status = GateStatus.Open
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        assertEquals("1|1000|${1000 + day}", g.database.syncState().get("refresh:a"))
+        restartOpenedGates(g)
+        assertEquals(1, optimizer.refreshed.size)
+        system.apps["a"] = "2" // updated: the record is dropped
+        (g.clock as FakeClock).now += day
+        restartOpenedGates(g)
+        assertEquals(1, optimizer.refreshed.size)
+        assertEquals("", g.database.syncState().get("refresh:a"))
+    }
+
+    @Test fun aNewFingerprintRestartsTheTwoDayClock() = runBlocking {
         val id = waitForLaunch()
         (g.clock as FakeClock).now += 8 * 24 * 60 * 60 * 1000L
         g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("noprofile:a", "old|0"))
@@ -528,7 +618,7 @@ class SchedulingTest {
         assertEquals(QueueState.SKIPPED, state(1))
     }
 
-    @Test fun optimizeNowOnAWaitingRowKeepsTheSevenDayClock() = runBlocking {
+    @Test fun optimizeNowOnAWaitingRowKeepsTheTwoDayClock() = runBlocking {
         waitForLaunch()
         (g.clock as FakeClock).now += 60_000
         optimizeNow("a")
