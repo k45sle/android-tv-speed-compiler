@@ -515,6 +515,19 @@ class SchedulingTest {
         assertEquals(dev.speedcompiler.tv.engine.NO_PROFILE_YET, g.database.queue().get(1)!!.failureReason)
     }
 
+    @Test fun smootherModeCompilesThatAppWithSpeedAndStopsItsRefreshes() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1", useSpeed = true))
+        g.database.syncState().put(dev.speedcompiler.tv.watch.SyncState("refresh:a", "1|0|0"))
+        (g.clock as FakeClock).now = 24 * 60 * 60 * 1000L
+        restartOpenedGates(g)
+        assertTrue(optimizer.refreshed.isEmpty())
+        assertEquals("", g.database.syncState().get("refresh:a"))
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("speed"), optimizer.usedFilters)
+    }
+
     @Test fun fullCompileSkipsTheProfileStepsAndCompilesSpeed() = runBlocking {
         g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
         g.scheduler.enqueue("a")

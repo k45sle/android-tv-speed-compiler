@@ -67,6 +67,8 @@ class AppsDeps(
     val frameStats: Flow<List<FrameStat>> = flowOf(emptyList()),
     /** Smoother mode: compile this package with `speed` from now on. */
     val setSmoother: suspend (String) -> Unit = {},
+    /** The installed app's fingerprint now, which changes on an update before any recompile. */
+    val fingerprint: (String) -> String? = { null },
 )
 
 /** The app's status word: live queue state first, then the stored result; a finished job with no stored result counts as Compiled. */
@@ -129,7 +131,8 @@ fun rememberAppsDeps(): AppsDeps {
             reset = { pkg -> graph.optimizer.reset(pkg).also { if (it.ok) dropRefresh(graph, pkg) } },
             resets = graph.database.events().resets(),
             frameStats = graph.database.frameStats().all(),
-            setSmoother = dao::setUseSpeed,
+            setSmoother = { dao.setUseSpeed(it); dropRefresh(graph, it) },
+            fingerprint = graph.packageSystem::fingerprint,
         )
     }
 }

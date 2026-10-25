@@ -83,6 +83,18 @@ class AdviceTest : ComposeTestBase() {
         assertEquals(1, smoother)
     }
 
+    @Test fun focusMovesToOptimizeNowWhenTheSmootherButtonGoes() {
+        val w = androidx.compose.runtime.mutableStateOf(ok)
+        val stats = listOf(stat("speed-profile", 5000, 40))
+        rule.setContent {
+            SpeedTheme { AppDetailContent(app, w.value, ok.lastOptimizedAt, null, 10, ZoneOffset.UTC, {}, {}, {}, stats = stats, onSmoother = { w.value = w.value.copy(useSpeed = true) }) }
+        }
+        rule.onNodeWithText("Smoother mode", ignoreCase = true).requestFocus().performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        noSmootherButton()
+        rule.onNodeWithText("Optimize now", ignoreCase = true).assertIsFocused()
+    }
+
     @Test fun detailSaysSlowByItself() {
         show(stats = listOf(stat("speed-profile", 5000, 40), stat("speed", 5000, 38)))
         rule.onNodeWithText("Slow by itself. Compiling can't fix it.").assertExists()

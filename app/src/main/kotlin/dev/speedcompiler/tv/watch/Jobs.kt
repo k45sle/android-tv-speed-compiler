@@ -146,7 +146,7 @@ private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
             val fingerprint = g.packageSystem.fingerprint(pkg)
             val p = value.split('|')
             val expired = fingerprint == null || p[0] != fingerprint || now - (p.getOrNull(1)?.toLongOrNull() ?: 0) >= REFRESH_WINDOW_MILLIS ||
-                g.database.watchedApps().get(pkg)?.autoOptimize != true
+                g.database.watchedApps().get(pkg).let { it?.autoOptimize != true || it.useSpeed }
             if (expired) { sync.put(SyncState(r.key, "")); continue }
             if (pkg !in installed || !refreshDue(r.value, fingerprint, now)) continue
             sync.put(SyncState(r.key, "${p[0]}|${p[1]}|$now")) // before the call, so a failure is not retried at once

@@ -26,7 +26,8 @@ fun parseGfxinfo(dumpsys: String): Pair<Long, Long>? {
 class SessionTracker {
     var lastTotal = -1L
         private set
-    private var lastJanky = 0L
+    var lastJanky = 0L
+        private set
     private var frames = 0L
     private var janky = 0L
     private var released = false
@@ -71,8 +72,8 @@ class FrameSampler(
             if (database.watchedApps().get(front)?.autoOptimize != true) return
             val (total, janky) = parseGfxinfo(shell.run("dumpsys gfxinfo $front").output) ?: return
             var s = sessions[front]
-            // A smaller total means the app restarted: a new session, with the filter read again.
-            if (s == null || total < s.tracker.lastTotal) {
+            // A smaller count means the app restarted (janky too: a new process may pass the old total between reads).
+            if (s == null || total < s.tracker.lastTotal || janky < s.tracker.lastJanky) {
                 s = Session(verify(front) ?: return, fingerprint(front) ?: return)
                 sessions[front] = s
             }

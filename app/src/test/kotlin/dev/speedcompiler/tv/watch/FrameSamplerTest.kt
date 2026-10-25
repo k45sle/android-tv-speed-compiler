@@ -67,6 +67,18 @@ class FrameSamplerTest {
         f.db.close()
     }
 
+    @Test fun aSmallerJankyCountAlsoStartsANewSession() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.sample(1_000, 500)
+        f.sample(1_700, 520)
+        // Restarted and already past the old total between two reads: only the janky count shows it.
+        f.sample(2_500, 10)
+        f.sample(3_200, 40)
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed-profile", 1_400, 50)), f.stats())
+        f.db.close()
+    }
+
     @Test fun skipsUnwatchedAutoOffAndNotReady() = runBlocking {
         val f = Fixture()
         f.sample(1_000, 0); f.sample(3_000, 0)

@@ -119,7 +119,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onOpen = launch?.let { i -> { ctx.startActivity(i) } },
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
-        stats = stats.filter { it.packageName == packageName && it.fingerprint == mine?.fingerprint },
+        stats = stats.filter { it.packageName == packageName && it.fingerprint == (deps.fingerprint(packageName) ?: mine?.fingerprint) },
         onSmoother = { scope.launch { deps.setSmoother(packageName); optimizeNow(packageName) } },
     )
     if (confirmReset) {
@@ -218,7 +218,12 @@ fun AppDetailContent(
                         ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
                         if (onOpen != null && entry?.eta is Eta.WaitingForLaunch) ArcadeButton(stringResource(R.string.detail_open, app.label), onOpen, Modifier.remembersFocus(mem, "open"))
                         ArcadeButton(stringResource(if (watched != null) R.string.apps_stop_watching else R.string.apps_watch), onToggleWatch, Modifier.remembersFocus(mem, "watch"))
-                        if (advice == Advice.TrySmoother) ArcadeButton(stringResource(R.string.advice_smoother_button), onSmoother, Modifier.remembersFocus(mem, "smoother"))
+                        if (advice == Advice.TrySmoother) ArcadeButton(
+                            stringResource(R.string.advice_smoother_button),
+                            // The button goes away once Smoother mode is on, so focus moves to Optimize now first.
+                            { mem.id.value = "optimize"; mem.pending = true; onSmoother() },
+                            Modifier.remembersFocus(mem, "smoother"),
+                        )
                         ArcadeButton(stringResource(R.string.detail_reset), onReset, Modifier.remembersFocus(mem, "reset"))
                     }
                     if (resetNote != null) Text(resetNote, style = MaterialTheme.typography.bodyMedium)
