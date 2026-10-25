@@ -18,6 +18,7 @@ import com.github.takahirom.roborazzi.RoboVideoOptions
 import com.github.takahirom.roborazzi.RoboVideoRecorderScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.input.key.Key
@@ -44,6 +45,7 @@ import dev.speedcompiler.tv.theme.SeedChoice
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.ui.apps.AppDetailContent
 import dev.speedcompiler.tv.ui.apps.AppInfo
+import dev.speedcompiler.tv.ui.apps.AppsContent
 import dev.speedcompiler.tv.ui.apps.AppsDeps
 import dev.speedcompiler.tv.ui.apps.AppsScreen
 import dev.speedcompiler.tv.ui.home.AppLook
@@ -74,6 +76,7 @@ import androidx.compose.ui.test.onNodeWithText
 import dev.speedcompiler.tv.web.PairingWebServer
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
+import dev.speedcompiler.tv.watch.FrameStat
 import dev.speedcompiler.tv.watch.FakeScheduler
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueItem
@@ -210,11 +213,20 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
     @Test fun appsDark() = shoot("apps-dark", true) { AppsScreen({}, {}, appsDeps()) }
     @Test fun appsLight() = shoot("apps-light", false) { AppsScreen({}, {}, appsDeps()) }
 
+    @Test fun appsSelectDark() = shoot("apps-select-dark", true) {
+        val watched = mapOf(NUVIO to WatchedApp(NUVIO, "1"), "com.example.podcastplayer" to WatchedApp("com.example.podcastplayer", "1"))
+        val infos = demo.mapIndexed { i, d -> AppInfo(d.pkg, d.label, "${i + 1}.${i % 3}", nowMs - (i + 1) * 9L * 24 * 60 * min, banner = { banner(d) }) }
+        AppsContent(infos, emptyMap(), watched, emptyMap(), nowMs, utc, {}, {}, {}, { _, _ -> },
+            startSelecting = true, startSelected = setOf("com.example.streambox", "com.example.retroarcade", NUVIO))
+    }
+
     @Composable private fun AppDetailShot() {
         val d = demo[2]
         AppDetailContent(
             AppInfo(d.pkg, d.label, "3.2", nowMs - 9L * 24 * 60 * min, banner = { banner(d) }),
             optimized(d.pkg, 20), nowMs - 20 * min, null, nowMs, utc, {}, {}, {},
+            // 30% slow frames on the shipped profile and nothing on full compile yet: the Try Smoother line and its button.
+            stats = listOf(FrameStat(d.pkg, "3.2", "speed-profile", 12_000, 3_600)),
         )
     }
 
@@ -268,6 +280,14 @@ class ReadmeScreenshotsTest : ComposeTestBase() {
 
     @Test fun settingsLight() = shoot("settings-light", false) {
         val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Light))
+        SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
+    }
+
+    // Scrolled to the bottom so Keep Wireless debugging on, the connection status and How to optimize show.
+    @Test fun settingsAdvancedDark() = shoot("settings-advanced-dark", true, act = {
+        rule.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 5_000f) }; rule.mainClock.advanceTimeBy(300)
+    }) {
+        val v = MutableStateFlow(SettingsValues(setupDone = true, theme = ThemeChoice.Dark))
         SettingsScreen({}, {}, SettingsDeps(v, { f -> v.value = f(v.value) }, flowOf(KeeperStatus.Connected), "1.0.0"))
     }
 

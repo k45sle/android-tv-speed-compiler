@@ -79,8 +79,12 @@ It was written with Nuvio in mind (people who sideload the GitHub build run `pm 
     <td width="50%"><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/apps-light.png"><img src="docs/media/apps-dark.png" width="100%" alt="Apps screen: a searchable list of apps with their banners, each marked Optimized or Queued"></picture><br><sub>Apps: search and pick what to watch.</sub></td>
   </tr>
   <tr>
-    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/appdetail-light.png"><img src="docs/media/appdetail-dark.png" width="100%" alt="App detail for Nuvio: optimized 20 minutes ago, with Optimize now, Stop watching and an auto-optimize switch"></picture><br><sub>App detail: optimize now, reset, or stop watching.</sub></td>
+    <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/appdetail-light.png"><img src="docs/media/appdetail-dark.png" width="100%" alt="App detail for Nuvio: optimized 20 minutes ago and still choppy, with Optimize now, Stop watching, Smoother mode and an auto-optimize switch"></picture><br><sub>App detail: how smoothly the app runs, and Smoother mode when it is still choppy.</sub></td>
     <td><picture><source media="(prefers-color-scheme: light)" srcset="docs/media/activity-light.png"><img src="docs/media/activity-dark.png" width="100%" alt="Activity screen: a queue with Cancel buttons, and a history of finished jobs, one failed with Connection lost and a Retry button"></picture><br><sub>Activity: the queue and every finished job, with the reason when one fails.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/apps-select-dark.png" width="100%" alt="Apps in select mode: three apps checked, with Watch selected, Optimize selected and Select all watched"><br><sub>Apps: pick several and watch or optimize them together.</sub></td>
+    <td><img src="docs/media/settings-advanced-dark.png" width="100%" alt="Settings: Keep Wireless debugging on, the connection status with Fix connection, and How to optimize set to Automatic"><br><sub>Settings: keep Wireless debugging on, and Automatic or Full compile.</sub></td>
   </tr>
   <tr>
     <td><img src="docs/media/help-dark.png" width="100%" alt="Help screen: a list of common setup problems, each with its fix"><br><sub>Help: the usual setup problems and their fixes.</sub></td>
@@ -124,17 +128,24 @@ These numbers come from one TV. Other TVs and apps will differ.
 
 ## What it does
 
-- Watches the apps you pick and queues a compile when one of them updates.
-- Waits until nothing is playing, or for a time window you set, so it doesn't slow down what you're watching.
+- Watches the apps you pick and queues a compile when one of them updates. In Apps you can pick several at once.
+- Gets most apps ready right after an update by loading the usage profile they ship with, then refreshes the compile over the next week as you use them (see [Does it help?](#does-it-help) for apps that ship none).
+- Runs jobs only when the TV is idle, when nothing is playing, or during hours you set, so it doesn't slow down what you're watching. It starts a waiting job as soon as the screen turns off or the screensaver starts.
+- Measures how smoothly each app runs while you use it, and says so on App detail. If an app is still choppy, Smoother mode compiles it fully, and Back to normal mode undoes that if it didn't help.
 - Checks once a week, and right after a system update, that each watched app is still compiled, and compiles it again if not.
+- Reset puts an app back the way the TV had it.
 - Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging back on at those moments (you can turn this off in Settings).
-- Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
+- Has an arcade with three games, Alien Run, Star Arrow and Cosmic Worm. It opens while a compile runs, and Home's Arcade button opens it at any time.
 - Keeps a history of each job, with the reason when one fails.
+- Help lists the usual setup problems, Diagnostics sends a cleaned-up log file to your phone, and Quick re-pair takes one scan if the TV forgets the app.
+- Comes in eight accent colours plus a custom one, in light or dark.
+- Keeps a small helper running in the background, with a quiet "Watching for idle time" notification. It takes about 10 MB of memory on our test TV.
 
 ## Data safety
 
 - No account, no ads, no analytics.
 - The app connects only to the TV it runs on, and to your phone on the same network when you pair or download diagnostics. Nothing is sent anywhere else unless you share a diagnostics file yourself.
+- Smoothness is measured on the TV from Android's own frame counters, only for watched apps while they are on screen, and the numbers stay on the TV.
 - The debugging key is created on the TV and stays in the app's private storage.
 - A diagnostics export holds settings, the queue, recent events and the package names of the apps involved. Addresses, codes, serial numbers and device names are removed before it is written.
 - The phone pairing page uses plain HTTP on your local network, so someone on the same Wi-Fi could in theory read the 6-digit code while you type it. The code works only for a short time. Pair on a network you trust.
@@ -159,7 +170,7 @@ apksigner verify --print-certs speed-compile.apk
 
 ## Install
 
-1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). From the first full release on, the stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK, which is handy to type into the Downloader app. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
+1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). The stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK, which is handy to type into the Downloader app. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
 2. Open the APK on the TV and allow installs from that source if asked.
 3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
 
@@ -190,6 +201,7 @@ Speed Compile needs Android TV or Google TV 11 or later, because Wireless debugg
 | Device | Android | Worked? |
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
+| Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -203,7 +215,7 @@ If you try it on a real TV or streaming box, please fill in the [Device report f
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
 **What exactly does it change on the TV?**
-For each app you pick, it runs `cmd package compile -m speed-profile -f` on that app (or `-m speed` when the app still has no usage profile a week after an install or update). Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. Nothing else.
+For each app you pick, it asks the app to install the usage profile it ships with (a broadcast to the app's own profile installer, if it has one) and then runs `cmd package compile -m speed-profile -f` on that app. It uses `-m speed` instead when you choose Smoother mode or Full compile, or when the app still has no usage profile 2 days after an install or update. Reset runs `cmd package compile -r install -f`, which puts the app back on the TV's own compile choice. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. To change those settings it grants itself Android's `WRITE_SECURE_SETTINGS` permission. It also reads some state without changing it: whether the screen is on, what is playing, which app is in front, and that app's frame counters. Nothing else.
 
 **Why does it need Developer options?**
 Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. The two settings above are on by default:

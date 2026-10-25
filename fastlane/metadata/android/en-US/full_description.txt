@@ -3,10 +3,14 @@ Android normally compiles an app bit by bit, based on how you use it. Speed Comp
 Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes a bit more storage.
 
 What it does:
-• Watches the apps you pick and queues a compile when one of them updates.
-• Waits until nothing is playing, or until a time window you set, so it doesn't slow down what you are watching.
+• Watches the apps you pick and queues a compile when one of them updates. You can pick several apps at once.
+• Gets most apps ready right after an update by loading the usage profile they ship with, then refreshes the compile over the next week as you use them.
+• Runs jobs only when the TV is idle, when nothing is playing, or during hours you set, so it doesn't slow down what you are watching.
+• Measures how smoothly each app runs while you use it. If an app is still choppy, Smoother mode compiles it fully, and Back to normal mode undoes that.
+• Checks once a week, and after a system update, that each app is still compiled.
+• Reset puts an app back the way the TV had it.
 • Reconnects by itself after the TV restarts, and turns Wireless debugging back on when it needs it (you can turn this off in Settings).
-• Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
+• Has an arcade with Alien Run, Star Arrow and Cosmic Worm, open while a compile runs or any time from Home.
 • Keeps a history of each job, with the reason when one fails.
 • Comes in light and dark themes, with eight accent colours plus a custom one.
 
@@ -14,6 +18,6 @@ Setup walks you through Developer options and Wireless debugging, then shows a Q
 
 No account, no ads, no analytics. The app connects only to the TV it runs on, and to your phone on the same network while you pair or download diagnostics. The debugging key is made on the TV and stays in the app's private storage.
 
-Needs Android TV or Google TV 11 or later. It has been tested on the Android TV emulator so far, and not yet on Fire TV.
+Needs Android TV or Google TV 11 or later. It has been tested on the Android TV emulator and on one Android 14 TV box, and not yet on Fire TV.
 
 The app's code, tests and docs were written by Claude (Anthropic's AI) in Claude Code. It is free and open source under the MIT license.
