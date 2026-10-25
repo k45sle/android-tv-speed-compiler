@@ -1,1 +1,1 @@
-First release. Pick your apps once and Speed Compile compiles them ahead of time with the speed-profile filter, then again after each update, waiting until nothing is playing. App detail says how smoothly each app runs while you use it. Includes three small games to play while a compile runs.
+First release. Pick your apps once and Speed Compile compiles them ahead of time, then again after each update, waiting until nothing is playing. App detail says how smoothly each app runs while you use it. Includes three small games to play while a compile runs.
