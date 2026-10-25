@@ -303,6 +303,7 @@
     <string name="notif_pairing_channel">Pairing</string>
     <string name="notif_pairing_title">Pairing in progress</string>
     <string name="notif_optimizing">Optimizing</string>
+    <string name="notif_watching">Watching for idle time</string>
     <string name="notif_reconnecting">Reconnecting</string>
     <string name="preset_retro">Retro</string>
     <string name="preset_retro_neon">Retro neon</string>

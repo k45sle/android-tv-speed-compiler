@@ -42,6 +42,15 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".watch.WakeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="dev.speedcompiler.tv.action.IDLE_CHECK" />
+                <action android:name="dev.speedcompiler.tv.action.SAMPLE" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".watch.PairingService"
             android:exported="false"
@@ -49,6 +58,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Local wireless ADB pairing and connection on this device" />
+        </service>
+
+        <service
+            android:name=".watch.WatchService"
+            android:exported="false"
+            android:process=":watch"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a small helper process out of the cached state so the app can start jobs when the TV screen turns off" />
         </service>
     </application>
 </manifest>
