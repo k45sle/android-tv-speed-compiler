@@ -126,7 +126,7 @@ These numbers come from one TV. Other TVs and apps will differ.
 
 - Watches the apps you pick and queues a compile when one of them updates.
 - Waits until nothing is playing, or for a time window you set, so it doesn't slow down what you're watching.
-- Checks once a week that each watched app is still compiled, and compiles it again if not.
+- Checks once a week, and right after a system update, that each watched app is still compiled, and compiles it again if not.
 - Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging back on at those moments (you can turn this off in Settings).
 - Lets you play Alien Run, Star Arrow or Cosmic Worm while a compile runs.
 - Keeps a history of each job, with the reason when one fails.
@@ -214,7 +214,7 @@ Only the debugging connection can ask Android to compile another app. Speed Comp
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
 **Does a system update undo it?**
-It can. A system update may throw away compiled code. The weekly check notices when a watched app is no longer at `speed-profile` or `speed` and queues it again. This hasn't been checked on a real TV yet.
+It can. A system update may throw away compiled code. When the TV starts up after an update, Speed Compile sees the new system version and checks every watched app right away, and queues any that are no longer at `speed-profile` or `speed`. The weekly check catches anything that slips through. App updates are a separate case: Speed Compile looks for them every 30 minutes and after each restart, and queues an updated app as soon as it finds one. The system update case hasn't been checked on a real TV yet.
 
 **Does it work on Ethernet?**
 Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.
