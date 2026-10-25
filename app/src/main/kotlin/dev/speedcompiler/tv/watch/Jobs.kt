@@ -54,7 +54,8 @@ private const val LAUNCH_RETRY_MINUTES = 60L
 private const val NO_PROFILE_FALLBACK_MILLIS = 2 * 24 * 60 * 60 * 1000L
 private const val MIN_FREE_BYTES = 1L shl 30
 private const val REFRESH_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000L
-private const val REFRESH_EVERY_MILLIS = 24 * 60 * 60 * 1000L
+// A refresh with nothing new to merge takes about a second on the test TV, so the spacing only stops bursts of screen-offs.
+private const val REFRESH_EVERY_MILLIS = 30 * 60 * 1000L
 private const val REFRESH_PREFIX = "refresh:"
 private const val MAX_CONNECTION_TRIES = 5
 private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(90)
@@ -120,7 +121,7 @@ suspend fun launchFallbackAt(g: AppGraph, pkg: String): Long? =
 
 /**
  * Whether a stored `fingerprint|firstCompile|lastRefresh` record is due: same build of the app, first compiled less than
- * 7 days ago, and not refreshed in the last 24 h.
+ * 7 days ago, and not refreshed in the last 30 min.
  */
 internal fun refreshDue(record: String, fingerprint: String, now: Long): Boolean {
     val p = record.split('|')
@@ -409,7 +410,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         // Written while the row still says RUNNING, so an enqueue cannot REPLACE this worker before it lands.
         // A targeted UPDATE, not a read-modify-write: a toggle of autoOptimize during the compile must survive.
         g.database.watchedApps().recordResult(pkg, fingerprint, result.detail, now)
-        sync.put(SyncState(REFRESH_PREFIX + pkg, if (result.ok && result.refreshable) "$fingerprint|$now|$now" else ""))
+        sync.put(SyncState(REFRESH_PREFIX + pkg, if (result.ok && result.refreshable) "$fingerprint|$now|${now - REFRESH_EVERY_MILLIS}" else ""))
         if (result.ok && pkg == applicationContext.packageName) sync.put(SyncState(KEY_SELF_COMPILED, fingerprint))
         dao.update(
             item.copy(
