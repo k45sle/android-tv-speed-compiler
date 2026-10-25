@@ -1,5 +1,6 @@
 package dev.speedcompiler.tv.watch
 
+import androidx.room.withTransaction
 import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.engine.TOP_RESUMED_COMMAND
 import dev.speedcompiler.tv.engine.topResumedPackage
@@ -23,14 +24,17 @@ fun parseGfxinfo(dumpsys: String): Pair<Long, Long>? {
  * [add] returns the frames and slow frames to store, or null while the session is under [MIN_SESSION_FRAMES]
  * (the frames seen so far are released in one go when it passes).
  */
-class SessionTracker {
-    var lastTotal = -1L
+class SessionTracker(lastTotal: Long = -1L, lastJanky: Long = 0L, frames: Long = 0L, janky: Long = 0L, released: Boolean = false) {
+    var lastTotal = lastTotal
         private set
-    var lastJanky = 0L
+    var lastJanky = lastJanky
         private set
-    private var frames = 0L
-    private var janky = 0L
-    private var released = false
+    var frames = frames
+        private set
+    var janky = janky
+        private set
+    var released = released
+        private set
 
     fun add(total: Long, jankyNow: Long): Pair<Long, Long>? {
         val seen = lastTotal >= 0
@@ -71,16 +75,24 @@ class FrameSampler(
             val database = db()
             if (database.watchedApps().get(front)?.autoOptimize != true) return
             val (total, janky) = parseGfxinfo(shell.run("dumpsys gfxinfo $front").output) ?: return
-            var s = sessions[front]
+            val dao = database.frameStats()
+            // A stored session from before an app update belongs to the old version: start fresh.
+            var s = sessions[front] ?: dao.session(front)?.takeIf { it.fingerprint == fingerprint(front) }?.let { Session(it.filter, it.fingerprint, SessionTracker(it.lastTotal, it.lastJanky, it.frames, it.janky, it.released)) }
             // A smaller count means the app restarted (janky too: a new process may pass the old total between reads).
             if (s == null || total < s.tracker.lastTotal || janky < s.tracker.lastJanky) {
                 s = Session(verify(front) ?: return, fingerprint(front) ?: return)
                 sessions[front] = s
             }
-            val (frames, slow) = s.tracker.add(total, janky) ?: return
-            val dao = database.frameStats()
-            val old = dao.get(front, s.fingerprint, s.filter)
-            dao.put(FrameStat(front, s.fingerprint, s.filter, (old?.frames ?: 0) + frames, (old?.janky ?: 0) + slow))
+            val added = s.tracker.add(total, janky)
+            // One transaction, so the stored session and the stored frames never disagree.
+            database.withTransaction {
+                if (added != null) {
+                    val old = dao.get(front, s.fingerprint, s.filter)
+                    dao.put(FrameStat(front, s.fingerprint, s.filter, (old?.frames ?: 0) + added.first, (old?.janky ?: 0) + added.second))
+                }
+                val t = s.tracker
+                dao.putSession(FrameSession(front, s.filter, s.fingerprint, t.lastTotal, t.lastJanky, t.frames, t.janky, t.released))
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

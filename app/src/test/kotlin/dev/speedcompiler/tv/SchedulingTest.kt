@@ -36,6 +36,7 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WorkScheduler
 import dev.speedcompiler.tv.watch.freeBytes
 import dev.speedcompiler.tv.watch.refreshDue
+import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.restartOpenedGates
 import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
@@ -537,6 +538,18 @@ class SchedulingTest {
         assertEquals(listOf("speed"), optimizer.usedFilters)
     }
 
+    @Test fun backToNormalModeCompilesWithTheProfileAndRecordsARefreshAgain() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true, refreshable = true)
+        g.database.watchedApps().upsert(WatchedApp("a", "1", useSpeed = true))
+        dev.speedcompiler.tv.watch.dropRefresh(g, "a")
+        g.database.watchedApps().setUseSpeed("a", false) // as the Back to normal mode button does
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("speed-profile"), optimizer.usedFilters)
+        assertTrue(g.database.syncState().get("refresh:a")!!.isNotEmpty())
+    }
+
     @Test fun fullCompileSkipsTheProfileStepsAndCompilesSpeed() = runBlocking {
         g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
         g.scheduler.enqueue("a")
@@ -594,6 +607,7 @@ class SchedulingTest {
         g.scheduler.enqueue("a")
         skipDelay("a")
         await("done") { state(1) == QueueState.DONE }
+        await("compile lock released") { !compileRunning() } // the row says DONE before the worker lets go of the lock
         assertEquals("1|1000|${1000 - 30 * 60 * 1000L}", g.database.syncState().get("refresh:a"))
         gate.status = GateStatus.WaitingForIdle
         restartOpenedGates(g)

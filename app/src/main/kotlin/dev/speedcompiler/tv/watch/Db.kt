@@ -34,6 +34,19 @@ data class FrameStat(
     val janky: Long,
 )
 
+/** The sampler's running session for one app, kept so a killed process does not lose its baseline or unreleased frames. */
+@Entity(tableName = "frame_session")
+data class FrameSession(
+    @PrimaryKey val packageName: String,
+    val filter: String,
+    val fingerprint: String,
+    val lastTotal: Long,
+    val lastJanky: Long,
+    val frames: Long,
+    val janky: Long,
+    val released: Boolean,
+)
+
 @Entity(tableName = "event")
 data class Event(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -125,8 +138,8 @@ interface WatchedAppDao {
     @Query("UPDATE watched_app SET fingerprint = :fingerprint, lastResult = :lastResult, lastOptimizedAt = :at WHERE packageName = :packageName")
     suspend fun recordResult(packageName: String, fingerprint: String, lastResult: String, at: Long)
 
-    @Query("UPDATE watched_app SET useSpeed = 1 WHERE packageName = :packageName")
-    suspend fun setUseSpeed(packageName: String)
+    @Query("UPDATE watched_app SET useSpeed = :on WHERE packageName = :packageName")
+    suspend fun setUseSpeed(packageName: String, on: Boolean = true)
 
     @Query("DELETE FROM watched_app WHERE packageName = :packageName")
     suspend fun delete(packageName: String)
@@ -142,6 +155,12 @@ interface FrameStatDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(stat: FrameStat)
+
+    @Query("SELECT * FROM frame_session WHERE packageName = :packageName")
+    suspend fun session(packageName: String): FrameSession?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putSession(session: FrameSession)
 }
 
 @Dao
@@ -172,10 +191,10 @@ interface SyncStateDao {
 }
 
 @Database(
-    entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class, FrameStat::class],
-    version = 3,
+    entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class, FrameStat::class, FrameSession::class],
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun queue(): QueueDao

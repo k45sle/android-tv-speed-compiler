@@ -79,6 +79,37 @@ class FrameSamplerTest {
         f.db.close()
     }
 
+    @Test fun aNewSamplerOnTheSameDatabaseContinuesTheSession() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.sample(1_000, 10) // baseline
+        f.sample(1_300, 40) // 300 frames, not released yet
+        // The process dies and comes back with an empty memory.
+        val again = FrameSampler(f.shell, { "other" }, { "fp1" }, { f.db }, { true })
+        f.counters = gfx(1_700, 80) // 700 frames since the baseline
+        again.tick()
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed-profile", 700, 70)), f.stats())
+        f.counters = gfx(1_800, 85)
+        again.tick() // after release, deltas only: nothing counted twice
+        assertEquals(800L to 75L, f.stats().single().let { it.frames to it.janky })
+        f.db.close()
+    }
+
+    @Test fun aStoredSessionFromAnOlderVersionIsDropped() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.sample(1_000, 10)
+        f.sample(1_300, 40)
+        // The app updated while the process was dead: its counts start a new session as a baseline.
+        val again = FrameSampler(f.shell, { "speed-profile" }, { "fp2" }, { f.db }, { true })
+        f.counters = gfx(1_700, 80)
+        again.tick()
+        f.counters = gfx(2_200, 90)
+        again.tick()
+        assertEquals(emptyList<FrameStat>(), f.stats())
+        f.db.close()
+    }
+
     @Test fun skipsUnwatchedAutoOffAndNotReady() = runBlocking {
         val f = Fixture()
         f.sample(1_000, 0); f.sample(3_000, 0)
@@ -109,6 +140,8 @@ class FrameSamplerTest {
         assertEquals(false, app.useSpeed)
         db.frameStats().put(FrameStat("a.app", "fp1", "speed", 1, 0))
         assertEquals(1, db.frameStats().all().first().size)
+        db.frameStats().putSession(FrameSession("a.app", "speed", "fp1", 5, 1, 2, 0, false)) // the version 4 table
+        assertEquals(5L, db.frameStats().session("a.app")!!.lastTotal)
         db.close()
     }
 }

@@ -40,15 +40,21 @@ class AdviceTest : ComposeTestBase() {
         // Nuvio-like: verify 60, speed-profile 32.
         val nuvio = listOf(stat("verify", 4000, 60), stat("speed-profile", 4000, 32))
         assertEquals(Advice.TrySmoother, advice(nuvio))
-        assertEquals(null, advice(nuvio, on = true))
+        assertEquals(Advice.Measuring, advice(nuvio, on = true)) // speed has no frames yet
         assertEquals(Advice.SlowByItself, advice(nuvio + stat("speed", 4000, 29))) // speed helps by 3 points
         assertEquals(null, advice(nuvio + stat("speed", 4000, 20))) // speed helped by 12 points
     }
 
-    @Test fun notEnoughDataAndInBetweenGiveNoLine() {
-        assertEquals(null, advice(listOf(stat("speed-profile", 2999, 90))))
-        assertEquals(null, advice(listOf(stat("speed-profile", 4000, 20))))
-        assertEquals(null, advice())
+    @Test fun measuringUntilTheCurrentFilterHasEnoughFrames() {
+        assertEquals(Advice.Measuring, advice(listOf(stat("speed-profile", 2999, 90))))
+        assertEquals(Advice.Measuring, advice())
+        assertEquals(Advice.Measuring, advice(listOf(stat("speed-profile", 5000, 20), stat("speed", 2999, 20)), on = true))
+    }
+
+    @Test fun mostlySmoothInTheMiddleBandOfTheCurrentFilter() {
+        assertEquals(Advice.MostlySmooth(20), advice(listOf(stat("speed-profile", 4000, 20))))
+        assertEquals(Advice.MostlySmooth(20), advice(listOf(stat("speed-profile", 4000, 30), stat("speed", 4000, 20)), on = true))
+        assertEquals(null, advice(listOf(stat("speed-profile", 4000, 40), stat("speed", 4000, 20)))) // speed helped, but profile is still the filter in use
     }
 
     @Test fun framesAddUpAcrossRowsOfOneFilter() {
@@ -105,6 +111,32 @@ class AdviceTest : ComposeTestBase() {
         val run = QueueItem(1, "a.app", QueueSource.AUTO, QueueState.FAILED, enqueuedAt = 1, finishedAt = 2, failureReason = DEBUG_BUILD)
         show(w = WatchedApp("a.app", "f"), runs = listOf(run))
         rule.onNodeWithText("Can't be optimized (debug build).").assertExists()
+    }
+
+    @Test fun detailShowsMeasuringAndMostlySmooth() {
+        show()
+        rule.onNodeWithText("Checking how smoothly it runs. Use it a little longer.").assertExists()
+    }
+
+    @Test fun detailShowsThePercentOnTheMostlySmoothLine() {
+        show(stats = listOf(stat("speed-profile", 4000, 20)))
+        rule.onNodeWithText("Mostly smooth, with some stutter (20% of frames).").assertExists()
+    }
+
+    @Test fun slowByItselfInSmootherModeOffersBackToNormalAndFocusMoves() {
+        val w = androidx.compose.runtime.mutableStateOf(ok.copy(useSpeed = true))
+        val stats = listOf(stat("speed-profile", 5000, 40), stat("speed", 5000, 38))
+        var calls = emptyList<Boolean>()
+        rule.setContent {
+            SpeedTheme { AppDetailContent(app, w.value, ok.lastOptimizedAt, null, 10, ZoneOffset.UTC, {}, {}, {}, stats = stats, onSmoother = { calls = calls + it; w.value = w.value.copy(useSpeed = false) }) }
+        }
+        rule.onNodeWithText("Slow by itself. Compiling can't fix it. Smoother mode didn't help; switching back saves storage and starts faster.").assertExists()
+        rule.onNodeWithText("Back to normal mode", ignoreCase = true).requestFocus().performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitForIdle()
+        assertEquals(listOf(false), calls)
+        rule.onAllNodesWithText("Back to normal mode", ignoreCase = true).assertCountEquals(0)
+        rule.onNodeWithText("Optimize now", ignoreCase = true).assertIsFocused()
+        rule.onNodeWithText("Slow by itself. Compiling can't fix it.").assertExists() // plain line, no button
     }
 
     @Test fun noLineWithoutEnoughData() {

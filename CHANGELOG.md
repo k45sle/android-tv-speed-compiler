@@ -15,7 +15,8 @@ This will be the first full release. The main differences from the test build:
 - Apps are prepared in a lighter way that covers the parts you actually use. On our test TV, apps started faster this way and took half the storage or less.
 - Automatic mode: Speed Compile loads the profile an app ships with, so most apps are ready right after an update, and quietly refreshes them for a week. Apps without one wait for you to use them for about a minute, and are fully compiled after 2 days if you don't. App detail has an Open button for that. Under Advanced in Settings, "How to optimize" can be switched to Full compile for every app.
 - Speed Compile prepares its own code too.
-- App detail now says whether an app runs smoothly, measured while you use it. If an app is still choppy, a Smoother mode button compiles it more fully.
+- App detail now says whether an app runs smoothly, measured while you use it. If an app is still choppy, a Smoother mode button compiles it more fully. It also says "Checking how smoothly it runs" while it has too little to go on, and "Mostly smooth" with the share of stuttering frames when an app is in between. If Smoother mode doesn't help an app, a Back to normal mode button undoes it.
+- Smoothness measuring no longer loses its place when Android stops Speed Compile in the background.
 - A new setting, "Keep Wireless debugging on", lets you choose whether Speed Compile turns Wireless debugging back on by itself when it gets switched off.
 - Each download comes with a file you can use to check it is the real one. The README explains how under "Checking a download".
 - Many smaller fixes from testing on a real TV.

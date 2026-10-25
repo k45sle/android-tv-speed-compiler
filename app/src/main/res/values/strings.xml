@@ -365,4 +365,8 @@
     <string name="advice_try_smoother">Still choppy. Try Smoother mode.</string>
     <string name="advice_slow_by_itself">Slow by itself. Compiling can\'t fix it.</string>
     <string name="advice_smoother_button">Smoother mode</string>
+    <string name="advice_measuring">Checking how smoothly it runs. Use it a little longer.</string>
+    <string name="advice_mostly_smooth">Mostly smooth, with some stutter (%1$d%% of frames).</string>
+    <string name="advice_slow_by_itself_smoother">Slow by itself. Compiling can\'t fix it. Smoother mode didn\'t help; switching back saves storage and starts faster.</string>
+    <string name="advice_normal_button">Back to normal mode</string>
 </resources>
