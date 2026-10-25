@@ -524,6 +524,34 @@ class SchedulingTest {
         g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
     }
 
+    @Test fun refreshStopsInFullModeWithAutoOffAfterResetAndUnwatch() = runBlocking {
+        val day = 24 * 60 * 60 * 1000L
+        val sync = g.database.syncState()
+        val fp = system.apps.getValue("a")
+        fun record() = runBlocking { sync.put(dev.speedcompiler.tv.watch.SyncState("refresh:a", "$fp|0|0")) }
+        record()
+        (g.clock as FakeClock).now = day
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed) // Full compile: no refreshes
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
+        g.database.watchedApps().upsert(WatchedApp("a", fp, autoOptimize = false))
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed) // auto-optimize off: the record is dropped
+        assertEquals("", sync.get("refresh:a"))
+        g.database.watchedApps().setAutoOptimize("a", true)
+        record()
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        dev.speedcompiler.tv.watch.dropRefresh(g, "a") // as after a Reset
+        (g.clock as FakeClock).now = 2 * day
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        record()
+        g.scheduler.unwatch("a")
+        assertEquals("", sync.get("refresh:a"))
+    }
+
     @Test fun refreshRule() {
         val day = 24 * 60 * 60 * 1000L
         assertTrue(refreshDue("1|0|0", "1", day))

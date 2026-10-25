@@ -339,7 +339,8 @@
     <string name="stored_finish_not_speed">Didn\'t finish: the TV only partly optimized this app. Try again when the TV is idle.</string>
     <string name="stored_finish_unexpected">Didn\'t finish: something went wrong. Try again from the app.</string>
     <string name="stored_optimized_unverified">Optimized (this TV doesn\'t report the result)</string>
-    <string name="stored_no_profile">Waiting for the app\'s first launch. Open the app once and this finishes on its own.</string>
+    <string name="stored_no_profile">Waiting for you to use the app for about a minute. This finishes on its own afterwards.</string>
+    <string name="stored_refreshed">Asked the TV to refresh this app\'s compiled code.</string>
     <string name="stored_optimized_checked">Optimized (checked)</string>
     <string name="stored_verify_unknown">The TV did not report the result for this app.</string>
     <string name="stored_not_installed">Not installed</string>

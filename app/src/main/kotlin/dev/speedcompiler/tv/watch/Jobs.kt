@@ -132,15 +132,18 @@ internal fun refreshDue(record: String, fingerprint: String, now: Long): Boolean
 /** While the gate is open, re-runs a plain speed-profile compile for apps compiled from their shipped profile in the last 7 days. */
 private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
     val sync = g.database.syncState()
-    val records = sync.withPrefix(REFRESH_PREFIX).filter { it.value.isNotEmpty() }
-    if (records.isEmpty() || g.gate.status() != GateStatus.Open || !runLock.tryLock()) return
+    if (sync.withPrefix(REFRESH_PREFIX).none { it.value.isNotEmpty() } || g.gate.status() != GateStatus.Open || !runLock.tryLock()) return
     try {
+        if (g.settings.values.first().optimizeHow == OptimizeHow.Full) return
+        // Read again under the lock: a compile that finished meanwhile may have written a fresh record.
+        val records = sync.withPrefix(REFRESH_PREFIX).filter { it.value.isNotEmpty() }
         val now = g.clock.nowMillis()
         for (r in records) {
             val pkg = r.key.removePrefix(REFRESH_PREFIX)
             val fingerprint = g.packageSystem.fingerprint(pkg)
             val p = r.value.split('|')
-            val expired = fingerprint == null || p[0] != fingerprint || now - (p.getOrNull(1)?.toLongOrNull() ?: 0) >= REFRESH_WINDOW_MILLIS
+            val expired = fingerprint == null || p[0] != fingerprint || now - (p.getOrNull(1)?.toLongOrNull() ?: 0) >= REFRESH_WINDOW_MILLIS ||
+                g.database.watchedApps().get(pkg)?.autoOptimize == false
             if (expired) { sync.put(SyncState(r.key, "")); continue }
             if (pkg !in installed || !refreshDue(r.value, fingerprint, now)) continue
             sync.put(SyncState(r.key, "${p[0]}|${p[1]}|$now")) // before the call, so a failure is not retried at once
@@ -156,6 +159,9 @@ private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
         runLock.unlock()
     }
 }
+
+/** Stops the after-use refreshes, as after a Reset. */
+suspend fun dropRefresh(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState(REFRESH_PREFIX + packageName, ""))
 
 /**
  * Runs rows whose gate opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.

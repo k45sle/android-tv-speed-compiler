@@ -100,6 +100,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
     override suspend fun unwatch(packageName: String): Unit = lock.withLock {
         graph.database.watchedApps().delete(packageName)
         resetConnectionTries(graph, packageName)
+        dropRefresh(graph, packageName)
         queueDao.activeFor(packageName)?.let { doCancel(it.id) } ?: Unit
     }
 
