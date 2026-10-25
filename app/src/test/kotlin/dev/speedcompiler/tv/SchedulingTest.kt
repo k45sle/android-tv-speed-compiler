@@ -537,7 +537,7 @@ class SchedulingTest {
         g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
         g.database.watchedApps().upsert(WatchedApp("a", fp, autoOptimize = false))
         restartOpenedGates(g)
-        assertEquals(emptyList<String>(), optimizer.refreshed) // auto-optimize off: the record is dropped
+        assertEquals(emptyList<String>(), optimizer.refreshed) // auto-optimize off (or not watched): the record is dropped
         assertEquals("", sync.get("refresh:a"))
         g.database.watchedApps().setAutoOptimize("a", true)
         record()
@@ -567,6 +567,7 @@ class SchedulingTest {
     @Test fun aRefreshableCompileIsRefreshedWhenTheGateIsOpenAndDue() = runBlocking {
         val day = 24 * 60 * 60 * 1000L
         optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true, refreshable = true)
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
         g.scheduler.enqueue("a")
         skipDelay("a")
         await("done") { state(1) == QueueState.DONE }
