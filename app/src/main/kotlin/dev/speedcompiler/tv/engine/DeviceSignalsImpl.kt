@@ -11,8 +11,9 @@ private val wakefulnessLine = Regex("""(?m)^\s*mWakefulness=(\w+)\s*$""")
 private val topResumedLine = Regex("""topResumedActivity=ActivityRecord\{\S+ u\d+ ([\w.]+)/""")
 
 // First line: the screensaver setting; then the top resumed activity line(s).
+internal const val TOP_RESUMED_COMMAND = "dumpsys activity activities | grep topResumedActivity="
 internal const val SCREENSAVER_FRONT_COMMAND =
-    "settings get secure screensaver_components; dumpsys activity activities | grep topResumedActivity="
+    "settings get secure screensaver_components; $TOP_RESUMED_COMMAND"
 
 /**
  * Reads the single top-level `mWakefulness=` line from `dumpsys power`.
@@ -31,6 +32,9 @@ fun parseWakefulness(dumpsys: String): Wakefulness? =
         .toSet()
         .singleOrNull()
 
+/** The package of the first `topResumedActivity=` line, or null. */
+fun topResumedPackage(lines: List<String>): String? = lines.firstNotNullOfOrNull { topResumedLine.find(it)?.groupValues?.get(1) }
+
 /**
  * True when the top resumed activity belongs to a package listed in `screensaver_components`.
  * Some launchers start the screensaver as a normal activity with a bright wake lock, so Android stays Awake.
@@ -41,7 +45,7 @@ fun parseScreensaverInFront(output: String): Boolean {
         .map { it.trim().substringBefore('/') }
         .filter { it.isNotEmpty() && it != "null" }
         .toSet()
-    val top = lines.drop(1).firstNotNullOfOrNull { topResumedLine.find(it)?.groupValues?.get(1) }
+    val top = topResumedPackage(lines.drop(1))
     return top != null && top in packages
 }
 

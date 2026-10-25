@@ -1,0 +1,232 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "6820d35113e401192420f7ccab30496a",
+    "entities": [
+      {
+        "tableName": "watched_app",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `autoOptimize` INTEGER NOT NULL, `lastResult` TEXT, `lastOptimizedAt` INTEGER, `useSpeed` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "autoOptimize",
+            "columnName": "autoOptimize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastResult",
+            "columnName": "lastResult",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastOptimizedAt",
+            "columnName": "lastOptimizedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "useSpeed",
+            "columnName": "useSpeed",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packageName"
+          ]
+        }
+      },
+      {
+        "tableName": "event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timeMillis` INTEGER NOT NULL, `packageName` TEXT, `kind` TEXT NOT NULL, `message` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeMillis",
+            "columnName": "timeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "message",
+            "columnName": "message",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      },
+      {
+        "tableName": "queue_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `packageName` TEXT NOT NULL, `source` TEXT NOT NULL, `state` TEXT NOT NULL, `enqueuedAt` INTEGER NOT NULL, `startedAt` INTEGER, `finishedAt` INTEGER, `failureReason` TEXT, `runNow` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enqueuedAt",
+            "columnName": "enqueuedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finishedAt",
+            "columnName": "finishedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "failureReason",
+            "columnName": "failureReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "runNow",
+            "columnName": "runNow",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "frame_stat",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, PRIMARY KEY(`packageName`, `fingerprint`, `filter`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filter",
+            "columnName": "filter",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "frames",
+            "columnName": "frames",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "janky",
+            "columnName": "janky",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packageName",
+            "fingerprint",
+            "filter"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6820d35113e401192420f7ccab30496a')"
+    ]
+  }
+}

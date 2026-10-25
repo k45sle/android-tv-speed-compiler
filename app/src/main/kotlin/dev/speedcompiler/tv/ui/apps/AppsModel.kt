@@ -22,6 +22,7 @@ import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
+import dev.speedcompiler.tv.watch.FrameStat
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.Scheduler
@@ -62,6 +63,12 @@ class AppsDeps(
     val reset: suspend (String) -> OptimizeResult = { OptimizeResult(false, RESET_UNSUPPORTED) },
     /** Successful resets, so a reset app no longer reads as compiled. */
     val resets: Flow<List<Event>> = flowOf(emptyList()),
+    /** Measured smoothness for every watched app. */
+    val frameStats: Flow<List<FrameStat>> = flowOf(emptyList()),
+    /** Smoother mode: compile this package with `speed` from now on. */
+    val setSmoother: suspend (String) -> Unit = {},
+    /** The installed app's fingerprint now, which changes on an update before any recompile. */
+    val fingerprint: (String) -> String? = { null },
 )
 
 /** The app's status word: live queue state first, then the stored result; a finished job with no stored result counts as Compiled. */
@@ -123,6 +130,9 @@ fun rememberAppsDeps(): AppsDeps {
             setAutoOptimize = dao::setAutoOptimize,
             reset = { pkg -> graph.optimizer.reset(pkg).also { if (it.ok) dropRefresh(graph, pkg) } },
             resets = graph.database.events().resets(),
+            frameStats = graph.database.frameStats().all(),
+            setSmoother = { dao.setUseSpeed(it); dropRefresh(graph, it) },
+            fingerprint = graph.packageSystem::fingerprint,
         )
     }
 }

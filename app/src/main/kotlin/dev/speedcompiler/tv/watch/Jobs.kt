@@ -146,7 +146,7 @@ private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
             val fingerprint = g.packageSystem.fingerprint(pkg)
             val p = value.split('|')
             val expired = fingerprint == null || p[0] != fingerprint || now - (p.getOrNull(1)?.toLongOrNull() ?: 0) >= REFRESH_WINDOW_MILLIS ||
-                g.database.watchedApps().get(pkg)?.autoOptimize != true
+                g.database.watchedApps().get(pkg).let { it?.autoOptimize != true || it.useSpeed }
             if (expired) { sync.put(SyncState(r.key, "")); continue }
             if (pkg !in installed || !refreshDue(r.value, fingerprint, now)) continue
             sync.put(SyncState(r.key, "${p[0]}|${p[1]}|$now")) // before the call, so a failure is not retried at once
@@ -300,6 +300,9 @@ class RetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
 }
 
 private val runLock = Mutex()
+
+/** True while a compile or refresh holds the lock; the frame sampler stays off the ADB link then. */
+internal fun compileRunning() = runLock.isLocked
 @VisibleForTesting internal val runNowWaiting = AtomicInteger(0)
 
 /** Runs one queue item: waits for the gate unless the user said "now", then compiles. One compile at a time. */
@@ -361,7 +364,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             }
         }
         dao.update(item.copy(state = QueueState.RUNNING, startedAt = g.clock.nowMillis(), failureReason = null))
-        val full = g.settings.values.first().optimizeHow == OptimizeHow.Full
+        val full = g.settings.values.first().optimizeHow == OptimizeHow.Full || g.database.watchedApps().get(pkg)?.useSpeed == true
         var result = if (full) g.optimizer.optimize(pkg, "speed") else g.optimizer.optimize(pkg)
         val sync = g.database.syncState()
         if (result.noProfile) {

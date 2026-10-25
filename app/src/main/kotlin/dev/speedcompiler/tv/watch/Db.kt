@@ -1,6 +1,7 @@
 package dev.speedcompiler.tv.watch
 
 import androidx.room.AutoMigration
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -19,6 +20,18 @@ data class WatchedApp(
     val autoOptimize: Boolean = true,
     val lastResult: String? = null,
     val lastOptimizedAt: Long? = null,
+    /** Compile this app with `speed` (Smoother mode), now and after its updates. */
+    @ColumnInfo(defaultValue = "0") val useSpeed: Boolean = false,
+)
+
+/** Frames drawn and slow frames counted while [packageName] was in front, per app version and compiler filter. */
+@Entity(tableName = "frame_stat", primaryKeys = ["packageName", "fingerprint", "filter"])
+data class FrameStat(
+    val packageName: String,
+    val fingerprint: String,
+    val filter: String,
+    val frames: Long,
+    val janky: Long,
 )
 
 @Entity(tableName = "event")
@@ -112,8 +125,23 @@ interface WatchedAppDao {
     @Query("UPDATE watched_app SET fingerprint = :fingerprint, lastResult = :lastResult, lastOptimizedAt = :at WHERE packageName = :packageName")
     suspend fun recordResult(packageName: String, fingerprint: String, lastResult: String, at: Long)
 
+    @Query("UPDATE watched_app SET useSpeed = 1 WHERE packageName = :packageName")
+    suspend fun setUseSpeed(packageName: String)
+
     @Query("DELETE FROM watched_app WHERE packageName = :packageName")
     suspend fun delete(packageName: String)
+}
+
+@Dao
+interface FrameStatDao {
+    @Query("SELECT * FROM frame_stat")
+    fun all(): Flow<List<FrameStat>>
+
+    @Query("SELECT * FROM frame_stat WHERE packageName = :packageName AND fingerprint = :fingerprint AND filter = :filter")
+    suspend fun get(packageName: String, fingerprint: String, filter: String): FrameStat?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(stat: FrameStat)
 }
 
 @Dao
@@ -144,14 +172,15 @@ interface SyncStateDao {
 }
 
 @Database(
-    entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class],
-    version = 2,
+    entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class, FrameStat::class],
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun queue(): QueueDao
     abstract fun watchedApps(): WatchedAppDao
     abstract fun events(): EventDao
     abstract fun syncState(): SyncStateDao
+    abstract fun frameStats(): FrameStatDao
 }
