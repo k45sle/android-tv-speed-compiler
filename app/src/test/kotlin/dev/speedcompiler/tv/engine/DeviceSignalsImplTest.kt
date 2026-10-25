@@ -61,4 +61,33 @@ class DeviceSignalsImplTest {
         }
         assertNull(DeviceSignalsImpl(throwing, { false }).wakefulness())
     }
+
+    // Synthetic, shaped like Android 14 output.
+    private fun front(components: String, top: String) =
+        "$components\n  topResumedActivity=ActivityRecord{1a2b3c u0 $top t42}"
+
+    @Test
+    fun screensaverInFrontMatchesTheTopPackageAgainstTheSetting() {
+        val aerial = "com.neilturner.aerialviews/.ui.screensaver.DreamActivity"
+        assertEquals(true, parseScreensaverInFront(front(aerial, "com.neilturner.aerialviews/.ui.screensaver.TestActivity")))
+        assertEquals(true, parseScreensaverInFront(front("a.b/.D,$aerial", "com.neilturner.aerialviews/.X")))
+        assertEquals(false, parseScreensaverInFront(front(aerial, "com.nuvio.tv/.MainActivity")))
+        assertEquals(false, parseScreensaverInFront(front("null", "null/.X")))
+        assertEquals(false, parseScreensaverInFront(aerial))
+    }
+
+    @Test
+    fun awakeWithScreensaverInFrontCountsAsDozing() = runBlocking {
+        val aerial = "com.neilturner.aerialviews/.ui.screensaver.DreamActivity"
+        val shell = FakeAdbShell(mapOf(
+            "dumpsys power" to ShellResult(0, power("Awake")),
+            SCREENSAVER_FRONT_COMMAND to ShellResult(0, front(aerial, "com.neilturner.aerialviews/.ui.screensaver.TestActivity")),
+        ))
+        assertEquals(Wakefulness.Dozing, DeviceSignalsImpl(shell, { false }).wakefulness())
+        val failing = FakeAdbShell(mapOf(
+            "dumpsys power" to ShellResult(0, power("Awake")),
+            SCREENSAVER_FRONT_COMMAND to ShellResult(1, ""),
+        ))
+        assertEquals(Wakefulness.Awake, DeviceSignalsImpl(failing, { false }).wakefulness())
+    }
 }
