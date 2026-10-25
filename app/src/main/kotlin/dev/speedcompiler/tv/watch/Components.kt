@@ -13,6 +13,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             enqueueReconnect(context)
             enqueueDetectNow(context)
+            startWatchService(context)
         }
     }
 }
@@ -20,6 +21,37 @@ class BootReceiver : BroadcastReceiver() {
 /** Screen off or screensaver start can open the idle gate; registered at runtime, since the manifest cannot declare these. */
 class ScreenOffReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) = enqueueOpenGatesCheck(context)
+}
+
+/**
+ * Keeps the app's process out of the cached state. Android holds ACTION_SCREEN_OFF back from a cached app until it is active
+ * again, and freezes it 10 s after it goes cached (as on the test TV), so [ScreenOffReceiver] and the frame sampler's loop only
+ * ran while Speed Compile was the app used last. A foreground service is the one supported way to stay uncached.
+ */
+class WatchService : Service() {
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val info = foregroundInfo(this, NOTIFICATION_ID, "watching", getString(dev.speedcompiler.tv.R.string.notif_watching))
+        try {
+            startForeground(info.notificationId, info.notification)
+        } catch (e: IllegalStateException) { // started from the background; the next launch or boot starts it again
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
+
+    private companion object { const val NOTIFICATION_ID = 4 }
+}
+
+/** Starts [WatchService]; Android 12+ refuses that from the background (a job, say), which is fine: launch and boot start it too. */
+fun startWatchService(context: Context) {
+    try {
+        context.startForegroundService(Intent(context, WatchService::class.java))
+    } catch (e: IllegalStateException) {
+        // not allowed right now
+    }
 }
 
 /** Foreground service that runs the pairing web server only while pairing; [url] feeds the QR code. */
