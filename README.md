@@ -259,6 +259,13 @@ README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitT
 
 </details>
 
+## Planned
+
+- Advice for each app. Speed Compile will watch how smoothly each optimized app runs while you use it. It will tell you whether compiling helped, whether a smoother compile setting is worth trying, or whether the app is slow by itself and compiling can't fix it.
+- More languages. The app is in English only for now.
+
+What changed in each version is in the [changelog](CHANGELOG.md).
+
 ## License
 
 [MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0). The Nuvio art in the screenshots is Nuvio's own, under GPL-3.0 ([its notice](app/src/test/resources/nuvio/NOTICE)). Only the screenshot tests use it, and it is not part of the app.
