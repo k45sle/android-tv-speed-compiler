@@ -4,8 +4,14 @@ import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.web.localIp
+import kotlinx.coroutines.launch
 
 /** Starts the reconnect and change-detection jobs after boot. */
 class BootReceiver : BroadcastReceiver() {
@@ -18,18 +24,57 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
-/** Screen off or screensaver start can open the idle gate; registered at runtime, since the manifest cannot declare these. */
+/** Screen off or screensaver start can open the idle gate; registered at runtime by [WatchService], since the manifest cannot declare these. */
 class ScreenOffReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = enqueueOpenGatesCheck(context)
+    override fun onReceive(context: Context, intent: Intent) = context.sendBroadcast(wakeIntent(context, ACTION_IDLE_CHECK))
 }
 
 /**
- * Keeps the app's process out of the cached state. Android holds ACTION_SCREEN_OFF back from a cached app until it is active
- * again, and freezes it 10 s after it goes cached (as on the test TV), so [ScreenOffReceiver] and the frame sampler's loop only
- * ran while Speed Compile was the app used last. A foreground service is the one supported way to stay uncached.
+ * Main-process side of [WatchService]: an explicit broadcast reaches a manifest receiver even while this process is cached and
+ * frozen, so the main process (and its GPU memory) can be cached between events.
+ */
+class WakeReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            ACTION_IDLE_CHECK -> enqueueOpenGatesCheck(context)
+            ACTION_SAMPLE -> {
+                val app = context.applicationContext as SpeedApp
+                val done = goAsync()
+                app.graph.appScope.launch { try { app.sampleOnce() } finally { done.finish() } }
+            }
+        }
+    }
+}
+
+const val ACTION_IDLE_CHECK = "dev.speedcompiler.tv.action.IDLE_CHECK"
+const val ACTION_SAMPLE = "dev.speedcompiler.tv.action.SAMPLE"
+
+private fun wakeIntent(context: Context, action: String) = Intent(action).setClass(context, WakeReceiver::class.java)
+
+/**
+ * Keeps a small process (":watch", no UI, no GPU memory) uncached. Android holds ACTION_SCREEN_OFF back from a cached app until
+ * it is active again, and freezes it 10 s after it goes cached (as on the test TV). A foreground service is the one supported way
+ * to stay uncached, but it also keeps a process's GPU memory (~64 MB on the test TV) forever, so it runs apart from the UI and
+ * only forwards screen-off and a once-a-minute sampling tick (screen on only) to [WakeReceiver].
  */
 class WatchService : Service() {
+    private val screenOff = ScreenOffReceiver()
+    private val handler = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            if (getSystemService(PowerManager::class.java).isInteractive) sendBroadcast(wakeIntent(this@WatchService, ACTION_SAMPLE))
+            handler.postDelayed(this, 60_000)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        // System-only broadcasts, so no export flag is needed.
+        registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_DREAMING_STARTED) })
+        handler.postDelayed(tick, 60_000)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val info = foregroundInfo(this, NOTIFICATION_ID, "watching", getString(dev.speedcompiler.tv.R.string.notif_watching))
@@ -40,6 +85,12 @@ class WatchService : Service() {
             return START_NOT_STICKY
         }
         return START_STICKY
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(tick)
+        unregisterReceiver(screenOff)
+        super.onDestroy()
     }
 
     private companion object { const val NOTIFICATION_ID = 4 }

@@ -1,7 +1,11 @@
 package dev.speedcompiler.tv
 
+import dev.speedcompiler.tv.watch.ACTION_IDLE_CHECK
+import dev.speedcompiler.tv.watch.WakeReceiver
+import dev.speedcompiler.tv.watch.WatchService
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
@@ -53,6 +57,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.ConscryptMode
 import org.robolectric.shadows.ShadowLooper
@@ -208,8 +213,12 @@ class SchedulingTest {
         await("backoff") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
         val backedOff = infos("a").single()
         gate.status = GateStatus.Open
+        val watch = Robolectric.buildService(WatchService::class.java).create() // registers the screen-off receiver
+        val wake = WakeReceiver().also { ctx.registerReceiver(it, IntentFilter(ACTION_IDLE_CHECK), Context.RECEIVER_NOT_EXPORTED) } // Robolectric skips our manifest receivers
         actions.forEach { ctx.sendBroadcast(Intent(it)) }
         ShadowLooper.idleMainLooper()
+        watch.destroy()
+        ctx.unregisterReceiver(wake)
         val check = wm.getWorkInfosByTag(OpenGatesWorker::class.java.name).get().single() // two broadcasts share one check
         assertEquals(5_000L, check.initialDelayMillis)
         assertEquals(backedOff.id, infos("a").single().id) // nothing happens before the settle delay
