@@ -36,6 +36,7 @@ import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WorkScheduler
 import dev.speedcompiler.tv.watch.freeBytes
 import dev.speedcompiler.tv.watch.refreshDue
+import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.restartOpenedGates
 import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
@@ -606,6 +607,7 @@ class SchedulingTest {
         g.scheduler.enqueue("a")
         skipDelay("a")
         await("done") { state(1) == QueueState.DONE }
+        await("compile lock released") { !compileRunning() } // the row says DONE before the worker lets go of the lock
         assertEquals("1|1000|${1000 - 30 * 60 * 1000L}", g.database.syncState().get("refresh:a"))
         gate.status = GateStatus.WaitingForIdle
         restartOpenedGates(g)
