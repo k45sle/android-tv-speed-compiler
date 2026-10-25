@@ -76,7 +76,8 @@ class FrameSampler(
             if (database.watchedApps().get(front)?.autoOptimize != true) return
             val (total, janky) = parseGfxinfo(shell.run("dumpsys gfxinfo $front").output) ?: return
             val dao = database.frameStats()
-            var s = sessions[front] ?: dao.session(front)?.let { Session(it.filter, it.fingerprint, SessionTracker(it.lastTotal, it.lastJanky, it.frames, it.janky, it.released)) }
+            // A stored session from before an app update belongs to the old version: start fresh.
+            var s = sessions[front] ?: dao.session(front)?.takeIf { it.fingerprint == fingerprint(front) }?.let { Session(it.filter, it.fingerprint, SessionTracker(it.lastTotal, it.lastJanky, it.frames, it.janky, it.released)) }
             // A smaller count means the app restarted (janky too: a new process may pass the old total between reads).
             if (s == null || total < s.tracker.lastTotal || janky < s.tracker.lastJanky) {
                 s = Session(verify(front) ?: return, fingerprint(front) ?: return)
