@@ -17,6 +17,11 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
+/** Screen off or screensaver start can open the idle gate; registered at runtime, since the manifest cannot declare these. */
+class ScreenOffReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) = enqueueOpenGatesCheck(context)
+}
+
 /** Foreground service that runs the pairing web server only while pairing; [url] feeds the QR code. */
 class PairingService : Service() {
     private var server: dev.speedcompiler.tv.web.PairingWebServer? = null

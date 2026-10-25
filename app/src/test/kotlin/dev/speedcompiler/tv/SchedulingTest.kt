@@ -1,6 +1,7 @@
 package dev.speedcompiler.tv
 
 import android.content.Context
+import android.content.Intent
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
@@ -22,12 +23,14 @@ import dev.speedcompiler.tv.engine.PackageChanges
 import dev.speedcompiler.tv.engine.PackageSystem
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.toGateConfig
+import dev.speedcompiler.tv.watch.OpenGatesWorker
 import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.runNowWaiting
 import dev.speedcompiler.tv.watch.QueueSource
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WorkScheduler
+import dev.speedcompiler.tv.watch.restartOpenedGates
 import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
 import dev.speedcompiler.tv.watch.systemUpdated
@@ -50,6 +53,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.ConscryptMode
+import org.robolectric.shadows.ShadowLooper
 
 private class FakeSystem(var apps: MutableMap<String, String>) : PackageSystem {
     override fun bootCount() = 1
@@ -174,6 +178,65 @@ class SchedulingTest {
         assertEquals(1, fresh.runAttemptCount) // its first run, not the backoff's second
         assertEquals(0L, fresh.initialDelayMillis) // no second debounce
         assertEquals(listOf("a"), optimizer.optimized)
+    }
+
+    @Test fun screenOffRestartsAWaitingItemOnlyOnceTheGateOpens() = runBlocking {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("backoff") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
+        val backedOff = infos("a").single()
+        restartOpenedGates(g) // screen off, but the gate still says not idle
+        assertEquals(backedOff.id, infos("a").single().id)
+        gate.status = GateStatus.Open
+        restartOpenedGates(g)
+        val fresh = infos("a").single()
+        assertTrue(fresh.id != backedOff.id)
+        assertEquals(0L, fresh.initialDelayMillis) // runs now, not after the backoff or a debounce
+        driver.setAllConstraintsMet(fresh.id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
+    private suspend fun assertBroadcastRestartsAWaitingItem(vararg actions: String) {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("backoff") { infos("a").single().let { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
+        val backedOff = infos("a").single()
+        gate.status = GateStatus.Open
+        actions.forEach { ctx.sendBroadcast(Intent(it)) }
+        ShadowLooper.idleMainLooper()
+        val check = wm.getWorkInfosByTag(OpenGatesWorker::class.java.name).get().single() // two broadcasts share one check
+        assertEquals(5_000L, check.initialDelayMillis)
+        assertEquals(backedOff.id, infos("a").single().id) // nothing happens before the settle delay
+        driver.setInitialDelayMet(check.id)
+        await("restarted") { infos("a").any { it.id != backedOff.id } }
+        driver.setAllConstraintsMet(infos("a").last { !it.state.isFinished }.id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
+    @Test fun screenOffRestartsAWaitingItemAfterTheSettleDelay() = runBlocking {
+        assertBroadcastRestartsAWaitingItem(Intent.ACTION_SCREEN_OFF)
+    }
+
+    @Test fun screensaverStartRestartsAWaitingItemAfterTheSettleDelay() = runBlocking {
+        assertBroadcastRestartsAWaitingItem(Intent.ACTION_DREAMING_STARTED)
+    }
+
+    @Test fun screenOffThenScreensaverQueuesOneCheck() = runBlocking {
+        assertBroadcastRestartsAWaitingItem(Intent.ACTION_SCREEN_OFF, Intent.ACTION_DREAMING_STARTED)
+    }
+
+    @Test fun screenOffLeavesARowWaitingForTheFirstLaunchAlone() = runBlocking {
+        val retry = waitForLaunch()
+        gate.status = GateStatus.Open
+        restartOpenedGates(g)
+        assertEquals(QueueState.WAITING_GATE, state(1))
+        assertEquals(retry, wm.getWorkInfosForUniqueWork("launch:1").get().single().id)
+        assertTrue(infos("a").none { !it.state.isFinished })
+        assertEquals(1, optimizer.usedFilters.size)
     }
 
     @Test fun detectLeavesARunningItemAlone() = runBlocking {
