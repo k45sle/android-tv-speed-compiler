@@ -136,6 +136,9 @@ interface SyncStateDao {
     @Query("SELECT value FROM sync_state WHERE `key` = :key")
     suspend fun get(key: String): String?
 
+    @Query("SELECT * FROM sync_state WHERE `key` LIKE :prefix || '%'")
+    suspend fun withPrefix(prefix: String): List<SyncState>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(state: SyncState)
 }

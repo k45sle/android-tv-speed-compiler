@@ -48,6 +48,7 @@ import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.engine.GateMode
 import dev.speedcompiler.tv.engine.Mode
+import dev.speedcompiler.tv.engine.OptimizeHow
 import dev.speedcompiler.tv.engine.SettingsValues
 import dev.speedcompiler.tv.engine.ThemeChoice
 import dev.speedcompiler.tv.theme.ArcadeButton
@@ -191,6 +192,17 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                     StatusPill(stringResource(textRes), tone)
                     ArcadeButton(stringResource(R.string.common_fix_connection), { go(fixRoute(failed?.fix ?: Fix.Retry)) }, Modifier.remembersFocus(mem, "fix"))
                 }
+
+                Heading(stringResource(R.string.settings_heading_advanced))
+                val how = stringResource(R.string.settings_how_title)
+                val hows = OptimizeHow.entries
+                val howName = stringResource(if (v.optimizeHow == OptimizeHow.Full) R.string.settings_how_full else R.string.settings_how_auto)
+                OperatorRow(
+                    how, hint(how, howName), sublabel = stringResource(R.string.settings_how_subtitle),
+                    onClick = { set { it.copy(optimizeHow = hows.cycle(it.optimizeHow, 1)) } },
+                    onLeft = { set { it.copy(optimizeHow = hows.cycle(it.optimizeHow, -1)) } },
+                    onRight = { set { it.copy(optimizeHow = hows.cycle(it.optimizeHow, 1)) } },
+                ) { Selector(howName, it) }
 
                 Heading(stringResource(R.string.settings_heading_about))
                 Row(Modifier.padding(horizontal = Space.x2, vertical = Space.x1), Arrangement.spacedBy(Space.x2)) {

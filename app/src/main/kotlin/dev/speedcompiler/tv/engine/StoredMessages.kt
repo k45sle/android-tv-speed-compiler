@@ -16,6 +16,7 @@ const val OPTIMIZED_UNVERIFIED = "Optimized (this TV doesn't report the result)"
 const val OPTIMIZED_CHECKED = "Optimized (checked)"
 const val VERIFY_UNKNOWN = "The TV did not report this app's compiler filter."
 const val NO_PROFILE_YET = "Waiting for the app's first launch."
+const val REFRESHED = "Asked the TV to refresh this app's compiled code."
 const val NOT_INSTALLED = "Not installed"
 const val DEBUG_BUILD = "Didn't finish: this is a debug build, and Android never compiles debug builds ahead of time."
 

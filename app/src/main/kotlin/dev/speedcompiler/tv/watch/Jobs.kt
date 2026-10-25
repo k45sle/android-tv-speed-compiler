@@ -3,10 +3,13 @@ package dev.speedcompiler.tv.watch
 import dev.speedcompiler.tv.engine.NOT_INSTALLED
 import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.NO_PROFILE_YET
+import dev.speedcompiler.tv.engine.OptimizeHow
 import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
 import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
 import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.work.Constraints
@@ -48,7 +51,11 @@ private const val REFUSED_WORK = "refused"
 private const val REFUSED_RETRY_MINUTES = 15L
 private const val LAUNCH_WORK = "launch"
 private const val LAUNCH_RETRY_MINUTES = 60L
-private const val NO_PROFILE_FALLBACK_MILLIS = 7 * 24 * 60 * 60 * 1000L
+private const val NO_PROFILE_FALLBACK_MILLIS = 2 * 24 * 60 * 60 * 1000L
+private const val MIN_FREE_BYTES = 1L shl 30
+private const val REFRESH_WINDOW_MILLIS = 7 * 24 * 60 * 60 * 1000L
+private const val REFRESH_EVERY_MILLIS = 24 * 60 * 60 * 1000L
+private const val REFRESH_PREFIX = "refresh:"
 private const val MAX_CONNECTION_TRIES = 5
 private val RETENTION_MILLIS = TimeUnit.DAYS.toMillis(90)
 
@@ -105,9 +112,55 @@ suspend fun runDetect(g: AppGraph) {
         }
 }
 
+/** When an app still waiting for use gets the plain `speed` compile: two days after the wait began. Null when unknown. */
+suspend fun launchFallbackAt(g: AppGraph, pkg: String): Long? =
+    g.database.syncState().get(noProfileKey(pkg))?.split('|')?.getOrNull(1)?.toLongOrNull()?.plus(NO_PROFILE_FALLBACK_MILLIS)
+
+@VisibleForTesting internal var freeBytes: () -> Long = { StatFs(Environment.getDataDirectory().path).availableBytes }
+
+/**
+ * Whether a stored `fingerprint|firstCompile|lastRefresh` record is due: same build of the app, first compiled less than
+ * 7 days ago, and not refreshed in the last 24 h.
+ */
+internal fun refreshDue(record: String, fingerprint: String, now: Long): Boolean {
+    val p = record.split('|')
+    val first = p.getOrNull(1)?.toLongOrNull() ?: return false
+    val last = p.getOrNull(2)?.toLongOrNull() ?: return false
+    return p[0] == fingerprint && now - first < REFRESH_WINDOW_MILLIS && now - last >= REFRESH_EVERY_MILLIS
+}
+
+/** While the gate is open, re-runs a plain speed-profile compile for apps compiled from their shipped profile in the last 7 days. */
+private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
+    val sync = g.database.syncState()
+    val records = sync.withPrefix(REFRESH_PREFIX).filter { it.value.isNotEmpty() }
+    if (records.isEmpty() || g.gate.status() != GateStatus.Open || !runLock.tryLock()) return
+    try {
+        val now = g.clock.nowMillis()
+        for (r in records) {
+            val pkg = r.key.removePrefix(REFRESH_PREFIX)
+            val fingerprint = g.packageSystem.fingerprint(pkg)
+            val p = r.value.split('|')
+            val expired = fingerprint == null || p[0] != fingerprint || now - (p.getOrNull(1)?.toLongOrNull() ?: 0) >= REFRESH_WINDOW_MILLIS
+            if (expired) { sync.put(SyncState(r.key, "")); continue }
+            if (pkg !in installed || !refreshDue(r.value, fingerprint, now)) continue
+            sync.put(SyncState(r.key, "${p[0]}|${p[1]}|$now")) // before the call, so a failure is not retried at once
+            try {
+                g.optimizer.refresh(pkg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("refreshProfiles", "refresh failed: ${e.javaClass.simpleName}")
+            }
+        }
+    } finally {
+        runLock.unlock()
+    }
+}
+
 /**
  * Runs rows whose gate opened mid-backoff: WorkManager's linear backoff grows to 5 h and would miss short windows.
  * Called by every detect and when the screen turns off, so the idle gate starts its jobs within seconds.
+ * Also the moment for the cheap profile refreshes.
  */
 suspend fun restartOpenedGates(g: AppGraph, installed: Set<String> = g.packageSystem.installed().map { it.packageName }.toSet()) {
     for (item in g.database.queue().activeNow()) {
@@ -118,6 +171,7 @@ suspend fun restartOpenedGates(g: AppGraph, installed: Set<String> = g.packageSy
             g.scheduler.enqueue(item.packageName, item.source)
         }
     }
+    refreshProfiles(g, installed)
 }
 
 /** Queues every auto-optimized app the TV no longer reports at `speed` or `speed-profile`. */
@@ -298,16 +352,17 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             }
         }
         dao.update(item.copy(state = QueueState.RUNNING, startedAt = g.clock.nowMillis(), failureReason = null))
-        var result = g.optimizer.optimize(pkg)
+        val full = g.settings.values.first().optimizeHow == OptimizeHow.Full
+        var result = if (full) g.optimizer.optimize(pkg, "speed") else g.optimizer.optimize(pkg)
         val sync = g.database.syncState()
         if (result.noProfile) {
-            // Profiles are emptied by an update: wait for a launch, and after 7 days settle for plain speed.
+            // No shipped profile and none from use yet: wait for a launch, and after 2 days settle for plain speed (storage permitting).
             val key = noProfileKey(pkg)
             val now = g.clock.nowMillis()
             val stored = sync.get(key)?.split('|')
             val firstSeen = if (stored?.size == 2 && stored[0] == fingerprint) stored[1].toLongOrNull() else null
             if (firstSeen == null) sync.put(SyncState(key, "$fingerprint|$now"))
-            if (now - (firstSeen ?: now) < NO_PROFILE_FALLBACK_MILLIS) {
+            if (now - (firstSeen ?: now) < NO_PROFILE_FALLBACK_MILLIS || freeBytes() < MIN_FREE_BYTES) {
                 dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = result.detail))
                 enqueueLaunchRetry(applicationContext, id)
                 return Result.success()
@@ -333,7 +388,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
             return Result.success()
         }
         resetConnectionTries(g, pkg)
-        // Cleared only when a compile finishes: Optimize now on a waiting row must not restart the 7-day clock.
+        // Cleared only when a compile finishes: Optimize now on a waiting row must not restart the 2-day clock.
         sync.put(SyncState(noProfileKey(pkg), ""))
         val now = g.clock.nowMillis()
         // Stores the fingerprint read BEFORE compiling, so an update that lands mid-compile still differs and the
@@ -342,6 +397,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         // Written while the row still says RUNNING, so an enqueue cannot REPLACE this worker before it lands.
         // A targeted UPDATE, not a read-modify-write: a toggle of autoOptimize during the compile must survive.
         g.database.watchedApps().recordResult(pkg, fingerprint, result.detail, now)
+        sync.put(SyncState(REFRESH_PREFIX + pkg, if (result.ok && result.refreshable) "$fingerprint|$now|$now" else ""))
         if (result.ok && pkg == applicationContext.packageName) sync.put(SyncState(KEY_SELF_COMPILED, fingerprint))
         dao.update(
             item.copy(

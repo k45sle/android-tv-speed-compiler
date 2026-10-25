@@ -84,7 +84,7 @@ fun clockText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
     stamp.format(Instant.ofEpochMilli(millis).atZone(zone))
 
 /** Never a percentage. Empty when there is nothing to say (running or finished). */
-fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault()): String = when (eta) {
+fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId = ZoneId.systemDefault(), app: String? = null): String = when (eta) {
     Eta.None -> ""
     is Eta.StartsAt -> {
         val at = eta.at.atZone(zone)
@@ -99,7 +99,12 @@ fun etaText(res: Resources, eta: Eta, now: Instant = Instant.now(), zone: ZoneId
     Eta.WaitingForPlayback -> res.getString(R.string.home_eta_waiting_playback)
     Eta.Paused -> res.getString(R.string.home_auto_off)
     Eta.WaitingForStorage -> res.getString(R.string.home_eta_waiting_storage)
-    Eta.WaitingForLaunch -> res.getString(R.string.home_eta_waiting_launch)
+    is Eta.WaitingForLaunch -> {
+        val name = app ?: res.getString(R.string.home_this_app)
+        val at = eta.fallbackAt?.atZone(zone)
+        if (at == null) res.getString(R.string.home_eta_waiting_launch_short, name)
+        else res.getString(R.string.home_eta_waiting_launch, name, "${date.format(at)} ${clock.format(at)}")
+    }
     Eta.WaitingForConnection -> res.getString(R.string.home_eta_waiting_connection)
     Eta.Connecting -> res.getString(R.string.home_connecting_to_tv)
     Eta.Checking -> res.getString(R.string.home_eta_checking)

@@ -6,6 +6,9 @@ import dev.speedcompiler.tv.adb.ShellResult
 import dev.speedcompiler.tv.engine.FakeClock
 import dev.speedcompiler.tv.engine.OptimizerImpl
 import dev.speedcompiler.tv.engine.compileCommand
+import dev.speedcompiler.tv.engine.hasProfile
+import dev.speedcompiler.tv.engine.parseBroadcastResult
+import dev.speedcompiler.tv.engine.profileInstallCommand
 import dev.speedcompiler.tv.engine.parseCompilerFilter
 import dev.speedcompiler.tv.engine.resetCommand
 import dev.speedcompiler.tv.watch.Event
@@ -45,17 +48,21 @@ class OptimizerTest {
         val compile: String = "Success\n__rc=0\n",
         val art: String = "",
         val dexopt: String = "",
+        val broadcast: String = "Broadcast completed: result=0",
         val compileDelay: Long = 0,
         val compileFails: Throwable? = null,
         /** Answers the first dexopt dump, letting a test finish a compile while that read is in flight. */
         val firstDexopt: CompletableDeferred<String>? = null,
     ) : AdbShell {
         var compiles = 0
+        val commands = mutableListOf<String>()
         var artDumps = 0
         var dexoptDumps = 0
         override suspend fun run(command: String): ShellResult = when {
+            command.startsWith("am broadcast") -> { commands += command; ShellResult(0, broadcast) }
             command.startsWith("cmd package compile") -> {
                 compiles++
+                commands += command
                 compileFails?.let { throw it }
                 delay(compileDelay)
                 ShellResult(0, compile)
@@ -80,6 +87,52 @@ class OptimizerTest {
         assertTrue(r.ok)
         assertEquals("Optimized (checked)", r.detail)
         assertEquals("optimize_verified", ev.rows.single().kind)
+    }
+
+    @Test fun broadcastResultCodes() {
+        assertEquals(1, parseBroadcastResult("Broadcasting: Intent { act=x }\nBroadcast completed: result=1\n"))
+        assertEquals(0, parseBroadcastResult("Broadcast completed: result=0"))
+        assertNull(parseBroadcastResult("Error: Activity class does not exist"))
+        assertEquals(listOf(true, true, false, false, false), listOf(1, 2, 0, 3, 5).map { hasProfile("Broadcast completed: result=$it") })
+        assertFalse(hasProfile(""))
+        assertEquals(
+            "am broadcast -a androidx.profileinstaller.action.INSTALL_PROFILE -n com.a_b/androidx.profileinstaller.ProfileInstallReceiver",
+            profileInstallCommand("com.a_b"),
+        )
+        assertTrue(runCatching { profileInstallCommand("com.a; id") }.isFailure)
+    }
+
+    @Test fun shippedProfileIsLoadedBeforeTheCompileAndMarksTheResultRefreshable() = runTest {
+        val shell = Shell(art = artSplitProfile, broadcast = "Broadcast completed: result=1")
+        val r = impl(shell, Events()).optimize("qa.wifihold")
+        assertTrue(r.ok && r.refreshable)
+        assertEquals(listOf(profileInstallCommand("qa.wifihold"), compileCommand("qa.wifihold")), shell.commands)
+    }
+
+    @Test fun noReceiverOrAFailedBroadcastCompilesAsBefore() = runTest {
+        assertFalse(impl(Shell(art = artSplitProfile), Events()).optimize("qa.wifihold").refreshable)
+        val r = impl(object : AdbShell {
+            override suspend fun run(command: String): ShellResult =
+                if (command.startsWith("am broadcast")) throw IOException("gone") else ShellResult(0, if (command.startsWith("pm art")) artSplitProfile else "Success")
+        }, Events()).optimize("qa.wifihold")
+        assertTrue(r.ok)
+        assertFalse(r.refreshable)
+    }
+
+    @Test fun fullCompileSendsNoBroadcast() = runTest {
+        val shell = Shell(art = art, broadcast = "Broadcast completed: result=1")
+        impl(shell, Events()).optimize("dev.speedcompiler.tv", "speed")
+        assertEquals(listOf(compileCommand("dev.speedcompiler.tv", "speed")), shell.commands)
+    }
+
+    @Test fun refreshIsANonForcedCompile() = runTest {
+        val shell = Shell()
+        val ev = Events()
+        impl(shell, ev).refresh("com.a_b")
+        assertEquals(listOf("cmd package compile -m speed-profile com.a_b"), shell.commands)
+        assertEquals("refresh", ev.rows.single().kind)
+        impl(shell, ev).refresh("a b")
+        assertEquals(1, shell.compiles)
     }
 
     @Test fun verifiedViaDexoptFallback() = runTest {

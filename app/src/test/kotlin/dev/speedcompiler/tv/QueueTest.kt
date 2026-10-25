@@ -66,7 +66,7 @@ class QueueTest {
     fun lowStorageHoldsAutomaticJobsButNotOptimizeNow() {
         for (gate in allGates) {
             assertEquals(Eta.WaitingForStorage, etaFor(item(), gate, 1, storageLow = true))
-            assertEquals(Eta.WaitingForLaunch, etaFor(item().copy(state = QueueState.WAITING_GATE, failureReason = dev.speedcompiler.tv.engine.NO_PROFILE_YET), gate, 1, storageLow = true))
+            assertEquals(Eta.WaitingForLaunch(), etaFor(item().copy(state = QueueState.WAITING_GATE, failureReason = dev.speedcompiler.tv.engine.NO_PROFILE_YET), gate, 1, storageLow = true))
             assertEquals(Eta.InQueue(1, 120_000), etaFor(item(runNow = true), gate, 1, storageLow = true))
         }
     }

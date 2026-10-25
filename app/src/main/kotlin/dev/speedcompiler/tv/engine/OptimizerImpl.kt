@@ -77,7 +77,32 @@ class OptimizerImpl(
         return finish(packageName, true, RESET_DONE, "reset_done")
     }
 
+    /** Loads the profile the app ships. Best effort: any failure just means the compile runs as before. */
+    private suspend fun loadProfile(pkg: String): Boolean = try {
+        hasProfile(withTimeout(timeoutMillis) { shell.run(profileInstallCommand(pkg)) }.output)
+    } catch (e: CancellationException) {
+        if (e is TimeoutCancellationException) false else throw e
+    } catch (e: Exception) {
+        false
+    }
+
+    // shortcut: no check whether the refresh actually recompiled, and its outcome is ignored; the next one is a day away.
+    override suspend fun refresh(packageName: String) {
+        if (!isValidPackageId(packageName)) return
+        try {
+            withTimeout(timeoutMillis) { shell.run(compileCommand(packageName, force = false)) }
+        } catch (e: CancellationException) {
+            if (e !is TimeoutCancellationException) throw e
+        } catch (e: Exception) {
+            // the ADB link dropped; the next pass tries again
+        } finally {
+            synchronized(dumpLock) { dumpGeneration++; dump = null }
+        }
+        events.insert(Event(timeMillis = clock.nowMillis(), packageName = packageName, kind = "refresh", message = REFRESHED))
+    }
+
     private suspend fun compile(pkg: String, wanted: String): OptimizeResult {
+        val loaded = wanted == "speed-profile" && loadProfile(pkg)
         val res = try {
             withTimeout(timeoutMillis) { shell.run(compileCommand(pkg, wanted)) }
         } catch (e: Exception) {
@@ -102,7 +127,8 @@ class OptimizerImpl(
         }
         return when {
             filter == null -> finish(pkg, true, OPTIMIZED_UNVERIFIED, "optimize_unverified")
-            filter == "speed" || (wanted == "speed-profile" && filter == "speed-profile") -> finish(pkg, true, OPTIMIZED_CHECKED, "optimize_verified")
+            filter == "speed" || (wanted == "speed-profile" && filter == "speed-profile") ->
+                finish(pkg, true, OPTIMIZED_CHECKED, "optimize_verified", refreshable = loaded && filter == "speed-profile")
             // An empty profile leaves the app at verify; other states (run-from-apk) are real failures.
             wanted == "speed-profile" && filter.endsWith(" is verify") -> finish(pkg, false, NO_PROFILE_YET, "optimize_no_profile", noProfile = true)
             else -> finish(pkg, false, notSpeed(filter), "optimize_failed")
@@ -118,8 +144,8 @@ class OptimizerImpl(
         else -> finish(pkg, false, prefix + LOST_TAIL, kind, connectionLost = true)
     }
 
-    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false, refused: Boolean = false, noProfile: Boolean = false): OptimizeResult {
+    private suspend fun finish(pkg: String?, ok: Boolean, detail: String, kind: String, connectionLost: Boolean = false, terminal: Boolean = false, refused: Boolean = false, noProfile: Boolean = false, refreshable: Boolean = false): OptimizeResult {
         events.insert(Event(timeMillis = clock.nowMillis(), packageName = pkg, kind = kind, message = detail))
-        return OptimizeResult(ok, detail, connectionLost, terminal, refused, noProfile)
+        return OptimizeResult(ok, detail, connectionLost, terminal, refused, noProfile, refreshable)
     }
 }

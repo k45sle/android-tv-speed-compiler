@@ -14,6 +14,8 @@ import androidx.work.workDataOf
 import dev.speedcompiler.tv.AppGraph
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.engine.GateCache
+import dev.speedcompiler.tv.engine.NO_PROFILE_YET
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
@@ -46,14 +48,15 @@ fun queueWithEta(
     connection: Flow<ConnectionState>,
     cache: GateCache,
     storageLow: () -> Boolean = { false },
+    launchFallbacks: suspend () -> Map<String, Instant> = { emptyMap() },
     tickMillis: Long = GATE_TICK_MILLIS,
 ): Flow<List<QueueEntry>> = flow {
     coroutineScope {
         launch { connection.distinctUntilChanged().collect { cache.refreshIfStale(force = true) } }
-        // Each tick refreshes the gate and re-reads storage, which has no flow of its own.
-        val storage = flow { while (true) { cache.refreshIfStale(); emit(storageLow()); delay(tickMillis) } }.distinctUntilChanged()
-        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status, connection.distinctUntilChanged(), storage) { items, gate, conn, low ->
-            items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i, connection = conn, storageLow = low)) }
+        // Each tick refreshes the gate and re-reads storage and the launch-wait deadlines, which have no flow of their own.
+        val storage = flow { while (true) { cache.refreshIfStale(); emit(storageLow() to launchFallbacks()); delay(tickMillis) } }.distinctUntilChanged()
+        emitAll(combine(active.onEach { cache.refreshIfStale() }, cache.status, connection.distinctUntilChanged(), storage) { items, gate, conn, (low, fallbacks) ->
+            items.mapIndexed { i, item -> QueueEntry(item, i, etaFor(item, gate, i, connection = conn, storageLow = low, launchFallbackAt = fallbacks[item.packageName])) }
         })
     }
 }
@@ -71,7 +74,10 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         }
     }
 
-    override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache, ::storageLow)
+    override val queue: Flow<List<QueueEntry>> get() = queueWithEta(queueDao.active(), graph.connectionMonitor.state, gateCache, ::storageLow, ::launchFallbacks)
+
+    private suspend fun launchFallbacks() = queueDao.activeNow().filter { it.failureReason == NO_PROFILE_YET }
+        .mapNotNull { i -> launchFallbackAt(graph, i.packageName)?.let { i.packageName to Instant.ofEpochMilli(it) } }.toMap()
 
     /** Reads the same sticky broadcast WorkManager's storage-not-low constraint follows. */
     @Suppress("DEPRECATION")

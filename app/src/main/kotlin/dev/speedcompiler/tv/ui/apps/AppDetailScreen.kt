@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import dev.speedcompiler.tv.theme.Button
 import dev.speedcompiler.tv.theme.upper
 import dev.speedcompiler.tv.ui.home.JobResult
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import dev.speedcompiler.tv.R
@@ -56,6 +57,7 @@ import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
+import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -75,6 +77,8 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val now = rememberNow(deps)
     val scope = rememberCoroutineScope()
     val optimizeNow = rememberOptimizeNow(deps, go)
+    val ctx = LocalContext.current
+    val launch = remember(packageName) { ctx.packageManager.let { it.getLeanbackLaunchIntentForPackage(packageName) ?: it.getLaunchIntentForPackage(packageName) } }
     var resetNote by remember(packageName) { mutableStateOf<String?>(null) }
     val mine = watched.firstOrNull { it.packageName == packageName }
     val res = LocalResources.current
@@ -109,6 +113,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onAuto = { scope.launch { deps.setAutoOptimize(packageName, it) } },
         onReset = { confirmReset = true },
         resetNote = resetNote,
+        onOpen = launch?.let { i -> { ctx.startActivity(i) } },
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
     )
@@ -140,13 +145,15 @@ fun AppDetailContent(
     runs: List<QueueItem> = emptyList(),
     onReset: () -> Unit = {},
     resetNote: String? = null,
+    /** Opens the app on the TV itself; null hides the button. Only offered while the app waits for you to use it. */
+    onOpen: (() -> Unit)? = null,
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
     val res = LocalResources.current
     val state = when {
         result == JobResult.Running -> stringResource(R.string.detail_optimizing_now)
-        result == JobResult.Queued -> etaText(res, entry!!.eta, Instant.ofEpochMilli(now), zone).ifEmpty { stringResource(R.string.home_queued) }
+        result == JobResult.Queued -> etaText(res, entry!!.eta, Instant.ofEpochMilli(now), zone, app.label).ifEmpty { stringResource(R.string.home_queued) }
         result == JobResult.Failed -> stringResource(R.string.home_didnt_finish)
         result == JobResult.Verified -> stringResource(R.string.detail_optimized_checked, agoText(res, optimizedAt ?: now, now))
         result != null -> stringResource(R.string.apps_pill_eta, stringResource(result.label), agoText(res, optimizedAt ?: now, now))
@@ -186,6 +193,7 @@ fun AppDetailContent(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
+                        if (onOpen != null && entry?.eta is Eta.WaitingForLaunch) ArcadeButton(stringResource(R.string.detail_open, app.label), onOpen, Modifier.remembersFocus(mem, "open"))
                         ArcadeButton(stringResource(if (watched != null) R.string.apps_stop_watching else R.string.apps_watch), onToggleWatch, Modifier.remembersFocus(mem, "watch"))
                         ArcadeButton(stringResource(R.string.detail_reset), onReset, Modifier.remembersFocus(mem, "reset"))
                     }
