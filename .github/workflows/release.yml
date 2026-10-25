@@ -2,9 +2,15 @@ name: Release
 
 # Push a tag like v2.0.0 (three numbers, optional -suffix) to build a signed APK and attach it to a GitHub Release.
 # Needs repository secrets RELEASE_KEYSTORE_B64 (base64 of the .jks), RELEASE_STORE_PASSWORD and RELEASE_KEY_ALIAS.
+# Run it by hand with a tag to rebuild that tag's release with this workflow, e.g. after a failed run, without moving the tag.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build, like v1.0.0
+        required: true
 
 permissions:
   contents: write
@@ -14,8 +20,12 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,8 +33,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check tag
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}(-[0-9A-Za-z.]+)?$ ]] \
-            || { echo "Tag must look like v1.2.3 or v1.2.3-rc1 with each number under 100, got $GITHUB_REF_NAME"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,2}(-[0-9A-Za-z.]+)?$ ]] \
+            || { echo "Tag must look like v1.2.3 or v1.2.3-rc1 with each number under 100, got $TAG"; exit 1; }
       - name: Restore signing key
         env:
           KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
@@ -37,18 +47,20 @@ jobs:
           ORG_GRADLE_PROJECT_releaseStoreFile: ${{ runner.temp }}/release.jks
           ORG_GRADLE_PROJECT_releaseStorePassword: ${{ secrets.RELEASE_STORE_PASSWORD }}
           ORG_GRADLE_PROJECT_releaseKeyAlias: ${{ secrets.RELEASE_KEY_ALIAS }}
-        run: ./gradlew lint testDebugUnitTest assembleRelease "-PappVersion=${GITHUB_REF_NAME#v}"
+        run: ./gradlew lint testDebugUnitTest assembleRelease "-PappVersion=${TAG#v}"
       - name: Verify signature and write checksums
         run: |
-          apk="speed-compile-${GITHUB_REF_NAME}.apk"
+          apk="speed-compile-${TAG}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           # Stable name so releases/latest/download/speed-compile.apk always works.
           cp "$apk" speed-compile.apk
           apksigner="$(printf '%s\n' "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
           "$apksigner" verify "$apk"
           # Keep only the digest line: the full --print-certs output names the certificate's owner and the logs are public.
-          cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || { echo "Could not read the signing certificate digest"; exit 1; }
+          certs="$("$apksigner" verify --print-certs "$apk" | grep -v 'DN:')"
+          # Newer apksigner versions label the signer differently ("Signer (minSdkVersion=...)"), so match only the digest.
+          cert="$(grep -m1 -ioE 'certificate SHA-256 digest: [0-9a-f]{64}' <<<"$certs" | awk '{print tolower($4)}')"
+          [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || { echo "Could not read the signing certificate digest from:"; echo "$certs"; exit 1; }
           sha256sum "$apk" speed-compile.apk > SHA256SUMS
           {
             echo "Signing certificate SHA-256: \`$cert\`"
@@ -68,7 +80,7 @@ jobs:
         # A suffix (v2.0.0-rc1) marks a pre-release, so test tags never become "Latest". With --generate-notes, --notes-file text comes first.
         run: |
           flags=()
-          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" "$APK" speed-compile.apk SHA256SUMS --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}"
+          [[ "$TAG" == *-* ]] && flags+=(--prerelease)
+          gh release create "$TAG" "$APK" speed-compile.apk SHA256SUMS --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}"
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
