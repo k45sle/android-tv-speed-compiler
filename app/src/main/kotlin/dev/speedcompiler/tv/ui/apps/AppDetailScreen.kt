@@ -57,7 +57,9 @@ import androidx.tv.material3.Text
 import dev.speedcompiler.tv.theme.Space
 import dev.speedcompiler.tv.theme.rememberFocusMemory
 import dev.speedcompiler.tv.theme.remembersFocus
+import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.watch.Eta
+import dev.speedcompiler.tv.watch.FrameStat
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
@@ -80,6 +82,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
     val ctx = LocalContext.current
     val launch = remember(packageName) { ctx.packageManager.let { it.getLeanbackLaunchIntentForPackage(packageName) ?: it.getLaunchIntentForPackage(packageName) } }
     var resetNote by remember(packageName) { mutableStateOf<String?>(null) }
+    val stats by remember(deps) { deps.frameStats }.collectAsState(emptyList())
     val mine = watched.firstOrNull { it.packageName == packageName }
     val res = LocalResources.current
     val resetting = stringResource(R.string.detail_resetting)
@@ -116,6 +119,8 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onOpen = launch?.let { i -> { ctx.startActivity(i) } },
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
+        stats = stats.filter { it.packageName == packageName && it.fingerprint == mine?.fingerprint },
+        onSmoother = { scope.launch { deps.setSmoother(packageName); optimizeNow(packageName) } },
     )
     if (confirmReset) {
         val cancel = remember { FocusRequester() }
@@ -147,6 +152,9 @@ fun AppDetailContent(
     resetNote: String? = null,
     /** Opens the app on the TV itself; null hides the button. Only offered while the app waits for you to use it. */
     onOpen: (() -> Unit)? = null,
+    /** This app's measured smoothness for its current version. */
+    stats: List<FrameStat> = emptyList(),
+    onSmoother: () -> Unit = {},
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
@@ -159,6 +167,14 @@ fun AppDetailContent(
         result != null -> stringResource(R.string.apps_pill_eta, stringResource(result.label), agoText(res, optimizedAt ?: now, now))
         else -> stringResource(R.string.home_not_optimized)
     }
+    val advice = adviceFor(
+        debugBuild = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
+            .maxByOrNull { it.finishedAt ?: it.enqueuedAt }?.failureReason == DEBUG_BUILD,
+        waitingForProfile = entry?.eta is Eta.WaitingForLaunch,
+        compiled = result == JobResult.Verified || result == JobResult.Unverified,
+        stats = stats,
+        smootherOn = watched?.useSpeed == true,
+    )
     val rows = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
         .sortedByDescending { it.finishedAt ?: it.enqueuedAt }.take(3)
         .map {
@@ -191,10 +207,18 @@ fun AppDetailContent(
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    when (advice) {
+                        Advice.DebugBuild -> R.string.advice_debug_build
+                        Advice.Smooth -> R.string.advice_smooth
+                        Advice.TrySmoother -> R.string.advice_try_smoother
+                        Advice.SlowByItself -> R.string.advice_slow_by_itself
+                        else -> null // the state line above already says it
+                    }?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyMedium) }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
                         if (onOpen != null && entry?.eta is Eta.WaitingForLaunch) ArcadeButton(stringResource(R.string.detail_open, app.label), onOpen, Modifier.remembersFocus(mem, "open"))
                         ArcadeButton(stringResource(if (watched != null) R.string.apps_stop_watching else R.string.apps_watch), onToggleWatch, Modifier.remembersFocus(mem, "watch"))
+                        if (advice == Advice.TrySmoother) ArcadeButton(stringResource(R.string.advice_smoother_button), onSmoother, Modifier.remembersFocus(mem, "smoother"))
                         ArcadeButton(stringResource(R.string.detail_reset), onReset, Modifier.remembersFocus(mem, "reset"))
                     }
                     if (resetNote != null) Text(resetNote, style = MaterialTheme.typography.bodyMedium)

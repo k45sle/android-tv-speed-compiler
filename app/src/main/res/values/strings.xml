@@ -359,4 +359,9 @@
     <string name="web_page_code_label">Pairing code (6 digits, shown on the TV)</string>
     <string name="web_page_port_label">Port (enter only if pairing fails)</string>
     <string name="web_page_pair">Pair</string>
+    <string name="advice_debug_build">Can\'t be optimized (debug build).</string>
+    <string name="advice_smooth">Optimized, runs smoothly.</string>
+    <string name="advice_try_smoother">Still choppy. Try Smoother mode.</string>
+    <string name="advice_slow_by_itself">Slow by itself. Compiling can\'t fix it.</string>
+    <string name="advice_smoother_button">Smoother mode</string>
 </resources>
