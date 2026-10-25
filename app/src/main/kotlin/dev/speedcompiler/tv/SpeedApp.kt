@@ -20,7 +20,6 @@ const val SAMPLE_TIMEOUT_MS = 20_000L
 class SpeedApp : Application() {
     val graph by lazy { AppGraph(this) }
 
-    // shortcut: session totals live in memory, so a session restarts if Android kills this process between ticks.
     // Off with the screen (isInteractive), while a compile holds the ADB link, and while not connected.
     private val sampler by lazy {
         val power = getSystemService(PowerManager::class.java)

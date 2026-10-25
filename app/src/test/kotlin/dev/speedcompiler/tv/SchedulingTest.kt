@@ -537,6 +537,18 @@ class SchedulingTest {
         assertEquals(listOf("speed"), optimizer.usedFilters)
     }
 
+    @Test fun backToNormalModeCompilesWithTheProfileAndRecordsARefreshAgain() = runBlocking {
+        optimizer.result = dev.speedcompiler.tv.engine.OptimizeResult(true, refreshable = true)
+        g.database.watchedApps().upsert(WatchedApp("a", "1", useSpeed = true))
+        dev.speedcompiler.tv.watch.dropRefresh(g, "a")
+        g.database.watchedApps().setUseSpeed("a", false) // as the Back to normal mode button does
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("speed-profile"), optimizer.usedFilters)
+        assertTrue(g.database.syncState().get("refresh:a")!!.isNotEmpty())
+    }
+
     @Test fun fullCompileSkipsTheProfileStepsAndCompilesSpeed() = runBlocking {
         g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
         g.scheduler.enqueue("a")

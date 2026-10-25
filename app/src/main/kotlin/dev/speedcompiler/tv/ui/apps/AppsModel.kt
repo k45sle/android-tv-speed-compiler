@@ -65,8 +65,8 @@ class AppsDeps(
     val resets: Flow<List<Event>> = flowOf(emptyList()),
     /** Measured smoothness for every watched app. */
     val frameStats: Flow<List<FrameStat>> = flowOf(emptyList()),
-    /** Smoother mode: compile this package with `speed` from now on. */
-    val setSmoother: suspend (String) -> Unit = {},
+    /** Smoother mode on: compile this package with `speed` from now on. Off: back to normal mode. */
+    val setSmoother: suspend (String, Boolean) -> Unit = { _, _ -> },
     /** The installed app's fingerprint now, which changes on an update before any recompile. */
     val fingerprint: (String) -> String? = { null },
 )
@@ -131,7 +131,8 @@ fun rememberAppsDeps(): AppsDeps {
             reset = { pkg -> graph.optimizer.reset(pkg).also { if (it.ok) dropRefresh(graph, pkg) } },
             resets = graph.database.events().resets(),
             frameStats = graph.database.frameStats().all(),
-            setSmoother = { dao.setUseSpeed(it); dropRefresh(graph, it) },
+            // Off needs no refresh restore: the next normal compile records one again.
+            setSmoother = { p, on -> dao.setUseSpeed(p, on); if (on) dropRefresh(graph, p) },
             fingerprint = graph.packageSystem::fingerprint,
         )
     }

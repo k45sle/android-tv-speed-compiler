@@ -120,7 +120,7 @@ fun AppDetailScreen(packageName: String, go: (String) -> Unit, onBack: () -> Uni
         onBack = onBack,
         runs = history.filter { it.packageName == packageName },
         stats = stats.filter { it.packageName == packageName && it.fingerprint == (deps.fingerprint(packageName) ?: mine?.fingerprint) },
-        onSmoother = { scope.launch { deps.setSmoother(packageName); optimizeNow(packageName) } },
+        onSmoother = { on -> scope.launch { deps.setSmoother(packageName, on); optimizeNow(packageName) } },
     )
     if (confirmReset) {
         val cancel = remember { FocusRequester() }
@@ -154,7 +154,8 @@ fun AppDetailContent(
     onOpen: (() -> Unit)? = null,
     /** This app's measured smoothness for its current version. */
     stats: List<FrameStat> = emptyList(),
-    onSmoother: () -> Unit = {},
+    /** Smoother mode on or off (back to normal mode); either way the app is compiled again. */
+    onSmoother: (Boolean) -> Unit = {},
 ) {
     val mem = rememberFocusMemory("optimize")
     val result = resultFor(entry, watched?.lastResult, optimizedAt)
@@ -167,13 +168,14 @@ fun AppDetailContent(
         result != null -> stringResource(R.string.apps_pill_eta, stringResource(result.label), agoText(res, optimizedAt ?: now, now))
         else -> stringResource(R.string.home_not_optimized)
     }
+    val smootherOn = watched?.useSpeed == true
     val advice = adviceFor(
         debugBuild = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
             .maxByOrNull { it.finishedAt ?: it.enqueuedAt }?.failureReason == DEBUG_BUILD,
         waitingForProfile = entry?.eta is Eta.WaitingForLaunch,
         compiled = result == JobResult.Verified || result == JobResult.Unverified,
         stats = stats,
-        smootherOn = watched?.useSpeed == true,
+        smootherOn = smootherOn,
     )
     val rows = runs.filter { it.state == QueueState.DONE || it.state == QueueState.FAILED }
         .sortedByDescending { it.finishedAt ?: it.enqueuedAt }.take(3)
@@ -211,9 +213,11 @@ fun AppDetailContent(
                         Advice.DebugBuild -> R.string.advice_debug_build
                         Advice.Smooth -> R.string.advice_smooth
                         Advice.TrySmoother -> R.string.advice_try_smoother
-                        Advice.SlowByItself -> R.string.advice_slow_by_itself
-                        else -> null // the state line above already says it
+                        Advice.SlowByItself -> if (smootherOn) R.string.advice_slow_by_itself_smoother else R.string.advice_slow_by_itself
+                        Advice.Measuring -> R.string.advice_measuring
+                        else -> null // the state line above, or MostlySmooth below
                     }?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyMedium) }
+                    if (advice is Advice.MostlySmooth) Text(stringResource(R.string.advice_mostly_smooth, advice.percent), style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
                         if (onOpen != null && entry?.eta is Eta.WaitingForLaunch) ArcadeButton(stringResource(R.string.detail_open, app.label), onOpen, Modifier.remembersFocus(mem, "open"))
@@ -221,8 +225,13 @@ fun AppDetailContent(
                         if (advice == Advice.TrySmoother) ArcadeButton(
                             stringResource(R.string.advice_smoother_button),
                             // The button goes away once Smoother mode is on, so focus moves to Optimize now first.
-                            { mem.id.value = "optimize"; mem.pending = true; onSmoother() },
+                            { mem.id.value = "optimize"; mem.pending = true; onSmoother(true) },
                             Modifier.remembersFocus(mem, "smoother"),
+                        )
+                        if (advice == Advice.SlowByItself && smootherOn) ArcadeButton(
+                            stringResource(R.string.advice_normal_button),
+                            { mem.id.value = "optimize"; mem.pending = true; onSmoother(false) },
+                            Modifier.remembersFocus(mem, "normal"),
                         )
                         ArcadeButton(stringResource(R.string.detail_reset), onReset, Modifier.remembersFocus(mem, "reset"))
                     }

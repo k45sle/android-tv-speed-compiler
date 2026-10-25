@@ -261,7 +261,7 @@ README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitT
 
 ## Planned
 
-- Advice for each app. Speed Compile will watch how smoothly each optimized app runs while you use it. It will tell you whether compiling helped, whether a smoother compile setting is worth trying, or whether the app is slow by itself and compiling can't fix it.
+- Smarter advice from startup smoothness: score the first minutes after launch on their own, where compiling helps most.
 - More languages. The app is in English only for now.
 
 What changed in each version is in the [changelog](CHANGELOG.md).
