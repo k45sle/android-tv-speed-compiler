@@ -170,7 +170,7 @@ apksigner verify --print-certs speed-compile.apk
 
 ## Install
 
-1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). The stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK, which is handy to type into the Downloader app the Downloader code 6791955 (or the short link http://aftv.news/6791955) as the quicker way to enter it. You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
+1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). The stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK. The quickest way on a TV is the Downloader app with code 6791955 (or the short link https://aftv.news/6791955). You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
 2. Open the APK on the TV and allow installs from that source if asked.
 3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
 
