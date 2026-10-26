@@ -278,6 +278,13 @@ README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitT
 
 What changed in each version is in the [changelog](CHANGELOG.md).
 
+## Possible goals
+
+Things that might come later, if enough people want them:
+
+- Android 9 and 10 support. It would use the older TCP debugging mode instead of Wireless debugging. Some TVs expose it with a network-debugging switch; others need a computer and a USB cable once to turn it on, and some may not allow it at all. It also needs a real Android 9 or 10 TV to test on. Open an issue if you want it.
+- Fire TV support. The app is untested there. If you have a Fire TV and want to try it, an issue with what happened is the fastest way to find out.
+
 ## License
 
 [MIT](LICENSE). The bundled Geist and VT323 fonts are under the SIL Open Font License ([Geist](third_party/GEIST-OFL.txt), [VT323](third_party/VT323-OFL.txt)). The Alien Run character, hearts and some game tiles are adapted from [Kenney's Pixel Platformer](third_party/KENNEY-CC0.txt) (CC0). The Nuvio art in the screenshots is Nuvio's own, under GPL-3.0 ([its notice](app/src/test/resources/nuvio/NOTICE)). Only the screenshot tests use it, and it is not part of the app.
