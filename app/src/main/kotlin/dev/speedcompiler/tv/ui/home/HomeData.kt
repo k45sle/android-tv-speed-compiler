@@ -155,6 +155,7 @@ fun fixText(res: Resources, fix: Fix): String = res.getString(
     when (fix) {
         Fix.QuickRepair -> R.string.home_fix_forgot
         Fix.TurnOnWirelessDebugging -> R.string.home_fix_wireless
+        Fix.TurnOnAdbDebugging -> R.string.home_fix_adb
         Fix.AllowPrompt -> R.string.home_fix_allow
         Fix.Retry -> R.string.home_fix_retry
     },

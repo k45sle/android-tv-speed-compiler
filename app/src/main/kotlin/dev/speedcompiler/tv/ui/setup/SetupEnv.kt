@@ -95,7 +95,7 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
 fun reasonText(res: Resources, e: Throwable): String = res.getString(
     when (e) {
         is AdbFailure.NotPaired -> R.string.setup_reason_not_paired
-        is AdbFailure.DebuggingOff -> R.string.setup_reason_debugging_off
+        is AdbFailure.DebuggingOff -> if (e.legacy) R.string.setup_reason_adb_off else R.string.setup_reason_debugging_off
         is AdbFailure.NotAuthorized -> R.string.setup_reason_not_allowed
         is AdbFailure.Timeout -> R.string.setup_reason_timeout
         else -> R.string.setup_reason_could_not_connect

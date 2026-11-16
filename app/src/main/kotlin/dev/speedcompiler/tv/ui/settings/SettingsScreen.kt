@@ -166,12 +166,12 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
 
                 Heading(stringResource(R.string.settings_heading_connection))
                 SwitchRow(stringResource(R.string.settings_keep_trusting_title), stringResource(R.string.settings_keep_trusting_subtitle), v.keepTrusting) { on -> set { it.copy(keepTrusting = on) } }
-                SwitchRow(stringResource(R.string.settings_keep_wifi_title), stringResource(R.string.settings_keep_wifi_subtitle), v.keepWifiDebugging) { on -> if (on) set { it.copy(keepWifiDebugging = true) } else confirmWifiOff = true }
+                SwitchRow(stringResource(if (v.legacyAdb) R.string.settings_keep_adb_title else R.string.settings_keep_wifi_title), stringResource(R.string.settings_keep_wifi_subtitle), v.keepWifiDebugging) { on -> if (on) set { it.copy(keepWifiDebugging = true) } else confirmWifiOff = true }
                 if (confirmWifiOff) {
                     val ok = remember { FocusRequester() }
                     LaunchedEffect(Unit) { ok.requestFocus() }
                     SimpleDialog({ confirmWifiOff = false }) {
-                        Text(stringResource(R.string.settings_keep_wifi_off_body))
+                        Text(stringResource(if (v.legacyAdb) R.string.settings_keep_adb_off_body else R.string.settings_keep_wifi_off_body))
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.x1)) {
                             Button({ confirmWifiOff = false; set { it.copy(keepWifiDebugging = false) } }, Modifier.focusRequester(ok)) { Text(stringResource(R.string.common_ok).upper()) }
                             Button({ confirmWifiOff = false }) { Text(stringResource(R.string.common_cancel).upper()) }

@@ -214,7 +214,8 @@ class DetectWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result {
         val g = applicationContext.graph
         // Not gated on the keeper: it can still say Connected after Wireless debugging was switched off.
-        if (g.settings.values.first().keepWifiDebugging) enableWifiAdb(applicationContext)
+        val s = g.settings.values.first()
+        if (s.keepWifiDebugging) enableWifiAdb(applicationContext, s.legacyAdb)
         if (g.connectionKeeper.status.value != KeeperStatus.Connected) g.connectionKeeper.reconnect()
         runDetect(g)
         if (systemUpdated(g.database.syncState(), Build.FINGERPRINT)) enqueueVerifyNow(applicationContext)
