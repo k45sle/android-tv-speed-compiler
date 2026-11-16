@@ -34,3 +34,14 @@ Amlogic S905X4 (4x Cortex-A55), 3.5 GB RAM, Wi-Fi. Checked in October 2026 with 
 | Ethernet, Wi-Fi network change, router restart | Not checked yet. |
 
 Cold start, size and compile time per app are in the README under "Does it help?".
+
+## Sony Bravia KD-43X81J, Android TV 12
+
+Reported by a user in November 2026, with photos of Settings. Not tested by the developer.
+
+| Check | Result |
+| --- | --- |
+| Software | Android TV OS 12, security patch from August 2026. |
+| Developer options | Has ADB debugging (on) and Revoke USB debugging authorisations. There is no Wireless debugging entry and no separate network-debugging switch. |
+| Setup and pairing | Fails. Setup stops at the pairing step because there is no Wireless debugging to pair with. |
+| Other ADB apps | Launcher Manager and ATVTools connect without a pairing code, which suggests the ADB debugging switch also opens the older network ADB port (5555). Not checked. |

@@ -198,10 +198,13 @@ Inside the app, Help lists the same fixes, and Settings > Export diagnostics mak
 
 Speed Compile needs Android TV or Google TV 11 or later, because Wireless debugging arrived in Android 11.
 
+The TV also has to show Wireless debugging in Developer options, and at least one Android 12 TV does not: a user's Sony Bravia KD-43X81J only has ADB debugging, so setup can't get past the pairing step there.
+
 | Device | Android | Worked? |
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
 | Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
+| Sony Bravia KD-43X81J | 12 | No, Wireless debugging is missing (user report, see the [device matrix](docs/device-matrix.md)) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -282,7 +285,7 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 
 Things that might come later, if enough people want them:
 
-- Android 9 and 10 support. It would use the older TCP debugging mode instead of Wireless debugging. Some TVs expose it with a network-debugging switch; others need a computer and a USB cable once to turn it on, and some may not allow it at all. It also needs a real Android 9 or 10 TV to test on. Open an issue if you want it.
+- Support for the older TCP debugging mode (port 5555) next to Wireless debugging. It would cover Android 9 and 10, and newer TVs without Wireless debugging, such as the Sony Bravia KD-43X81J above, whose ADB debugging switch probably opens that port already. Other TVs expose it with a network-debugging switch; some need a computer and a USB cable once to turn it on, and some may not allow it at all. It also needs real TVs to test on. Open an issue if you want it.
 - Fire TV support. The app is untested there. If you have a Fire TV and want to try it, an issue with what happened is the fastest way to find out.
 
 ## License
