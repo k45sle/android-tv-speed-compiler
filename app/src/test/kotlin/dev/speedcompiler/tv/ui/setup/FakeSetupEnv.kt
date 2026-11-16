@@ -6,6 +6,8 @@ class FakeSetupEnv(
     var developerOptions: Boolean = false,
     var wireless: Boolean = false,
     var apps: List<SetupApp> = emptyList(),
+    var adbDebugging: Boolean = false,
+    var portOpen: Boolean = false,
 ) : SetupEnv {
     val calls = mutableListOf<String>()
     var hook: (String) -> Unit = {}
@@ -13,6 +15,8 @@ class FakeSetupEnv(
 
     override fun developerOptionsOn() = developerOptions
     override fun wirelessDebuggingOn() = wireless
+    override fun adbDebuggingOn() = adbDebugging
+    override suspend fun legacyPortOpen() = portOpen
     override fun openSettings() = call("openSettings")
     override fun openDeveloperOptions() = call("openDeveloperOptions")
     override fun startPairing() = call("startPairing")
