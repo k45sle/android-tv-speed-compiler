@@ -442,8 +442,11 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     private val legacy = MutableStateFlow(false)
-    private fun legacyDeps(reason: MutableStateFlow<String?> = MutableStateFlow(null)) =
-        SetupDeps(env, monitor.state, url, reason, holdsPairing = { false }, onFinish = { sel, now -> finished = sel to now }, legacy = legacy, setLegacy = { legacy.value = it })
+    private fun legacyDeps(
+        reason: MutableStateFlow<String?> = MutableStateFlow(null),
+        prompt: MutableStateFlow<ConnectionState>? = null,
+    ) =
+        SetupDeps(env, monitor.state, url, reason, holdsPairing = { false }, onFinish = { sel, now -> finished = sel to now }, legacy = legacy, setLegacy = { legacy.value = it }, promptConnection = prompt)
 
     private fun click(text: String) { rule.onNodeWithText(text, ignoreCase = true).performClick(); rule.waitForIdle() }
 
@@ -487,6 +490,33 @@ class SetupFlowTest : ComposeTestBase() {
         see("Turn on Wireless debugging.")
         env.wireless = true; tick()
         see("Use your phone.")
+    }
+
+    @Test
+    fun legacyQuietRefusalDoesNotShowADenial() {
+        // A background try could not show the TV's prompt: its refusal must not deny the step whose own prompted try
+        // is still coming, so Connecting followed by Connecting shows no problem.
+        val prompt = MutableStateFlow(ConnectionState.Unpaired)
+        env.developerOptions = true; legacy.value = true; env.portOpen = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps(MutableStateFlow("The TV did not allow this app."), prompt)) }
+        enter()
+        see("Allow this app.")
+        prompt.value = ConnectionState.Connecting; tick()
+        prompt.value = ConnectionState.Connecting; tick()
+        rule.onNodeWithText("The TV did not allow this app.").assertDoesNotExist()
+        rule.onNodeWithText("Retry").assertDoesNotExist()
+    }
+
+    @Test
+    fun legacyPromptedRefusalShowsTheNotAllowedReason() {
+        val prompt = MutableStateFlow(ConnectionState.Unpaired)
+        env.developerOptions = true; legacy.value = true; env.portOpen = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps(MutableStateFlow("The TV did not allow this app."), prompt)) }
+        enter()
+        see("Allow this app.")
+        prompt.value = ConnectionState.Connecting; tick()
+        prompt.value = ConnectionState.Disconnected; tick()
+        see("The TV did not allow this app."); see("Retry")
     }
 
     @Test

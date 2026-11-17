@@ -8,7 +8,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -18,7 +17,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 import java.io.IOException
@@ -232,19 +230,13 @@ class ConnectionKeeperTest {
     }
 
     @Test
-    fun quietLinkClearsForgotten() = runTest(UnconfinedTestDispatcher()) {
-        // No new handshake and a quiet call: the open link was made by a quiet connect, so the TV trusts the key
-        // again (Forgotten only ever follows refused boot retries, when no link existed).
+    fun noHandshakeKeepsForgotten() = runTest(UnconfinedTestDispatcher()) {
+        // Without a fresh handshake nothing proves the open link is this key's: it may have come from Allow once.
         var checks = 0
-        val forgotten = FakeSettings(legacy = true, check = KeyCheck.Forgotten)
-        keeper(FakeAdbShell(), forgotten, checkKey = { checks++; KeyCheck.NotSaved }, connect = { false }).reconnect()
-        assertEquals(KeyCheck.Saved, forgotten.values.first().legacyKeyCheck)
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Forgotten)
+        keeper(FakeAdbShell(), settings, checkKey = { checks++; KeyCheck.Saved }, connect = { false }).reconnect()
+        assertEquals(KeyCheck.Forgotten, settings.values.first().legacyKeyCheck)
         assertEquals(0, checks)
-
-        // Any other stored result stays: only Forgotten says every retry had been refused.
-        val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
-        keeper(FakeAdbShell(), notSaved, checkKey = { KeyCheck.Unknown }, connect = { false }).reconnect()
-        assertEquals(KeyCheck.NotSaved, notSaved.values.first().legacyKeyCheck)
     }
 
     @Test
@@ -427,119 +419,24 @@ class ConnectionKeeperTest {
         assertEquals(false, k.keyChecking.value)
         assertEquals(false, k.keyHelpBusy.first())
     }
-
     @Test
-    fun cancelledWaiterRestoresMaskedFailure() = runTest(UnconfinedTestDispatcher()) {
-        val quietGate = CompletableDeferred<Unit>()
+    fun quietFailureIsMarkedQuiet() = runTest(UnconfinedTestDispatcher()) {
         val k = keeper(
             FakeAdbShell(),
-            connect = { prompt ->
-                if (prompt) {
-                    true
-                } else {
-                    quietGate.await()
-                    throw AdbFailure.NotAuthorized()
-                }
-            },
+            connect = { throw AdbFailure.NotAuthorized() },
         )
-        val quiet = launch { k.reconnect() } // holds the lock while the gate is shut
-        // A dispatcher of its own, never advanced until the cancel below: the prompted try stays queued for the lock.
-        val waiting = StandardTestDispatcher()
-        val prompted = CoroutineScope(waiting).launch { k.reconnect(prompt = true) }
-        waiting.scheduler.runCurrent() // counted as waiting, queued behind the quiet try
-        quietGate.complete(Unit)
-        quiet.join()
-        assertEquals(KeeperStatus.Reconnecting, k.status.value) // its failure is masked for the prompt
-
-        prompted.cancel()
-        waiting.scheduler.advanceUntilIdle() // its finally runs: nobody is trying any more
-        val failed = k.status.value as KeeperStatus.Failed
-        assertEquals(Fix.AllowPrompt, failed.fix)
-        assertEquals(ConnectionState.Disconnected, k.state.first())
-    }
-
-    @Test
-    fun quietFailureWhilePromptedQueuedStaysConnecting() = runTest(UnconfinedTestDispatcher()) {
-        val quietGate = CompletableDeferred<Unit>()
-        val promptGate = CompletableDeferred<Unit>()
-        val k = keeper(
-            FakeAdbShell(),
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            connect = { prompt ->
-                if (prompt) {
-                    promptGate.await()
-                    true
-                } else {
-                    quietGate.await()
-                    throw AdbFailure.NotAuthorized()
-                }
-            },
-        )
-        val seen = mutableListOf<KeeperStatus>()
-        val collect = launch(UnconfinedTestDispatcher(testScheduler)) { k.status.collect { seen += it } }
-
-        var quietStatus: KeeperStatus? = null
-        val quiet = launch { quietStatus = k.reconnect() } // holds the lock while the gate is shut
-        k.connectNow() // its prompted reconnect counts as waiting while it is queued behind the quiet one
-        quietGate.complete(Unit)
-        quiet.join()
-
-        assertEquals(KeeperStatus.Reconnecting, quietStatus)
-        assertEquals(KeeperStatus.Reconnecting, k.status.value)
-        assertTrue(seen.none { it is KeeperStatus.Failed })
-
-        promptGate.complete(Unit)
-        collect.cancel()
-    }
-
-    @Test
-    fun quietFailureAfterPromptedFinishedShowsFailure() = runTest(UnconfinedTestDispatcher()) {
-        val prompts = mutableListOf<Boolean>()
-        val k = keeper(
-            FakeAdbShell(),
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            connect = { prompt -> prompts += prompt; throw AdbFailure.NotAuthorized() },
-        )
-        // No other prompted try is queued, so the prompted failure shows.
-        val prompted = k.reconnect(prompt = true)
-        assertEquals(Fix.AllowPrompt, (prompted as KeeperStatus.Failed).fix)
-        // The prompted try is long finished: a quiet failure must show too, not stay Connecting.
+        // A background try never showed the TV's Allow prompt, so its refusal may not be final.
         val quiet = k.reconnect()
         assertEquals(Fix.AllowPrompt, (quiet as KeeperStatus.Failed).fix)
-        assertEquals(KeeperStatus.Failed(quiet.reason, Fix.AllowPrompt), k.status.value)
-        assertEquals(listOf(true, false), prompts)
-    }
+        assertEquals(true, quiet.quiet)
+        assertEquals(KeeperStatus.Failed(quiet.reason, Fix.AllowPrompt, quiet = true), k.status.value)
+        assertEquals(ConnectionState.Disconnected, k.state.first())
 
-    @Test
-    fun quietFailureWhileReallowQueuedStaysConnecting() = runTest(UnconfinedTestDispatcher()) {
-        val quietGate = CompletableDeferred<Unit>()
-        val reallowGate = CompletableDeferred<Unit>()
-        val k = keeper(
-            FakeAdbShell(),
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            connect = { prompt ->
-                if (prompt) {
-                    reallowGate.await()
-                    true
-                } else {
-                    quietGate.await()
-                    throw AdbFailure.NotAuthorized()
-                }
-            },
-        )
-
-        var quietStatus: KeeperStatus? = null
-        val quiet = launch { quietStatus = k.reconnect() } // holds the lock while the gate is shut
-        val re = launch { k.reallow() } // its prompted reconnect is queued behind the quiet one
-        quietGate.complete(Unit)
-        quiet.join()
-
-        assertEquals(KeeperStatus.Reconnecting, quietStatus)
-        assertEquals(KeeperStatus.Reconnecting, k.status.value)
-
-        reallowGate.complete(Unit)
-        re.join()
-        assertEquals(KeeperStatus.Connected, k.status.value)
+        // The prompted try did show it, so its refusal is final.
+        val prompted = k.reconnect(prompt = true)
+        assertEquals(Fix.AllowPrompt, (prompted as KeeperStatus.Failed).fix)
+        assertEquals(false, prompted.quiet)
+        assertEquals(KeeperStatus.Failed(prompted.reason, Fix.AllowPrompt), k.status.value)
     }
 
     @Test

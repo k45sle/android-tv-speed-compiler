@@ -205,10 +205,11 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             var stalled by remember { mutableStateOf(false) }
             var attempt by remember { mutableIntStateOf(0) }
             val reason by deps.reason.collectAsState(null)
+            val promptConn by (deps.promptConnection ?: deps.connection).collectAsState(ConnectionState.Unpaired)
             LaunchedEffect(Unit) { if (legacy) env.reconnect() } // the port just opened; nothing else asks to connect
-            LaunchedEffect(conn) {
-                if (conn == ConnectionState.Connecting) { sawConnecting = true; stalled = false }
-                else if ((conn == ConnectionState.Disconnected || conn == ConnectionState.Unpaired) && sawConnecting) { sawConnecting = false; denied = true; fail() }
+            LaunchedEffect(promptConn) {
+                if (promptConn == ConnectionState.Connecting) { sawConnecting = true; stalled = false }
+                else if ((promptConn == ConnectionState.Disconnected || promptConn == ConnectionState.Unpaired) && sawConnecting) { sawConnecting = false; denied = true; fail() }
             }
             val lifecycle = LocalLifecycleOwner.current.lifecycle
             LaunchedEffect(attempt) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(NoProgressMs); stalled = true; fail() } }
@@ -218,9 +219,9 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 if (problem != null) {
                     Body(problem)
                     PrimaryButton(stringResource(R.string.common_retry)) { env.reconnect(); denied = false; stalled = false; sawConnecting = false; attempt++ }
-                } else StatusPill(stringResource(if (conn == ConnectionState.Connecting) R.string.setup_connecting else R.string.setup_waiting_for_you), Tone.Info)
+                } else StatusPill(stringResource(if (promptConn == ConnectionState.Connecting) R.string.setup_connecting else R.string.setup_waiting_for_you), Tone.Info)
                 helpOffer?.let { ShowMeHow(it, grab = problem == null) }
-                AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
+                AutoAdvance({ promptConn == ConnectionState.Connected }, ::advance)
             }
         }
         6 -> AppPicker(apps, picked, onContinue = { step = 7 })

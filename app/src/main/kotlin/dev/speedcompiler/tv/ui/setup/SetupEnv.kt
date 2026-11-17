@@ -18,11 +18,13 @@ import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.adb.LEGACY_HOST
 import dev.speedcompiler.tv.adb.LEGACY_PORT
+import dev.speedcompiler.tv.adb.toConnectionState
 import dev.speedcompiler.tv.ui.apps.AppInfo
 import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -65,6 +67,8 @@ class SetupDeps(
     /** Plain ADB on port 5555 instead of Wireless debugging, for TVs without it. */
     val legacy: Flow<Boolean> = flowOf(false),
     val setLegacy: suspend (Boolean) -> Unit = {},
+    /** The connection as Setup's Allow step should judge it: in ADB debugging mode a quiet background try's refusal still reads as Connecting, because the step's own prompted try is coming. */
+    val promptConnection: Flow<ConnectionState>? = null,
 )
 
 class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
@@ -146,6 +150,9 @@ fun rememberSetupDeps(): SetupDeps {
                 }
             },
             legacy = graph.settings.values.map { it.legacyAdb },
+            promptConnection = combine(graph.connectionKeeper.status, graph.settings.values.map { it.legacyAdb }) { s, legacy ->
+                if (legacy && s is KeeperStatus.Failed && s.quiet) ConnectionState.Connecting else s.toConnectionState()
+            },
             setLegacy = { on ->
                 // Toggling the debugging mode invalidates the key check, so the next check starts from Unknown.
                 graph.settings.update {

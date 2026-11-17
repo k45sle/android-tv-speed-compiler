@@ -26,6 +26,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 const val RECONNECT_WORK = "reconnect"
 private const val NETWORK_WAIT_MS = 60_000L
+private const val AFTER_BOOT_MS = 10 * 60_000L
 private val BACKOFF_MS = listOf(5_000L, 10_000L, 20_000L, 40_000L)
 
 /** The one entry point for boot, app open and the periodic job. Does nothing if a reconnect is already queued. */
@@ -39,9 +40,9 @@ fun enqueueReconnect(context: Context) {
 /**
  * Waits for the network, then tries [reconnect] up to `backoff.size + 1` times, pausing between tries.
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
- * With [retryNotAllowed] (the legacy port) a refused key is retried too: these tries never show the TV's prompt,
- * and right after boot the TV may refuse a key it accepts a few seconds later. It is left off when the check knows
- * the TV won't keep the key, so those runs stop at once and Home offers Fix connection.
+ * With [retryNotAllowed] (the legacy port, only just after a restart) a refused key is retried too: these tries never
+ * show the TV's prompt, and right after boot the TV may refuse a key it accepts a few seconds later. It is left off
+ * later, and when the check knows the TV won't keep the key, so those runs stop at once and Home offers Fix connection.
  * Calls [onGaveUp] with the last status only when every try was refused ([Fix.AllowPrompt]) and no try connected
  * or stopped early, never on an early stop. A run where the port was closed for some tries, or timed out,
  * says nothing about the key.
@@ -94,9 +95,8 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             enableWifiAdb = { enableWifiAdb(applicationContext, s.legacyAdb) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
-            // Retry a refused key quietly unless the TV is known not to keep it (Unknown, e.g. after updating from
-            // 1.1.0, must still ride out the early-boot refusal).
-            retryNotAllowed = s.legacyAdb && !keyKnownRefused(graph.connectionKeeper),
+            // the TV may refuse a trusted key for a few seconds after boot; later, a refusal is final and Home should offer Fix connection at once
+            retryNotAllowed = s.legacyAdb && android.os.SystemClock.elapsedRealtime() < AFTER_BOOT_MS && !keyKnownRefused(graph.connectionKeeper),
             onGaveUp = { last -> quietRetriesFailed(graph.connectionKeeper, last) },
         )
         return Result.success()

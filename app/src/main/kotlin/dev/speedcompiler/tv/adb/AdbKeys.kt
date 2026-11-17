@@ -44,7 +44,7 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
             // No usable key (first run, or the file is corrupt): a new identity, so the TV has to be paired again.
             if (keyFile.exists()) {
                 // Never drop an identity silently: keep the unreadable file for diagnosis and say so in the log.
-                // An earlier adb.key.bad (likely the key the TV still trusts) is never overwritten.
+                // Earlier copies (likely the key the TV still trusts) are never overwritten.
                 val what = keepBadCopy(keyFile)
                 log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), $what; the TV will ask to allow the new key")
             }
@@ -63,15 +63,18 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
     }
 
     /**
-     * Keeps only the first unreadable copy, as `<name>.bad`: if that already exists, [file] is deleted instead, so the
-     * earlier copy (likely the key the TV still trusts) survives. Returns what the log should say about the copy.
+     * Keeps the unreadable copy under the first free of `<name>.bad`, `<name>.bad.1` and `<name>.bad.2`, so up to
+     * three earlier copies (likely the key the TV still trusts) survive. With all three taken, [file] is deleted
+     * instead. Returns what the log should say about the copy.
      */
     private fun keepBadCopy(file: File): String {
-        val bad = File(file.parentFile, file.name + ".bad")
-        if (bad.exists()) {
+        val names = listOf(".bad", ".bad.1", ".bad.2")
+        val name = names.firstOrNull { !File(file.parentFile, file.name + it).exists() }
+        if (name == null) {
             file.delete()
-            return "an earlier copy is kept as ${bad.name}"
+            return "the copy limit of ${names.size} is reached, so it was deleted"
         }
+        val bad = File(file.parentFile, file.name + name)
         if (file.renameTo(bad)) return "kept as ${bad.name}"
         // The move can fail (a locked file): a copy still keeps the evidence.
         return try {

@@ -37,18 +37,34 @@ class AdbKeysTest {
         assertTrue(logs.single().contains("kept as adb.key.bad")) // never claim a copy that isn't there
     }
 
-    @Test fun secondBadKeyKeepsTheFirstBadCopy() {
+    @Test fun badLoadsKeepUpToThreeCopies() {
         val dir = tmp.newFolder()
         File(dir, "adb.key").writeBytes(byteArrayOf(1, 2, 3))
-        AdbKeys(dir)
+        val first = mutableListOf<String>()
+        AdbKeys(dir, log = { first += it })
         File(dir, "adb.key").writeBytes(byteArrayOf(4, 5, 6))
+        val second = mutableListOf<String>()
+        AdbKeys(dir, log = { second += it })
+        // The first bad key may be the one the TV still trusts: a later one must not overwrite it.
+        assertArrayEquals(byteArrayOf(1, 2, 3), File(dir, "adb.key.bad").readBytes())
+        assertArrayEquals(byteArrayOf(4, 5, 6), File(dir, "adb.key.bad.1").readBytes())
+        assertEquals(1, first.size)
+        assertTrue(first.single().contains("kept as adb.key.bad"))
+        assertTrue(second.single().contains("kept as adb.key.bad.1"))
+
+        File(dir, "adb.key").writeBytes(byteArrayOf(7, 8, 9))
+        AdbKeys(dir)
+        assertArrayEquals(byteArrayOf(7, 8, 9), File(dir, "adb.key.bad.2").readBytes())
+
+        // All three names taken: the new unreadable file is dropped, the kept copies stay as they were.
+        File(dir, "adb.key").writeBytes(byteArrayOf(10, 11, 12))
         val logs = mutableListOf<String>()
         AdbKeys(dir, log = { logs += it })
-        // The first bad key may be the one the TV still trusts: it must survive the second load.
         assertArrayEquals(byteArrayOf(1, 2, 3), File(dir, "adb.key.bad").readBytes())
-        assertEquals(0, dir.listFiles().orEmpty().count { it.name.startsWith("adb.key.bad.") }) // no timestamp copies
+        assertArrayEquals(byteArrayOf(4, 5, 6), File(dir, "adb.key.bad.1").readBytes())
+        assertArrayEquals(byteArrayOf(7, 8, 9), File(dir, "adb.key.bad.2").readBytes())
         assertEquals(1, logs.size)
-        assertTrue(logs.single().contains("an earlier copy is kept as adb.key.bad"))
+        assertTrue(logs.single().contains("copy limit"))
     }
 
     @Test fun savedKeyIsKeptWhenKeyFactoryDropsTheCrtFields() {
