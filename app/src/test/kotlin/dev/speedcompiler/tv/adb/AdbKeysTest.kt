@@ -34,6 +34,7 @@ class AdbKeysTest {
         assertNotEquals(first.privateKey.encoded.toList(), AdbKeys(dir, log = { logs += it }).privateKey.encoded.toList())
         assertArrayEquals(byteArrayOf(1, 2, 3), File(dir, "adb.key.bad").readBytes()) // kept, not overwritten
         assertEquals(1, logs.size)
+        assertTrue(logs.single().contains("kept as adb.key.bad")) // never claim a copy that isn't there
     }
 
     @Test fun secondBadKeyKeepsTheFirstBadCopy() {

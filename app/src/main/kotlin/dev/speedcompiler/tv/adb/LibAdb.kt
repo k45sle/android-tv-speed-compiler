@@ -64,7 +64,10 @@ class LibAdb(
     private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb"), log = { Log.w("AdbKeys", it) }) }
     private val connecting = Mutex()
 
-    private val manager = object : AbsAdbConnectionManager() {
+    private val manager = newManager()
+
+    /** A fresh connection manager over this app's key, for [connect] and the quiet [keyTrusted] probe. */
+    private fun newManager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
         override fun getPrivateKey() = keys.privateKey
         override fun getCertificate(): Certificate = keys.certificate
         override fun getDeviceName() = "speed-compiler"
@@ -160,12 +163,7 @@ class LibAdb(
      * after a restart. True = let in, false = refused, null = couldn't tell (port closed, timeout, other error).
      */
     suspend fun keyTrusted(): Boolean? {
-        val probe = object : AbsAdbConnectionManager() {
-            override fun getPrivateKey() = keys.privateKey
-            override fun getCertificate(): Certificate = keys.certificate
-            override fun getDeviceName() = "speed-compiler"
-        }.apply {
-            setApi(Build.VERSION.SDK_INT)
+        val probe = newManager().apply {
             setThrowOnUnauthorised(true)
             setTimeout(KEY_CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         }

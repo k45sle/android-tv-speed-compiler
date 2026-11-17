@@ -38,7 +38,8 @@ fun enqueueReconnect(context: Context) {
  * Waits for the network, then tries [reconnect] up to `backoff.size + 1` times, pausing between tries.
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
  * With [retryNotAllowed] (the legacy port) a refused key is retried too: these tries never show the TV's prompt,
- * and right after boot the TV may refuse a key it accepts a few seconds later.
+ * and right after boot the TV may refuse a key it accepts a few seconds later. It is left off when the check knows
+ * the TV won't keep the key, so those runs stop at once and Home offers Fix connection.
  * Calls [onGaveUp] with the last status only when every try was refused ([Fix.AllowPrompt]) and no try connected
  * or stopped early, never on an early stop. A run where the port was closed for some tries, or timed out,
  * says nothing about the key.
@@ -91,9 +92,9 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             enableWifiAdb = { enableWifiAdb(applicationContext, s.legacyAdb) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
-            // Only a key the TV is known to have saved is worth retrying quietly after a refusal; otherwise stop at
-            // once so Home offers Fix connection.
-            retryNotAllowed = s.legacyAdb && graph.connectionKeeper.keyKnownSaved(),
+            // Retry a refused key quietly unless the TV is known not to keep it (Unknown, e.g. after updating from
+            // 1.1.0, must still ride out the early-boot refusal).
+            retryNotAllowed = s.legacyAdb && !graph.connectionKeeper.keyKnownRefused(),
             onGaveUp = graph.connectionKeeper::quietRetriesFailed,
         )
         return Result.success()

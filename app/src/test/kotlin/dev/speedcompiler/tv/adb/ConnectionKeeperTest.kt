@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -207,11 +209,12 @@ class ConnectionKeeperTest {
     }
 
     @Test
-    fun unknownResultKeepsTheOldValue() = runTest(UnconfinedTestDispatcher()) {
+    fun promptedUnknownReplacesAnOldResult() = runTest(UnconfinedTestDispatcher()) {
+        // The person was just let in, so an older refusal must not linger even when the probe couldn't tell.
         val settings = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
         val k = keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown })
         k.reconnect(prompt = true)
-        assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
         assertEquals(false, k.keyChecking.value)
     }
 
@@ -344,18 +347,76 @@ class ConnectionKeeperTest {
     }
 
     @Test
-    fun keyKnownSavedNeedsTheSameKey() = runTest(UnconfinedTestDispatcher()) {
-        val same = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "A")
-        assertEquals(true, keeper(FakeAdbShell(), same, keyId = { "A" }).keyKnownSaved())
+    fun knownRefusedKeyIsNotRetried() = runTest(UnconfinedTestDispatcher()) {
+        // A result the TV is known not to keep makes a quiet refusal the expected answer: no retries.
+        for (check in listOf(KeyCheck.AllowedOnce, KeyCheck.NotSaved)) {
+            val same = FakeSettings(legacy = true, check = check, key = "A")
+            assertEquals(true, keeper(FakeAdbShell(), same, keyId = { "A" }).keyKnownRefused())
 
-        val other = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "A")
-        assertEquals(false, keeper(FakeAdbShell(), other, keyId = { "B" }).keyKnownSaved())
+            val other = FakeSettings(legacy = true, check = check, key = "A")
+            assertEquals(false, keeper(FakeAdbShell(), other, keyId = { "B" }).keyKnownRefused())
+        }
 
-        val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved, key = "A")
-        assertEquals(false, keeper(FakeAdbShell(), notSaved, keyId = { "A" }).keyKnownSaved())
+        // Unknown (for example after updating from 1.1.0) and Saved must still ride out the early-boot refusal.
+        for (check in listOf(KeyCheck.Unknown, KeyCheck.Saved)) {
+            val s = FakeSettings(legacy = true, check = check, key = "A")
+            assertEquals(false, keeper(FakeAdbShell(), s, keyId = { "A" }).keyKnownRefused())
+        }
 
-        val legacyOff = FakeSettings(legacy = false, check = KeyCheck.Saved, key = "A")
-        assertEquals(false, keeper(FakeAdbShell(), legacyOff, keyId = { "A" }).keyKnownSaved())
+        val legacyOff = FakeSettings(legacy = false, check = KeyCheck.NotSaved, key = "A")
+        assertEquals(false, keeper(FakeAdbShell(), legacyOff, keyId = { "A" }).keyKnownRefused())
+
+        val noKey = FakeSettings(legacy = true, check = KeyCheck.NotSaved, key = null)
+        assertEquals(false, keeper(FakeAdbShell(), noKey, keyId = { "A" }).keyKnownRefused())
+    }
+
+    @Test
+    fun cancelledBeforeStartClearsBusy() = runTest {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        var calls = 0
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler)),
+            checkKey = { KeyCheck.Saved },
+            connect = { calls++; if (calls > 1) throw AdbFailure.NotAuthorized() else true },
+        )
+        k.reconnect(prompt = true) // its key check job is queued, not started (StandardTestDispatcher)
+        assertEquals(true, k.keyChecking.value)
+        k.reallow() // cancels the queued job before it ever runs, then its own connect fails
+        advanceUntilIdle()
+        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
+    }
+
+    @Test
+    fun cancelledWaiterRestoresMaskedFailure() = runTest(UnconfinedTestDispatcher()) {
+        val quietGate = CompletableDeferred<Unit>()
+        val k = keeper(
+            FakeAdbShell(),
+            connect = { prompt ->
+                if (prompt) {
+                    true
+                } else {
+                    quietGate.await()
+                    throw AdbFailure.NotAuthorized()
+                }
+            },
+        )
+        val quiet = launch { k.reconnect() } // holds the lock while the gate is shut
+        // A dispatcher of its own, never advanced until the cancel below: the prompted try stays queued for the lock.
+        val waiting = StandardTestDispatcher()
+        val prompted = CoroutineScope(waiting).launch { k.reconnect(prompt = true) }
+        waiting.scheduler.runCurrent() // counted as waiting, queued behind the quiet try
+        quietGate.complete(Unit)
+        quiet.join()
+        assertEquals(KeeperStatus.Reconnecting, k.status.value) // its failure is masked for the prompt
+
+        prompted.cancel()
+        waiting.scheduler.advanceUntilIdle() // its finally runs: nobody is trying any more
+        val failed = k.status.value as KeeperStatus.Failed
+        assertEquals(Fix.AllowPrompt, failed.fix)
+        assertEquals(ConnectionState.Disconnected, k.state.first())
     }
 
     @Test

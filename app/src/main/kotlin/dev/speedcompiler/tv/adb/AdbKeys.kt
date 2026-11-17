@@ -46,7 +46,8 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
                 // Never drop an identity silently: keep the unreadable file for diagnosis and say so in the log.
                 // An earlier adb.key.bad (likely the key the TV still trusts) is never overwritten.
                 val kept = keepBadCopy(keyFile)
-                log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), kept as ${kept.name}; the TV will ask to allow the new key")
+                val what = kept?.let { "kept as ${it.name}" } ?: "couldn't keep a copy"
+                log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), $what; the TV will ask to allow the new key")
             }
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
             privateKey = pair.private
@@ -62,12 +63,22 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
         check(tmp.renameTo(file)) { "could not save ${file.name}" }
     }
 
-    /** Moves [file] to `<name>.bad`, or to `<name>.bad.<millis>` if that name is taken, so an earlier copy survives. */
-    private fun keepBadCopy(file: File): File {
+    /**
+     * Moves [file] to `<name>.bad`, or to `<name>.bad.<millis>` if that name is taken, so an earlier copy survives.
+     * Returns the file that holds the copy, or null when neither the move nor a copy worked.
+     */
+    private fun keepBadCopy(file: File): File? {
         val bad = File(file.parentFile, file.name + ".bad")
         val target = if (bad.exists()) File(file.parentFile, "${bad.name}.${System.currentTimeMillis()}") else bad
-        file.renameTo(target)
-        return target
+        if (file.renameTo(target)) return target
+        // The move can fail (another filesystem, a locked file): a copy still keeps the evidence, but never over a
+        // copy that is already there.
+        return try {
+            file.copyTo(target, overwrite = false)
+            target
+        } catch (e: Exception) {
+            null
+        }
     }
 }
 

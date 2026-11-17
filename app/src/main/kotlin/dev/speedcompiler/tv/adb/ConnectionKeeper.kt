@@ -80,6 +80,9 @@ class ConnectionKeeper(
     /** Prompted callers queued for [lock] (not yet holding it): while one waits, a quiet failure must not flash. */
     private val promptedWaiting = AtomicInteger(0)
 
+    /** A quiet failure hidden behind a queued prompted try; put back if that try is cancelled before it runs. */
+    private var maskedFailure: KeeperStatus.Failed? = null
+
     /** Starts [reconnect] in the app scope, allowing the TV's prompt; ignored while one is already running. */
     override fun connectNow() {
         if (!inFlight.compareAndSet(false, true)) return
@@ -140,12 +143,21 @@ class ConnectionKeeper(
                 block()
             }
         } finally {
-            if (!held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
+            if (!held) { // cancelled while waiting for the lock
+                promptedWaiting.decrementAndGet()
+                val masked = maskedFailure
+                // Nobody is trying any more: show the failure the quiet try was hiding instead of staying Connecting.
+                if (promptedWaiting.get() == 0 && masked != null) {
+                    _status.compareAndSet(KeeperStatus.Reconnecting, masked)
+                    maskedFailure = null
+                }
+            }
         }
     }
 
     /** [reconnect] without taking [lock]: the caller already holds it. */
     private suspend fun reconnectLocked(prompt: Boolean): KeeperStatus {
+        maskedFailure = null
         val before = _status.value
         _status.value = KeeperStatus.Reconnecting
         val fresh = try {
@@ -159,6 +171,7 @@ class ConnectionKeeper(
             // A quiet try failing while a prompted try is queued for the lock must not flash a failure
             // (Setup would show a false denial).
             if (!prompt && promptedWaiting.get() > 0) {
+                maskedFailure = KeeperStatus.Failed(err, fixFor(err))
                 _status.value = KeeperStatus.Reconnecting
                 return _status.value
             }
@@ -197,32 +210,40 @@ class ConnectionKeeper(
     /**
      * ADB debugging mode, after a connect that made a new handshake ([fresh]): if the TV accepted a quiet one it
      * trusts the key, so save [KeyCheck.Saved] directly. A prompted connect proves nothing about a restart, so the
-     * full [checkKey] probe runs there instead. No handshake (already connected) means nothing to learn.
+     * full [checkKey] probe runs there instead, and its result is stored even when [KeyCheck.Unknown] (the person just
+     * allowed the app, so an older negative result must not linger). No handshake (already connected) means nothing to
+     * learn. A failed settings read or write must not fail [reconnect].
      */
     private suspend fun onLegacyConnected(prompt: Boolean, fresh: Boolean) {
         val check = checkKey ?: return
-        if (!settings.values.first().legacyAdb || !fresh) return
-        if (!prompt) {
-            storeKeyCheck(KeyCheck.Saved) // also clears a stale Forgotten
+        // A failed settings read or write (or a storeKeyCheck that can't load the key) must not fail reconnect().
+        try {
+            if (!settings.values.first().legacyAdb || !fresh) return
+            if (!prompt) {
+                storeKeyCheck(KeyCheck.Saved) // also clears a stale Forgotten
+                return
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             return
         }
         if (keyCheckJob?.isActive == true) return
         _keyChecking.value = true
-        keyCheckJob = scope.launch {
+        val job = scope.launch {
+            // a failed settings write must not crash the app
             try {
-                // a failed settings write must not crash the app
-                try {
-                    val r = check()
-                    if (r != KeyCheck.Unknown) storeKeyCheck(r) // couldn't tell: keep what we knew
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // keep the old result
-                }
-            } finally {
-                _keyChecking.value = false
+                // The person was just let in, so store even Unknown: an older negative result must not linger.
+                storeKeyCheck(check())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // keep the old result
             }
         }
+        keyCheckJob = job
+        // Also clears the flag when the job is cancelled before it ever starts (its finally would never run).
+        job.invokeOnCompletion { if (keyCheckJob?.isActive != true) _keyChecking.value = false }
     }
 
     /**
@@ -231,15 +252,22 @@ class ConnectionKeeper(
     suspend fun quietRetriesFailed(last: KeeperStatus) {
         val failed = last as? KeeperStatus.Failed ?: return
         if (checkKey == null || failed.reason !is AdbFailure.NotAuthorized) return
-        if (keyKnownSaved()) {
+        val s = settings.values.first()
+        if (s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved && s.legacyKeyCheckKey == keyId()) {
             storeKeyCheck(KeyCheck.Forgotten)
         }
     }
 
-    /** True when the TV is known to keep this app's key (legacy ADB debugging mode, result found for this key). */
-    suspend fun keyKnownSaved(): Boolean {
+    /**
+     * True when the TV is known not to keep this app's key (legacy ADB debugging mode, result found for this key): a
+     * quiet refusal is the expected answer, so retrying it is pointless.
+     */
+    suspend fun keyKnownRefused(): Boolean {
         val s = settings.values.first()
-        return s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved && s.legacyKeyCheckKey == keyId()
+        // Cheap fields first: keyId() may load or generate the RSA key, so only ask it once the result could match.
+        return s.legacyAdb &&
+            (s.legacyKeyCheck == KeyCheck.AllowedOnce || s.legacyKeyCheck == KeyCheck.NotSaved) &&
+            s.legacyKeyCheckKey == keyId()
     }
 
     /**
