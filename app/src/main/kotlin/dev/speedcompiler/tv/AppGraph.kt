@@ -47,7 +47,7 @@ class AppGraph(context: Context) {
     private val libAdb = LibAdb(app, legacy = { settings.values.first().legacyAdb })
     val adbShell: AdbShell = libAdb
     val pairing: Pairing = libAdb
-    val connectionKeeper = ConnectionKeeper({ libAdb.connect() }, libAdb, settings, app.packageName, appScope)
+    val connectionKeeper = ConnectionKeeper({ prompt -> libAdb.connect(prompt) }, libAdb, settings, app.packageName, appScope)
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()
     var clock: Clock = SystemClock

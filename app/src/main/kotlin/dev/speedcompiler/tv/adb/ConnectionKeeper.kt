@@ -33,11 +33,12 @@ fun fixFor(e: Throwable): Fix = when (e) {
 
 /**
  * Keeps the app's ADB link usable: connects, self-grants WRITE_SECURE_SETTINGS once, and applies the
- * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`).
+ * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`); its argument says
+ * whether the TV may show its Allow prompt, which only [connectNow] (a person on one of the app's screens) asks for.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
-    private val connect: suspend () -> Unit,
+    private val connect: suspend (prompt: Boolean) -> Unit,
     private val shell: AdbShell,
     private val settings: Settings,
     private val packageName: String,
@@ -54,12 +55,12 @@ class ConnectionKeeper(
     private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
-    /** Starts [reconnect] in the app scope; ignored while one is already running. */
+    /** Starts [reconnect] in the app scope, allowing the TV's prompt; ignored while one is already running. */
     override fun connectNow() {
         if (!inFlight.compareAndSet(false, true)) return
         scope.launch {
             try {
-                reconnect()
+                reconnect(prompt = true)
             } finally {
                 inFlight.set(false)
             }
@@ -91,12 +92,15 @@ class ConnectionKeeper(
     }
 
     /** Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. */
-    /** Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status. */
-    suspend fun reconnect(): KeeperStatus = lock.withLock {
+    /**
+     * Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status.
+     * [prompt] lets the TV show its Allow prompt for an unknown key; background callers leave it off.
+     */
+    suspend fun reconnect(prompt: Boolean = false): KeeperStatus = lock.withLock {
         val before = _status.value
         _status.value = KeeperStatus.Reconnecting
         try {
-            connect()
+            connect(prompt)
         } catch (e: CancellationException) {
             // Never leave Connecting with nobody trying; before can itself be Connecting (app start, after a pause).
             _status.compareAndSet(KeeperStatus.Reconnecting, before.takeIf { it != KeeperStatus.Reconnecting } ?: KeeperStatus.Failed(AdbFailure.Timeout(), Fix.Retry))

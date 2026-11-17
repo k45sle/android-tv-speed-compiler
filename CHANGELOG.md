@@ -4,6 +4,10 @@ What changed in each version of Speed Compile, in plain words. Newest first.
 
 Speed Compile prepares the code of the apps you pick ahead of time. This is called compiling, and it can make an app open and scroll more smoothly.
 
+## Unreleased
+
+- ADB debugging mode: reconnecting after a restart, and background work, no longer make the TV show "Allow USB debugging?". If the TV refuses the app after a restart, the app tries again quietly for a minute or two; if it still can't connect, Home shows Disconnected and Fix connection asks the TV to allow debugging.
+
 ## 1.1.0 (17 November 2026)
 
 - TVs without Wireless debugging can use ADB debugging instead. Choose No Wireless debugging? in setup and switch on ADB debugging; there is no pairing code. It needs a TV whose ADB debugging switch opens the network ADB port (5555). Some TVs ask to allow debugging again after a full restart.

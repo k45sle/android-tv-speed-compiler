@@ -189,7 +189,7 @@ If setup gets stuck, these are the usual causes.
 | The TV asks to allow debugging | Choose Always allow from this computer, then OK. If you turned off Keep this TV trusting the app in Settings, Android can ask again after a while. |
 | Wireless debugging is off | It can switch off after a network change. With Keep Wireless debugging on (the default), the app turns it back on as soon as you open it, after the TV restarts, or when an optimization or weekly check loses its connection. If you turned that setting off, turn Wireless debugging on again in Developer options and the app reconnects by itself. |
 | The TV forgot this app | Open the app and choose Fix connection. |
-| The TV asks to allow debugging after every restart (ADB debugging) | Some TVs forget Always allow when they fully restart. Choose Allow again and the app carries on. Standby from the remote doesn't cause this. |
+| Disconnected after a restart (ADB debugging) | After a restart the app tries again for a minute or two without showing the TV's prompt. If Home still says Disconnected, press Fix connection and choose Allow on the TV. One TV (see Compatibility) asked again after a full restart in the 1.1.0 pre-release. Standby from the remote doesn't cause this. |
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
 
@@ -205,7 +205,7 @@ It connects through Wireless debugging in Developer options. Some TVs don't have
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
 | Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
-| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging; after a full restart the TV asks to allow debugging again (user report, see the [device matrix](docs/device-matrix.md)) |
+| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging; in the 1.1.0 pre-release the TV asked to allow debugging again after a full restart (user report, see the [device matrix](docs/device-matrix.md)) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -225,7 +225,7 @@ For each app you pick, it asks the app to install the usage profile it ships wit
 Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging, or ADB debugging, on the TV itself. The two settings above are on by default:
 
 - Keep Wireless debugging on: each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself. In ADB debugging mode the setting is called Keep ADB debugging on and does the same for ADB debugging.
-- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again. Some TVs in ADB debugging mode still ask after a full restart (see Setup help).
+- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again. One TV in ADB debugging mode still asked after a full restart (see Setup help).
 
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 

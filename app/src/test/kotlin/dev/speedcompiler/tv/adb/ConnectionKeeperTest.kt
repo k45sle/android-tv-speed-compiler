@@ -33,7 +33,7 @@ class ConnectionKeeperTest {
         shell: AdbShell,
         settings: Settings = FakeSettings(),
         scope: CoroutineScope = CoroutineScope(UnconfinedTestDispatcher()),
-        connect: suspend () -> Unit = {},
+        connect: suspend (Boolean) -> Unit = {},
     ) =
         ConnectionKeeper(connect, shell, settings, "dev.test", scope)
 
@@ -129,6 +129,15 @@ class ConnectionKeeperTest {
         val s = k.status.value as KeeperStatus.Failed
         assertEquals(Fix.Retry, s.fix)
         assertEquals(ConnectionState.Disconnected, k.state.first())
+    }
+
+    @Test
+    fun onlyConnectNowLetsTheTvPrompt() = runTest {
+        val prompts = mutableListOf<Boolean>()
+        val k = keeper(FakeAdbShell(), scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))) { prompts += it; throw AdbFailure.NotAuthorized() }
+        k.reconnect()
+        k.connectNow()
+        assertEquals(listOf(false, true), prompts)
     }
 
     @Test

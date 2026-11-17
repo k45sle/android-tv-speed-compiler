@@ -40,7 +40,9 @@ fun parseShellOutput(raw: String): ShellResult {
  * open with their ADB debugging switch. With [direct] set it dials that host and port (for example after `adb tcpip 5555`).
  * An unknown key fails fast with [AdbFailure.NotAuthorized], unless [promptForApproval] is set: then adbd
  * shows its "Allow debugging?" prompt and [connect] waits up to [connectTimeoutMillis] for someone to accept.
- * The legacy port has no pairing, so it always prompts and waits up to [legacyConnectTimeoutMillis].
+ * The legacy port has no pairing, so there [connect] with `prompt` set shows the prompt and waits up to
+ * [legacyConnectTimeoutMillis]. Without it (boot, background work) an unknown key fails fast instead, so no prompt
+ * appears on screen that the person didn't ask for.
  */
 class LibAdb(
     context: Context,
@@ -64,12 +66,13 @@ class LibAdb(
     }
 
     /** Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain. */
-    suspend fun connect() = connecting.withLock {
+    suspend fun connect(prompt: Boolean = false) = connecting.withLock {
         if (manager.isConnected) return@withLock
         val viaPort = direct == null && legacy()
+        val waitForAllow = viaPort && prompt
         // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
-        manager.setThrowOnUnauthorised(!(promptForApproval || viaPort))
-        manager.setTimeout(if (viaPort) legacyConnectTimeoutMillis else connectTimeoutMillis, TimeUnit.MILLISECONDS)
+        manager.setThrowOnUnauthorised(!(promptForApproval || waitForAllow))
+        manager.setTimeout(if (waitForAllow) legacyConnectTimeoutMillis else connectTimeoutMillis, TimeUnit.MILLISECONDS)
         var ok = false
         try {
             ok = try {
@@ -80,8 +83,8 @@ class LibAdb(
         } finally {
             if (!ok) runCatching { manager.disconnect() } // drop any half-open session
         }
-        // On the plain port, a socket that opened but never finished the handshake is waiting on the TV's Allow prompt.
-        if (!ok) throw if (viaPort) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
+        // A socket that opened but never finished the handshake was waiting on the TV's Allow prompt, if one was asked for.
+        if (!ok) throw if (waitForAllow) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
     }
 
     private fun dial(viaPort: Boolean): Boolean = try {

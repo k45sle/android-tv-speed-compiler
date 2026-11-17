@@ -22,6 +22,7 @@ import org.robolectric.annotation.ConscryptMode
 
 private val NOT_PAIRED = KeeperStatus.Failed(AdbFailure.NotPaired(), Fix.QuickRepair)
 private val TIMEOUT = KeeperStatus.Failed(AdbFailure.Timeout(), Fix.Retry)
+private val NOT_ALLOWED = KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt)
 
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
@@ -29,7 +30,7 @@ class ReconnectTest {
     private val log = mutableListOf<String>()
     private val pauses = mutableListOf<Long>()
 
-    private suspend fun run(network: Boolean, vararg results: KeeperStatus, turnOnWifiAdb: Boolean = true) {
+    private suspend fun run(network: Boolean, vararg results: KeeperStatus, turnOnWifiAdb: Boolean = true, retryNotAllowed: Boolean = false) {
         val queue = results.toMutableList()
         reconnectWithRetry(
             turnOnWifiAdb = turnOnWifiAdb,
@@ -38,6 +39,7 @@ class ReconnectTest {
             reconnect = { log += "connect"; queue.removeAt(0) },
             pause = { pauses += it },
             backoff = listOf(1L, 2L, 3L),
+            retryNotAllowed = retryNotAllowed,
         )
     }
 
@@ -72,6 +74,22 @@ class ReconnectTest {
         run(true, NOT_PAIRED)
         assertEquals(1, log.count { it == "connect" })
         assertEquals(emptyList<Long>(), pauses)
+    }
+
+    @Test fun stopsEarlyWhenNotAllowed() = runTest {
+        run(true, NOT_ALLOWED)
+        assertEquals(1, log.count { it == "connect" })
+    }
+
+    @Test fun legacyRetriesARefusedKey() = runTest {
+        run(true, NOT_ALLOWED, NOT_ALLOWED, KeeperStatus.Connected, retryNotAllowed = true)
+        assertEquals(3, log.count { it == "connect" })
+        assertEquals(listOf(1L, 2L), pauses)
+    }
+
+    @Test fun legacyStillStopsEarlyWhenNotPaired() = runTest {
+        run(true, NOT_PAIRED, retryNotAllowed = true)
+        assertEquals(1, log.count { it == "connect" })
     }
 
     @Test fun triesOnceEvenWithoutNetwork() = runTest {
