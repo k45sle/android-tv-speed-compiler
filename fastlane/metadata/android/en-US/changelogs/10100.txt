@@ -1,0 +1,1 @@
+TVs without Wireless debugging can now use ADB debugging instead: choose "No Wireless debugging?" in setup and switch on ADB debugging. No pairing code needed. Some TVs ask to allow debugging again after a full restart.
