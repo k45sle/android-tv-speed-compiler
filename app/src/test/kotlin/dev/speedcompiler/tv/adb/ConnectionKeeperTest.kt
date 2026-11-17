@@ -312,7 +312,7 @@ class ConnectionKeeperTest {
 
         var quietStatus: KeeperStatus? = null
         val quiet = launch { quietStatus = k.reconnect() } // holds the lock while the gate is shut
-        k.connectNow() // inFlight is set: its prompted reconnect is queued behind the quiet one
+        k.connectNow() // its prompted reconnect counts as waiting while it is queued behind the quiet one
         quietGate.complete(Unit)
         quiet.join()
 
@@ -322,6 +322,56 @@ class ConnectionKeeperTest {
 
         promptGate.complete(Unit)
         collect.cancel()
+    }
+
+    @Test
+    fun quietFailureAfterPromptedFinishedShowsFailure() = runTest(UnconfinedTestDispatcher()) {
+        val prompts = mutableListOf<Boolean>()
+        val k = keeper(
+            FakeAdbShell(),
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            connect = { prompt -> prompts += prompt; throw AdbFailure.NotAuthorized() },
+        )
+        // No other prompted try is queued, so the prompted failure shows.
+        val prompted = k.reconnect(prompt = true)
+        assertEquals(Fix.AllowPrompt, (prompted as KeeperStatus.Failed).fix)
+        // The prompted try is long finished: a quiet failure must show too, not stay Connecting.
+        val quiet = k.reconnect()
+        assertEquals(Fix.AllowPrompt, (quiet as KeeperStatus.Failed).fix)
+        assertEquals(KeeperStatus.Failed(quiet.reason, Fix.AllowPrompt), k.status.value)
+        assertEquals(listOf(true, false), prompts)
+    }
+
+    @Test
+    fun quietFailureWhileReallowQueuedStaysConnecting() = runTest(UnconfinedTestDispatcher()) {
+        val quietGate = CompletableDeferred<Unit>()
+        val reallowGate = CompletableDeferred<Unit>()
+        val k = keeper(
+            FakeAdbShell(),
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            connect = { prompt ->
+                if (prompt) {
+                    reallowGate.await()
+                    true
+                } else {
+                    quietGate.await()
+                    throw AdbFailure.NotAuthorized()
+                }
+            },
+        )
+
+        var quietStatus: KeeperStatus? = null
+        val quiet = launch { quietStatus = k.reconnect() } // holds the lock while the gate is shut
+        val re = launch { k.reallow() } // its prompted reconnect is queued behind the quiet one
+        quietGate.complete(Unit)
+        quiet.join()
+
+        assertEquals(KeeperStatus.Reconnecting, quietStatus)
+        assertEquals(KeeperStatus.Reconnecting, k.status.value)
+
+        reallowGate.complete(Unit)
+        re.join()
+        assertEquals(KeeperStatus.Connected, k.status.value)
     }
 
     @Test

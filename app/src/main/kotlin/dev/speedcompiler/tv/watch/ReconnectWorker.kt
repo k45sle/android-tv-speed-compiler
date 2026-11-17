@@ -17,6 +17,7 @@ import androidx.work.WorkerParameters
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.adb.KeyCheck
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -87,7 +88,9 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             enableWifiAdb = { enableWifiAdb(applicationContext, s.legacyAdb) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
-            retryNotAllowed = s.legacyAdb,
+            // Only a key the TV is known to have saved is worth retrying quietly after a refusal; otherwise stop at
+            // once so Home offers Fix connection.
+            retryNotAllowed = s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved,
             onGaveUp = graph.connectionKeeper::quietRetriesFailed,
         )
         return Result.success()

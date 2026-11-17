@@ -87,6 +87,16 @@ class KeyCheckTest {
         assertTrue(shell.commands.isEmpty())
     }
 
+    @Test fun refusedThenErrorStillClassifies() = runTest {
+        // The first try was refused, the second got no answer: the refusal still asks where the TV lists the key.
+        val dump = DUMP.replace("OTHER host@pc", "$K speed-compiler")
+        val shell = FakeAdbShell(mapOf("dumpsys adb" to ShellResult(0, dump)))
+        val answers = ArrayDeque<Boolean?>(listOf(false, null))
+        val check = KeyChecker({ answers.removeFirst() }, shell, { K }, pause = {})
+        assertEquals(KeyCheck.NotSaved, check.check())
+        assertEquals(listOf("dumpsys adb"), shell.commands)
+    }
+
     @Test fun refusedWithAFailingShellIsUnknown() = runTest {
         val check = KeyChecker({ false }, ThrowingShell(), { K }, pause = {})
         assertEquals(KeyCheck.Unknown, check.check())

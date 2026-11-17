@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,9 @@ class ConnectionKeeper(
     private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
+    /** Prompted callers queued for (or holding) [lock]: while one waits, a quiet failure must not flash. */
+    private val promptedWaiting = AtomicInteger(0)
+
     /** Starts [reconnect] in the app scope, allowing the TV's prompt; ignored while one is already running. */
     override fun connectNow() {
         if (!inFlight.compareAndSet(false, true)) return
@@ -116,8 +120,24 @@ class ConnectionKeeper(
     /**
      * Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status.
      * [prompt] lets the TV show its Allow prompt for an unknown key; background callers leave it off.
+     * A prompted caller is counted as waiting from before it queues until it holds [lock], so a quiet try failing
+     * meanwhile doesn't show a failure the prompt is about to replace.
      */
-    suspend fun reconnect(prompt: Boolean = false): KeeperStatus = lock.withLock { reconnectLocked(prompt) }
+    suspend fun reconnect(prompt: Boolean = false): KeeperStatus {
+        if (prompt) promptedWaiting.incrementAndGet()
+        var held = false
+        try {
+            return lock.withLock {
+                if (prompt) {
+                    promptedWaiting.decrementAndGet()
+                    held = true
+                }
+                reconnectLocked(prompt)
+            }
+        } finally {
+            if (prompt && !held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
+        }
+    }
 
     /** [reconnect] without taking [lock]: the caller already holds it. */
     private suspend fun reconnectLocked(prompt: Boolean): KeeperStatus {
@@ -131,8 +151,9 @@ class ConnectionKeeper(
             throw e
         } catch (e: Exception) {
             val err = mapAdbError(e)
-            // A quiet try failing while connectNow waits for the lock must not flash a failure (Setup would show a false denial).
-            if (!prompt && inFlight.get()) {
+            // A quiet try failing while a prompted try is queued for the lock must not flash a failure
+            // (Setup would show a false denial).
+            if (!prompt && promptedWaiting.get() > 0) {
                 _status.value = KeeperStatus.Reconnecting
                 return _status.value
             }
@@ -151,8 +172,12 @@ class ConnectionKeeper(
      */
     suspend fun reallow(): KeeperStatus {
         _reallowing.value = true
+        promptedWaiting.incrementAndGet()
+        var held = false
         try {
             return lock.withLock {
+                promptedWaiting.decrementAndGet()
+                held = true
                 keyCheckJob?.cancelAndJoin() // the new connection gets its own check
                 try {
                     disconnect()
@@ -164,6 +189,7 @@ class ConnectionKeeper(
                 reconnectLocked(prompt = true)
             }
         } finally {
+            if (!held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
             _reallowing.value = false
         }
     }
@@ -205,13 +231,19 @@ class ConnectionKeeper(
     }
 
     /**
-     * Drops a stored result that was found for another key. A result found for another key (for example one an older
-     * version regenerated) says nothing about this one.
+     * Drops a stored result found for another key (for example one an older version regenerated): it says nothing
+     * about this one.
      */
     suspend fun forgetStaleKeyCheck() {
-        val s = settings.values.first()
-        if (s.legacyKeyCheck == KeyCheck.Unknown || s.legacyKeyCheckKey == keyId()) return
-        settings.update { it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null) }
+        val id = keyId()
+        // Decided inside the transform: a result stored meanwhile for this key must not be wiped.
+        settings.update {
+            if (it.legacyKeyCheck != KeyCheck.Unknown && it.legacyKeyCheckKey != id) {
+                it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
+            } else {
+                it
+            }
+        }
     }
 
     private suspend fun storeKeyCheck(k: KeyCheck) {

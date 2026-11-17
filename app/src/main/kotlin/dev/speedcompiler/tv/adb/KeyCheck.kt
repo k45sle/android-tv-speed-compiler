@@ -53,6 +53,8 @@ fun classifyRefused(places: KeyPlaces?): KeyCheck = when {
  * Right after someone allowed the app: will the TV let the same key back in without asking, as it must after a
  * restart? [trusted] makes a second, quiet connection (true = let in, false = refused, null = couldn't tell). The TV
  * saves the key just after it lets the first connection in, so each try waits its entry in [waits] first.
+ * One refusal in any try is enough to explain where the TV lists the key; only when every try got no answer at all
+ * (all null) is the result [KeyCheck.Unknown].
  */
 class KeyChecker(
     private val trusted: suspend () -> Boolean?,
@@ -63,12 +65,15 @@ class KeyChecker(
 ) {
     suspend fun check(): KeyCheck {
         var last: Boolean? = null
+        var refused = false
         for (w in waits) {
             pause(w)
             last = trusted()
             if (last == true) return KeyCheck.Saved
+            if (last == false) refused = true
         }
-        if (last == null) return KeyCheck.Unknown
+        // Nothing was refused (every try failed to answer, so all were null): there is nothing to explain.
+        if (!refused) return KeyCheck.Unknown
         val dump = try {
             shell.run("dumpsys adb").output
         } catch (e: CancellationException) {

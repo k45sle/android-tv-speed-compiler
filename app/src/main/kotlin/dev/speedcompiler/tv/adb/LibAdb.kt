@@ -145,13 +145,14 @@ class LibAdb(
     suspend fun disconnect() = connecting.withLock { adbCall { manager.disconnect() } }
 
     /** This app's public key in adb's format, as the TV lists it in `dumpsys adb`. */
-    val publicKeyBase64: String get() = adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey)
+    val publicKeyBase64: String by lazy { adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey) }
 
     /** Short fingerprint of this app's key (first 16 hex chars of SHA-256 of [publicKeyBase64]); not secret. */
-    val publicKeyId: String
-        get() = MessageDigest.getInstance("SHA-256").digest(publicKeyBase64.toByteArray())
+    val publicKeyId: String by lazy {
+        MessageDigest.getInstance("SHA-256").digest(publicKeyBase64.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
             .take(16)
+    }
 
     /**
      * ADB debugging mode: dials [LEGACY_HOST]:[LEGACY_PORT] again with a second, quiet connection (the public key is

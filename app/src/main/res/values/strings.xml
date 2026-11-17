@@ -384,14 +384,14 @@
     <!-- ADB debugging mode: whether the TV saved Always allow. -->
     <string name="home_key_not_saved">The TV didn\'t save Always allow, so it will ask again after a restart.</string>
     <string name="home_key_allowed_once">The TV allowed this app only once, so it will ask again after a restart.</string>
-    <string name="home_key_forgotten">The TV forgot Always allow when it restarted.</string>
+    <string name="home_key_forgotten">The TV stopped accepting the app, usually after a restart.</string>
     <string name="home_key_fix">How to fix</string>
     <string name="keyhelp_title">Asked again after a restart</string>
     <string name="keyhelp_saved">Saved. After a restart the TV lets Speed Compile back in without asking.</string>
     <string name="keyhelp_unknown">Speed Compile couldn\'t check whether the TV saved Always allow. Choose Allow again to check.</string>
     <string name="keyhelp_allowed_once">The TV allowed Speed Compile only once. After a full restart the app can\'t reconnect until you allow it again.</string>
     <string name="keyhelp_not_saved">You chose Always allow, but this TV didn\'t save it. After a full restart the app can\'t reconnect until you allow it again.</string>
-    <string name="keyhelp_forgotten">This TV saved Always allow, then forgot it when it restarted.</string>
+    <string name="keyhelp_forgotten">This TV saved Always allow, then stopped accepting the app, usually after a restart.</string>
     <string name="keyhelp_step_revoke">In Developer options, choose Revoke USB debugging authorizations, then OK. Other apps and computers you allowed will ask once more.</string>
     <string name="keyhelp_step_allow_tick">Come back here and choose Allow again. On the TV, tick Always allow from this computer, then choose Allow.</string>
     <string name="keyhelp_step_allow_again">Choose Allow again.</string>

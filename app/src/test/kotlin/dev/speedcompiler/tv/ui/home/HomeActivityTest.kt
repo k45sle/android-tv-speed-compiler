@@ -198,7 +198,7 @@ class HomeActivityTest : ComposeTestBase() {
         show {
             HomeContent(HomeState(ConnectionState.Disconnected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.Forgotten), {}, now, utc)
         }
-        rule.onNodeWithText("The TV forgot Always allow when it restarted.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("The TV stopped accepting the app, usually after a restart.", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("Fix connection", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("How to fix", ignoreCase = true).assertDoesNotExist()
     }
