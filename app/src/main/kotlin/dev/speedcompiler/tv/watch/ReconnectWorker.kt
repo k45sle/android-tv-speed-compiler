@@ -39,6 +39,7 @@ fun enqueueReconnect(context: Context) {
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
  * With [retryNotAllowed] (the legacy port) a refused key is retried too: these tries never show the TV's prompt,
  * and right after boot the TV may refuse a key it accepts a few seconds later.
+ * Calls [onGaveUp] with the last status only when every try fails, never on an early stop.
  * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).
  */
 suspend fun reconnectWithRetry(
@@ -49,15 +50,19 @@ suspend fun reconnectWithRetry(
     pause: suspend (Long) -> Unit = { delay(it) },
     backoff: List<Long> = BACKOFF_MS,
     retryNotAllowed: Boolean = false,
+    onGaveUp: suspend (KeeperStatus) -> Unit = {},
 ) {
     waitForNetwork()
     if (turnOnWifiAdb) enableWifiAdb()
+    var last: KeeperStatus = KeeperStatus.Reconnecting
     for (i in 0..backoff.size) {
         val s = reconnect()
+        last = s
         if (s == KeeperStatus.Connected) return
         if (s is KeeperStatus.Failed && (s.fix == Fix.QuickRepair || (s.fix == Fix.AllowPrompt && !retryNotAllowed))) return
         if (i < backoff.size) pause(backoff[i])
     }
+    onGaveUp(last)
 }
 
 /**
@@ -83,6 +88,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
             retryNotAllowed = s.legacyAdb,
+            onGaveUp = graph.connectionKeeper::quietRetriesFailed,
         )
         return Result.success()
     }

@@ -32,6 +32,8 @@ data class SettingsValues(
     val legacyAdb: Boolean = false,
     /** ADB debugging mode: whether the TV kept Always allow for this app's key, as last checked. */
     val legacyKeyCheck: KeyCheck = KeyCheck.Unknown,
+    /** Fingerprint of the app key [legacyKeyCheck] was found for; null when unknown. */
+    val legacyKeyCheckKey: String? = null,
     val optimizeHow: OptimizeHow = OptimizeHow.Automatic,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
@@ -58,6 +60,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val keepWifiDebugging = booleanPreferencesKey("keep_wifi_debugging")
     private val legacyAdb = booleanPreferencesKey("legacy_adb")
     private val legacyKeyCheck = stringPreferencesKey("legacy_key_check")
+    private val legacyKeyCheckKey = stringPreferencesKey("legacy_key_check_key")
     private val optimizeHow = stringPreferencesKey("optimize_how")
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
@@ -77,6 +80,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             keepWifiDebugging = p[keepWifiDebugging] ?: d.keepWifiDebugging,
             legacyAdb = p[legacyAdb] ?: d.legacyAdb,
             legacyKeyCheck = p[legacyKeyCheck]?.let { runCatching { KeyCheck.valueOf(it) }.getOrNull() } ?: d.legacyKeyCheck,
+            legacyKeyCheckKey = p[legacyKeyCheckKey],
             optimizeHow = p[optimizeHow]?.let { runCatching { OptimizeHow.valueOf(it) }.getOrNull() } ?: d.optimizeHow,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
@@ -101,6 +105,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[keepWifiDebugging] = new.keepWifiDebugging
             p[legacyAdb] = new.legacyAdb
             p[legacyKeyCheck] = new.legacyKeyCheck.name
+            new.legacyKeyCheckKey?.let { p[legacyKeyCheckKey] = it } ?: p.remove(legacyKeyCheckKey)
             p[optimizeHow] = new.optimizeHow.name
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset

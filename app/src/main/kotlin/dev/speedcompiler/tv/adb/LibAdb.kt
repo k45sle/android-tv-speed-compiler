@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.security.cert.Certificate
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
@@ -71,9 +72,12 @@ class LibAdb(
         setApi(Build.VERSION.SDK_INT)
     }
 
-    /** Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain. */
-    suspend fun connect(prompt: Boolean = false) = connecting.withLock {
-        if (manager.isConnected) return@withLock
+    /**
+     * Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain.
+     * Returns true when this call made a new connection (a handshake), false when one was already open.
+     */
+    suspend fun connect(prompt: Boolean = false): Boolean = connecting.withLock {
+        if (manager.isConnected) return@withLock false
         val viaPort = direct == null && legacy()
         val waitForAllow = viaPort && prompt
         // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
@@ -91,6 +95,7 @@ class LibAdb(
         }
         // A socket that opened but never finished the handshake was waiting on the TV's Allow prompt, if one was asked for.
         if (!ok) throw if (waitForAllow) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
+        true
     }
 
     private fun dial(viaPort: Boolean): Boolean = try {
@@ -137,10 +142,16 @@ class LibAdb(
         false // wrong or expired code: libadb reports it as a failed message exchange
     }
 
-    suspend fun disconnect() = adbCall { manager.disconnect() }
+    suspend fun disconnect() = connecting.withLock { adbCall { manager.disconnect() } }
 
     /** This app's public key in adb's format, as the TV lists it in `dumpsys adb`. */
     val publicKeyBase64: String get() = adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey)
+
+    /** Short fingerprint of this app's key (first 16 hex chars of SHA-256 of [publicKeyBase64]); not secret. */
+    val publicKeyId: String
+        get() = MessageDigest.getInstance("SHA-256").digest(publicKeyBase64.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            .take(16)
 
     /**
      * ADB debugging mode: dials [LEGACY_HOST]:[LEGACY_PORT] again with a second, quiet connection (the public key is

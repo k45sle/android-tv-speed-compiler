@@ -38,18 +38,21 @@ fun fixFor(e: Throwable): Fix = when (e) {
  * Keeps the app's ADB link usable: connects, self-grants WRITE_SECURE_SETTINGS once, and applies the
  * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`); its argument says
  * whether the TV may show its Allow prompt, which only [connectNow] (a person on one of the app's screens) asks for.
+ * It returns true when the call made a new connection (a handshake), false when one was already open.
  * [checkKey] checks whether the TV kept Always allow (ADB debugging mode); null skips it. [disconnect] drops the link,
- * for reallow.
+ * for reallow. [keyId] fingerprints this app's current key, so a stored result is only trusted for the key it was found
+ * for; null means unknown.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
-    private val connect: suspend (prompt: Boolean) -> Unit,
+    private val connect: suspend (prompt: Boolean) -> Boolean,
     private val shell: AdbShell,
     private val settings: Settings,
     private val packageName: String,
     private val scope: CoroutineScope,
     private val checkKey: (suspend () -> KeyCheck)? = null,
     private val disconnect: suspend () -> Unit = {},
+    private val keyId: () -> String? = { null },
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
@@ -58,6 +61,11 @@ class ConnectionKeeper(
 
     /** True while a key check runs. */
     val keyChecking: StateFlow<Boolean> get() = _keyChecking
+
+    private val _reallowing = MutableStateFlow(false)
+
+    /** True while a key check or a reallow runs (not while background reconnects retry). */
+    val keyHelpBusy: Flow<Boolean> = combine(_keyChecking, _reallowing) { c, r -> c || r }
 
     /** Reasons the follow-up shell steps (grant, trust toggle) failed; null when fine. */
     val grantFailure = MutableStateFlow<String?>(null)
@@ -109,10 +117,13 @@ class ConnectionKeeper(
      * Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status.
      * [prompt] lets the TV show its Allow prompt for an unknown key; background callers leave it off.
      */
-    suspend fun reconnect(prompt: Boolean = false): KeeperStatus = lock.withLock {
+    suspend fun reconnect(prompt: Boolean = false): KeeperStatus = lock.withLock { reconnectLocked(prompt) }
+
+    /** [reconnect] without taking [lock]: the caller already holds it. */
+    private suspend fun reconnectLocked(prompt: Boolean): KeeperStatus {
         val before = _status.value
         _status.value = KeeperStatus.Reconnecting
-        try {
+        val fresh = try {
             connect(prompt)
         } catch (e: CancellationException) {
             // Never leave Connecting with nobody trying; before can itself be Connecting (app start, after a pause).
@@ -120,14 +131,18 @@ class ConnectionKeeper(
             throw e
         } catch (e: Exception) {
             val err = mapAdbError(e)
+            // A quiet try failing while connectNow waits for the lock must not flash a failure (Setup would show a false denial).
+            if (!prompt && inFlight.get()) {
+                _status.value = KeeperStatus.Reconnecting
+                return _status.value
+            }
             _status.value = KeeperStatus.Failed(err, fixFor(err))
-            onLegacyRefused(prompt, err)
-            return@withLock _status.value
+            return _status.value
         }
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
-        onLegacyConnected()
-        _status.value
+        onLegacyConnected(prompt, fresh)
+        return _status.value
     }
 
     /**
@@ -135,21 +150,37 @@ class ConnectionKeeper(
      * so the person can tick Always allow; the key check then runs again. Returns the new status.
      */
     suspend fun reallow(): KeeperStatus {
-        keyCheckJob?.cancelAndJoin() // the new connection gets its own check
+        _reallowing.value = true
         try {
-            disconnect()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // already gone
+            return lock.withLock {
+                keyCheckJob?.cancelAndJoin() // the new connection gets its own check
+                try {
+                    disconnect()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // already gone
+                }
+                reconnectLocked(prompt = true)
+            }
+        } finally {
+            _reallowing.value = false
         }
-        return reconnect(prompt = true)
     }
 
-    /** ADB debugging mode: after every connect, check (in the background) whether the TV would let this key back in after a restart. */
-    private suspend fun onLegacyConnected() {
+    /**
+     * ADB debugging mode, after a connect that made a new handshake ([fresh]): if the TV accepted a quiet one it
+     * trusts the key, so save [KeyCheck.Saved] directly. A prompted connect proves nothing about a restart, so the
+     * full [checkKey] probe runs there instead. No handshake (already connected) means nothing to learn.
+     */
+    private suspend fun onLegacyConnected(prompt: Boolean, fresh: Boolean) {
         val check = checkKey ?: return
-        if (!settings.values.first().legacyAdb || keyCheckJob?.isActive == true) return
+        if (!settings.values.first().legacyAdb || !fresh) return
+        if (!prompt) {
+            storeKeyCheck(KeyCheck.Saved) // also clears a stale Forgotten
+            return
+        }
+        if (keyCheckJob?.isActive == true) return
         _keyChecking.value = true
         keyCheckJob = scope.launch {
             try {
@@ -161,15 +192,33 @@ class ConnectionKeeper(
         }
     }
 
-    /** A quiet reconnect the TV refused although the key was saved: the TV dropped it (for example at a restart). */
-    private suspend fun onLegacyRefused(prompt: Boolean, err: Throwable) {
-        if (checkKey == null || prompt || err !is AdbFailure.NotAuthorized) return
+    /**
+     * Every quiet try of a retry run was refused although the key was saved: the TV dropped it (for example at a restart).
+     */
+    suspend fun quietRetriesFailed(last: KeeperStatus) {
+        val failed = last as? KeeperStatus.Failed ?: return
+        if (checkKey == null || failed.reason !is AdbFailure.NotAuthorized) return
         val s = settings.values.first()
-        if (s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved) storeKeyCheck(KeyCheck.Forgotten)
+        if (s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved && s.legacyKeyCheckKey == keyId()) {
+            storeKeyCheck(KeyCheck.Forgotten)
+        }
+    }
+
+    /**
+     * Drops a stored result that was found for another key. A result found for another key (for example one an older
+     * version regenerated) says nothing about this one.
+     */
+    suspend fun forgetStaleKeyCheck() {
+        val s = settings.values.first()
+        if (s.legacyKeyCheck == KeyCheck.Unknown || s.legacyKeyCheckKey == keyId()) return
+        settings.update { it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null) }
     }
 
     private suspend fun storeKeyCheck(k: KeyCheck) {
-        if (settings.values.first().legacyKeyCheck != k) settings.update { it.copy(legacyKeyCheck = k) }
+        val id = keyId()
+        val s = settings.values.first()
+        if (s.legacyKeyCheck == k && s.legacyKeyCheckKey == id) return
+        settings.update { it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id) }
     }
 
     private suspend fun grant() {

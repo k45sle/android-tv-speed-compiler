@@ -10,13 +10,13 @@ import kotlinx.coroutines.delay
  * connection, for example after a full restart. Android 13 and later rewrite the whole file on each save.
  */
 enum class KeyCheck {
-    /** Not checked yet, or the check couldn't run. */
+    /** Not checked yet, or the check couldn't tell. */
     Unknown,
     /** A second connection with the same key got in without a prompt, so it will after a restart too. */
     Saved,
     /** Refused, and the TV has no record of Always allow: Allow was chosen without ticking it. */
     AllowedOnce,
-    /** Refused although the TV recorded Always allow (or its records couldn't be read): it didn't save the key. */
+    /** Refused although the TV recorded Always allow: it didn't save the key. */
     NotSaved,
     /** Was [Saved], then a quiet reconnect was refused: the TV dropped the key, for example at a restart. */
     Forgotten,
@@ -44,7 +44,7 @@ fun parseDumpsysAdb(dump: String, keyBase64: String): KeyPlaces? {
 
 /** Explains a refused quiet connection by where the TV lists the key. */
 fun classifyRefused(places: KeyPlaces?): KeyCheck = when {
-    places == null -> KeyCheck.NotSaved
+    places == null -> KeyCheck.Unknown
     places.inUserKeys || places.inKeystore -> KeyCheck.NotSaved
     else -> KeyCheck.AllowedOnce
 }

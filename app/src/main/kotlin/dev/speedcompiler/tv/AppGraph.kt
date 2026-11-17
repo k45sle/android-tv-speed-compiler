@@ -57,6 +57,7 @@ class AppGraph(context: Context) {
         appScope,
         checkKey = keyChecker::check,
         disconnect = { libAdb.disconnect() },
+        keyId = { libAdb.publicKeyId },
     )
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()
@@ -73,6 +74,7 @@ class AppGraph(context: Context) {
     /** The TV keeps the trust, so this flag (read by Setup) is the only local trace that we hold a pairing. */
     init {
         val prefs = app.getSharedPreferences("setup", Context.MODE_PRIVATE)
+        appScope.launch { runCatching { connectionKeeper.forgetStaleKeyCheck() } } // best effort; must not crash
         appScope.launch {
             connectionMonitor.state.collect {
                 if (it == ConnectionState.Connected) {

@@ -304,7 +304,7 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
 /** What [KeyHelpScreen] needs; plain so tests can drive it. */
 class KeyHelpDeps(
     val check: Flow<KeyCheck>,
-    /** Reconnecting, or a key check running. */
+    /** A key check or a reallow is running; background retries do not count. */
     val busy: Flow<Boolean>,
     val allowAgain: () -> Unit,
     val openDeveloperOptions: () -> Unit,

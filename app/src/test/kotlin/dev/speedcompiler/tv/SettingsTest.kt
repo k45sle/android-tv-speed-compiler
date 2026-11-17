@@ -71,6 +71,17 @@ class SettingsTest {
     }
 
     @Test
+    fun legacyKeyCheckKeyRoundTripsAndNullRemovesIt() = runBlocking {
+        val file = tmp.newFile("lkk.preferences_pb").also { it.delete() }
+        val settings = DataStoreSettings(PreferenceDataStoreFactory.create { file })
+        assertEquals(null, settings.values.first().legacyKeyCheckKey)
+        settings.update { it.copy(legacyKeyCheckKey = "abc123") }
+        assertEquals("abc123", settings.values.first().legacyKeyCheckKey)
+        settings.update { it.copy(legacyKeyCheckKey = null) }
+        assertEquals(null, settings.values.first().legacyKeyCheckKey)
+    }
+
+    @Test
     fun concurrentUpdatesKeepEveryField() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("c.preferences_pb").also { it.delete() } }
         val settings = DataStoreSettings(store)

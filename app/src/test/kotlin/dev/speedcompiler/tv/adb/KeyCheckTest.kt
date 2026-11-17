@@ -40,9 +40,13 @@ class KeyCheckTest {
     }
 
     @Test fun classifyRefusedByPlaces() {
-        assertEquals(KeyCheck.NotSaved, classifyRefused(null))
+        assertEquals(KeyCheck.Unknown, classifyRefused(null))
         assertEquals(KeyCheck.AllowedOnce, classifyRefused(KeyPlaces(false, false)))
         assertEquals(KeyCheck.NotSaved, classifyRefused(KeyPlaces(true, false)))
+    }
+
+    @Test fun classifyRefusedWithoutPlacesIsUnknown() {
+        assertEquals(KeyCheck.Unknown, classifyRefused(null))
     }
 
     @Test fun trustedAtOnceIsSavedWithoutShell() = runTest {
@@ -83,8 +87,8 @@ class KeyCheckTest {
         assertTrue(shell.commands.isEmpty())
     }
 
-    @Test fun refusedWithAFailingShellIsNotSaved() = runTest {
+    @Test fun refusedWithAFailingShellIsUnknown() = runTest {
         val check = KeyChecker({ false }, ThrowingShell(), { K }, pause = {})
-        assertEquals(KeyCheck.NotSaved, check.check())
+        assertEquals(KeyCheck.Unknown, check.check())
     }
 }

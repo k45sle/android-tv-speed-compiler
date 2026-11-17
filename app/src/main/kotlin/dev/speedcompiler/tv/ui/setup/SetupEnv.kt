@@ -23,7 +23,6 @@ import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -147,7 +146,13 @@ fun rememberSetupDeps(): SetupDeps {
                 }
             },
             legacy = graph.settings.values.map { it.legacyAdb },
-            setLegacy = { on -> graph.settings.update { it.copy(legacyAdb = on) } },
+            setLegacy = { on ->
+                // Toggling the debugging mode invalidates the key check, so the next check starts from Unknown.
+                graph.settings.update {
+                    if (on != it.legacyAdb) it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
+                    else it
+                }
+            },
         )
     }
 }
@@ -159,9 +164,7 @@ fun rememberKeyHelpDeps(): KeyHelpDeps {
         val graph = (context.applicationContext as SpeedApp).graph
         KeyHelpDeps(
             check = graph.settings.values.map { it.legacyKeyCheck },
-            busy = combine(graph.connectionKeeper.status, graph.connectionKeeper.keyChecking) { s, c ->
-                s == KeeperStatus.Reconnecting || c
-            },
+            busy = graph.connectionKeeper.keyHelpBusy,
             allowAgain = { graph.appScope.launch { graph.connectionKeeper.reallow() } },
             openDeveloperOptions = AndroidSetupEnv(context.applicationContext, graph.connectionMonitor)::openDeveloperOptions,
         )
