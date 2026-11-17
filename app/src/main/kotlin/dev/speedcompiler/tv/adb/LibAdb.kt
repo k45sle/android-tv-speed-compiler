@@ -2,7 +2,9 @@ package dev.speedcompiler.tv.adb
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
+import io.github.muntashirakon.adb.AdbAuthenticationFailedException
 import io.github.muntashirakon.adb.AdbStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -15,11 +17,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.cert.Certificate
+import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
 
 /** The older plain ADB connection on this device, which some TVs (for example Sony Bravia) open with ADB debugging. */
 const val LEGACY_HOST = "127.0.0.1"
 const val LEGACY_PORT = 5555
+
+/** Timeout for the quiet key check: enough for this device's own adbd to answer, short enough to run in the background. */
+private const val KEY_CHECK_TIMEOUT_MS = 5_000L
 
 /** Exit code reported when the `__rc=` marker never arrived (the stream ended early). */
 const val MISSING_RC = -1
@@ -54,7 +60,7 @@ class LibAdb(
     private val legacyConnectTimeoutMillis: Long = 60_000L,
 ) : AdbShell, Pairing {
     private val app = context.applicationContext
-    private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb")) }
+    private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb"), log = { Log.w("AdbKeys", it) }) }
     private val connecting = Mutex()
 
     private val manager = object : AbsAdbConnectionManager() {
@@ -132,6 +138,38 @@ class LibAdb(
     }
 
     suspend fun disconnect() = adbCall { manager.disconnect() }
+
+    /** This app's public key in adb's format, as the TV lists it in `dumpsys adb`. */
+    val publicKeyBase64: String get() = adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey)
+
+    /**
+     * ADB debugging mode: dials [LEGACY_HOST]:[LEGACY_PORT] again with a second, quiet connection (the public key is
+     * never sent, so the TV shows no prompt) to see whether the TV now trusts this app's key by itself, as it has to
+     * after a restart. True = let in, false = refused, null = couldn't tell (port closed, timeout, other error).
+     */
+    suspend fun keyTrusted(): Boolean? {
+        val probe = object : AbsAdbConnectionManager() {
+            override fun getPrivateKey() = keys.privateKey
+            override fun getCertificate(): Certificate = keys.certificate
+            override fun getDeviceName() = "speed-compiler"
+        }.apply {
+            setApi(Build.VERSION.SDK_INT)
+            setThrowOnUnauthorised(true)
+            setTimeout(KEY_CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        }
+        return try {
+            runInterruptible(Dispatchers.IO) { probe.connect(LEGACY_HOST, LEGACY_PORT) }.takeIf { it } // false = timed out
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AdbAuthenticationFailedException) {
+            false
+        } catch (e: Exception) {
+            null
+        } finally {
+            // disconnect, not close: libadb's close() also destroys getPrivateKey(), and the probe shares the app's key.
+            withContext(NonCancellable + Dispatchers.IO) { runCatching { probe.disconnect() } }
+        }
+    }
 
     /**
      * Reads until adbd closes the stream or our closing `__rc=` line has arrived with nothing queued after it.

@@ -15,8 +15,10 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-private class FakeSettings(keep: Boolean = true) : Settings {
-    val flow = MutableStateFlow(SettingsValues(keepTrusting = keep))
+import java.io.IOException
+
+private class FakeSettings(keep: Boolean = true, legacy: Boolean = false, check: KeyCheck = KeyCheck.Unknown) : Settings {
+    val flow = MutableStateFlow(SettingsValues(keepTrusting = keep, legacyAdb = legacy, legacyKeyCheck = check))
     override val values = flow
     override suspend fun update(transform: (SettingsValues) -> SettingsValues) {
         flow.value = transform(flow.value)
@@ -33,9 +35,11 @@ class ConnectionKeeperTest {
         shell: AdbShell,
         settings: Settings = FakeSettings(),
         scope: CoroutineScope = CoroutineScope(UnconfinedTestDispatcher()),
+        checkKey: (suspend () -> KeyCheck)? = null,
+        disconnect: suspend () -> Unit = {},
         connect: suspend (Boolean) -> Unit = {},
     ) =
-        ConnectionKeeper(connect, shell, settings, "dev.test", scope)
+        ConnectionKeeper(connect, shell, settings, "dev.test", scope, checkKey = checkKey, disconnect = disconnect)
 
     @Test
     fun grantRunsOnceAfterConnect() = runTest {
@@ -152,5 +156,107 @@ class ConnectionKeeperTest {
         assertEquals(KeeperStatus.Connected, k.status.value)
         k.connectNow()
         assertEquals(2, calls)
+    }
+
+    @Test
+    fun legacyConnectStoresTheKeyCheck() = runTest(UnconfinedTestDispatcher()) {
+        val shell = FakeAdbShell()
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val k = keeper(shell, settings, checkKey = { KeyCheck.NotSaved })
+        k.reconnect(prompt = true)
+        assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        assertEquals(false, k.keyChecking.value)
+        assertEquals(listOf(GRANT), shell.commands)
+    }
+
+    @Test
+    fun quietConnectAlsoChecks() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val k = keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Saved })
+        k.reconnect()
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(false, k.keyChecking.value)
+    }
+
+    @Test
+    fun unknownResultKeepsTheOldValue() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
+        val k = keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown })
+        k.reconnect(prompt = true)
+        assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        assertEquals(false, k.keyChecking.value)
+    }
+
+    @Test
+    fun notLegacyNeverChecks() = runTest(UnconfinedTestDispatcher()) {
+        var checks = 0
+        val settings = FakeSettings(legacy = false)
+        val k = keeper(FakeAdbShell(), settings, checkKey = { checks++; KeyCheck.Saved })
+        k.reconnect(prompt = true)
+        assertEquals(0, checks)
+        assertEquals(false, k.keyChecking.value)
+    }
+
+    @Test
+    fun quietRefusalAfterSavedMeansForgotten() = runTest(UnconfinedTestDispatcher()) {
+        val check: suspend () -> KeyCheck = { KeyCheck.Unknown }
+
+        // A quiet refusal after Saved: the TV dropped the key.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Saved)
+        keeper(FakeAdbShell(), settings, checkKey = check, connect = { throw AdbFailure.NotAuthorized() }).reconnect()
+        assertEquals(KeyCheck.Forgotten, settings.values.first().legacyKeyCheck)
+
+        // The prompt was allowed, so the refusal says nothing about a restart.
+        val prompted = FakeSettings(legacy = true, check = KeyCheck.Saved)
+        keeper(FakeAdbShell(), prompted, checkKey = check, connect = { throw AdbFailure.NotAuthorized() }).reconnect(prompt = true)
+        assertEquals(KeyCheck.Saved, prompted.values.first().legacyKeyCheck)
+
+        // Nothing saved: a quiet refusal cannot mean forgotten.
+        val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
+        keeper(FakeAdbShell(), notSaved, checkKey = check, connect = { throw AdbFailure.NotAuthorized() }).reconnect()
+        assertEquals(KeyCheck.NotSaved, notSaved.values.first().legacyKeyCheck)
+
+        // Only a refusal counts; a timeout keeps the value.
+        val timeout = FakeSettings(legacy = true, check = KeyCheck.Saved)
+        keeper(FakeAdbShell(), timeout, checkKey = check, connect = { throw AdbFailure.Timeout() }).reconnect()
+        assertEquals(KeyCheck.Saved, timeout.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun reallowCancelsTheRunningKeyCheckAndStartsANewOne() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val never = CompletableDeferred<Unit>()
+        var checks = 0
+        val k = keeper(FakeAdbShell(), settings, checkKey = {
+            if (checks++ == 0) { never.await(); KeyCheck.Unknown } else KeyCheck.Saved
+        })
+        k.reconnect(prompt = true)
+        assertEquals(1, checks)
+        assertEquals(true, k.keyChecking.value)
+        k.reallow()
+        assertEquals(2, checks)
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(false, k.keyChecking.value)
+    }
+
+    @Test
+    fun reallowDisconnectsThenAsks() = runTest(UnconfinedTestDispatcher()) {
+        val events = mutableListOf<String>()
+        val k = keeper(
+            FakeAdbShell(),
+            connect = { events += "connect:$it" },
+            disconnect = { events += "disconnect" },
+        )
+        k.reallow()
+        assertEquals(listOf("disconnect", "connect:true"), events)
+
+        val failing = mutableListOf<String>()
+        val k2 = keeper(
+            FakeAdbShell(),
+            connect = { failing += "connect:$it" },
+            disconnect = { throw IOException("already gone") },
+        )
+        k2.reallow()
+        assertEquals(listOf("connect:true"), failing)
     }
 }

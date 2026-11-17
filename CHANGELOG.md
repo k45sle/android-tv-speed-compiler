@@ -6,7 +6,9 @@ Speed Compile prepares the code of the apps you pick ahead of time. This is call
 
 ## Unreleased
 
-- ADB debugging mode: reconnecting after a restart, and background work, no longer make the TV show "Allow USB debugging?". If the TV refuses the app after a restart, the app tries again quietly for a minute or two; if it still can't connect, Home shows Disconnected and Fix connection asks the TV to allow debugging.
+- Android 11 and 12: the app no longer makes a new ADB key each time it starts. Android 11 and 12 hand the saved key back without some optional parts, and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after every full restart it asked to allow debugging again in ADB debugging mode, and with Wireless debugging the app had to be paired again. This matches the Sony Bravia KD-43X81J report. After you update, the TV may ask one last time.
+- ADB debugging mode: right after you allow the app, it checks whether the TV saved Always allow. If it didn't, Home says so, and How to fix explains what to do (usually Revoke USB debugging authorizations in Developer options, then allow the app again).
+- ADB debugging mode: reconnecting after a restart, and background work, no longer make the TV show "Allow USB debugging?". If the TV refuses the app after a restart, Home shows Disconnected, and Fix connection asks the TV to allow debugging.
 
 ## 1.1.0 (17 November 2026)
 

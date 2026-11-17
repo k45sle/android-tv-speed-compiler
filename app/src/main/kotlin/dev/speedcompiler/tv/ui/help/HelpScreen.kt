@@ -45,6 +45,7 @@ val helpEntries = listOf(
     HelpEntry(R.string.help_forgot_title, R.string.help_forgot_body, Fix.QuickRepair),
     HelpEntry(R.string.help_wireless_title, R.string.help_wireless_body, Fix.TurnOnWirelessDebugging),
     HelpEntry(R.string.help_waiting_title, R.string.help_waiting_body, Fix.AllowPrompt),
+    HelpEntry(R.string.help_restart_title, R.string.help_restart_body),
     HelpEntry(R.string.help_no_answer_title, R.string.help_no_answer_body, Fix.Retry),
     HelpEntry(R.string.help_not_finished_title, R.string.help_not_finished_body),
     HelpEntry(R.string.help_not_checked_title, R.string.help_not_checked_body),

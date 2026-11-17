@@ -2,7 +2,10 @@ package dev.speedcompiler.tv.adb
 
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.math.BigInteger
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
@@ -11,12 +14,15 @@ import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPrivateCrtKey
+import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.RSAPrivateCrtKeySpec
 import java.security.spec.RSAPublicKeySpec
+import java.util.Base64
 
 /** The app's ADB identity: an RSA key and self-signed certificate, generated once and kept in [dir]. */
-class AdbKeys(dir: File) {
+class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> PrivateKey = ::decodePkcs8) {
     val privateKey: PrivateKey
     val certificate: X509Certificate
 
@@ -24,7 +30,8 @@ class AdbKeys(dir: File) {
         val keyFile = File(dir, "adb.key")
         val certFile = File(dir, "adb.crt")
         dir.mkdirs()
-        val key = runCatching { KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes())) }.getOrNull()
+        val keyBytes = if (keyFile.exists()) runCatching { keyFile.readBytes() }.getOrNull() else null
+        val key = keyBytes?.let { loadRsaKey(it, decode) }
         if (key is RSAPrivateCrtKey) {
             // The key is the identity the TV trusts. A missing, corrupt or mismatched cert (a crash between the two writes)
             // is rebuilt from the key's own public half, so pairing survives.
@@ -35,6 +42,13 @@ class AdbKeys(dir: File) {
                 ?: parseCertificate(selfSignedCertificate(publicKey.encoded, key)).also { writeAtomically(certFile, it.encoded) }
         } else {
             // No usable key (first run, or the file is corrupt): a new identity, so the TV has to be paired again.
+            if (keyFile.exists()) {
+                // Never drop an identity silently: keep the unreadable file for diagnosis and say so in the log.
+                val bad = File(dir, "adb.key.bad")
+                bad.delete()
+                keyFile.renameTo(bad)
+                log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), kept as adb.key.bad; the TV will ask to allow the new key")
+            }
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
             privateKey = pair.private
             certificate = parseCertificate(selfSignedCertificate(pair.public.encoded, pair.private))
@@ -45,9 +59,73 @@ class AdbKeys(dir: File) {
 
     private fun writeAtomically(file: File, bytes: ByteArray) {
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeBytes(bytes)
+        FileOutputStream(tmp).use { it.write(bytes); it.fd.sync() } // on disk before the rename, so a power cut can't leave an empty key
         check(tmp.renameTo(file)) { "could not save ${file.name}" }
     }
+}
+
+private fun decodePkcs8(bytes: ByteArray): PrivateKey = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(bytes))
+
+/**
+ * [pkcs8] as an [RSAPrivateCrtKey], or null if it isn't a usable RSA key. Android 12's KeyFactory returns a plain
+ * RSAPrivateKey for a PKCS#8 key (it drops the CRT fields), so then the key is rebuilt from the fields in the file.
+ */
+internal fun loadRsaKey(pkcs8: ByteArray, decode: (ByteArray) -> PrivateKey = ::decodePkcs8): RSAPrivateCrtKey? {
+    val decoded = runCatching { decode(pkcs8) }.getOrNull() as? RSAPrivateKey ?: return null
+    if (decoded is RSAPrivateCrtKey) return decoded
+    val rebuilt = runCatching { KeyFactory.getInstance("RSA").generatePrivate(rsaPrivateCrtKeySpec(pkcs8)) }.getOrNull() as? RSAPrivateCrtKey
+    return rebuilt?.takeIf { it.modulus == decoded.modulus && it.privateExponent == decoded.privateExponent }
+}
+
+/** The RSA fields of a PKCS#8 PrivateKeyInfo: SEQUENCE { version, algorithm, OCTET STRING { RSAPrivateKey } }. */
+internal fun rsaPrivateCrtKeySpec(pkcs8: ByteArray): RSAPrivateCrtKeySpec {
+    val info = DerReader(DerReader(pkcs8).next(0x30))
+    info.next(0x02) // version
+    info.next(0x30) // AlgorithmIdentifier
+    val rsa = DerReader(DerReader(info.next(0x04)).next(0x30))
+    rsa.next(0x02) // version
+    val v = List(8) { BigInteger(rsa.next(0x02)) } // n, e, d, p, q, dP, dQ, qInv
+    return RSAPrivateCrtKeySpec(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7])
+}
+
+/** Just enough DER for [rsaPrivateCrtKeySpec]: [next] returns the contents of the next element, which must have [tag]. */
+private class DerReader(private val bytes: ByteArray) {
+    private var pos = 0
+
+    fun next(tag: Int): ByteArray {
+        check((bytes[pos++].toInt() and 0xFF) == tag) { "unexpected DER tag" }
+        var len = bytes[pos++].toInt() and 0xFF
+        if (len >= 0x80) {
+            val n = len and 0x7F
+            check(n in 1..3) { "bad DER length" }
+            len = 0
+            repeat(n) { len = (len shl 8) or (bytes[pos++].toInt() and 0xFF) }
+        }
+        check(len <= bytes.size - pos) { "truncated DER" }
+        return bytes.copyOfRange(pos, pos + len).also { pos += len }
+    }
+}
+
+/** [key] in adb's own public key format (android_pubkey_encode: 524 little-endian bytes), base64 without line breaks, as the TV stores it. */
+fun adbPublicKeyBase64(key: RSAPublicKey): String {
+    val n = key.modulus
+    val r32 = BigInteger.ONE.shiftLeft(32)
+    val n0inv = r32.subtract(n.mod(r32).modInverse(r32))
+    val rr = BigInteger.ONE.shiftLeft(2048).modPow(BigInteger.valueOf(2), n)
+    val buf = ByteBuffer.allocate(4 + 4 + 256 + 256 + 4).order(ByteOrder.LITTLE_ENDIAN)
+    buf.putInt(64)
+    buf.putInt(n0inv.toInt())
+    buf.put(littleEndian(n, 256))
+    buf.put(littleEndian(rr, 256))
+    buf.putInt(key.publicExponent.toInt())
+    return Base64.getEncoder().encodeToString(buf.array())
+}
+
+private fun littleEndian(v: BigInteger, size: Int): ByteArray {
+    val be = v.toByteArray().let { if (it.size > size) it.copyOfRange(it.size - size, it.size) else it } // drops the sign byte
+    val out = ByteArray(size)
+    for (i in be.indices) out[i] = be[be.size - 1 - i]
+    return out
 }
 
 private fun parseCertificate(der: ByteArray) =

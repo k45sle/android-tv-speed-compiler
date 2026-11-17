@@ -51,6 +51,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.theme.SelectRow
 import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.ui.apps.AppBanner
@@ -91,6 +92,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
@@ -294,6 +296,54 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
                 Body(stringResource(if (legacy) R.string.setup_reconnect_body_adb else R.string.setup_reconnect_body))
                 if (waiting) StatusPill(stringResource(R.string.setup_connecting), Tone.Info)
                 else PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
+            }
+        }
+    }
+}
+
+/** What [KeyHelpScreen] needs; plain so tests can drive it. */
+class KeyHelpDeps(
+    val check: Flow<KeyCheck>,
+    /** Reconnecting, or a key check running. */
+    val busy: Flow<Boolean>,
+    val allowAgain: () -> Unit,
+    val openDeveloperOptions: () -> Unit,
+)
+
+/** ADB debugging mode: says whether the TV kept Always allow, and the steps to make it ask once more. */
+@Composable
+fun KeyHelpScreen(onBack: () -> Unit, deps: KeyHelpDeps = rememberKeyHelpDeps()) {
+    val check by deps.check.collectAsState(KeyCheck.Unknown)
+    val busy by deps.busy.collectAsState(false)
+    CompositionLocalProvider(LocalPageBack provides onBack) {
+        Page(null, stringResource(R.string.keyhelp_title), side = {
+            // Step 1 happens in Developer options, so its button comes first.
+            if (check == KeyCheck.NotSaved || check == KeyCheck.Forgotten) {
+                Button(onClick = deps.openDeveloperOptions) { Text(stringResource(R.string.setup_open_developer_options).upper()) }
+            }
+            if (busy) StatusPill(stringResource(R.string.keyhelp_checking), Tone.Info)
+            else PrimaryButton(stringResource(R.string.keyhelp_allow_again), onClick = debounced(deps.allowAgain))
+        }) {
+            when (check) {
+                KeyCheck.Saved -> Body(stringResource(R.string.keyhelp_saved))
+                KeyCheck.Unknown -> Body(stringResource(R.string.keyhelp_unknown))
+                KeyCheck.AllowedOnce -> {
+                    Body(stringResource(R.string.keyhelp_allowed_once))
+                    Body(stringResource(R.string.keyhelp_step_allow_again), 0)
+                    Body(stringResource(R.string.keyhelp_step_tick), 1)
+                }
+                KeyCheck.NotSaved -> {
+                    Body(stringResource(R.string.keyhelp_not_saved))
+                    Body(stringResource(R.string.keyhelp_step_revoke), 0)
+                    Body(stringResource(R.string.keyhelp_step_allow_tick), 1)
+                    Body(stringResource(R.string.keyhelp_if_not_saved))
+                }
+                KeyCheck.Forgotten -> {
+                    Body(stringResource(R.string.keyhelp_forgotten))
+                    Body(stringResource(R.string.keyhelp_step_revoke), 0)
+                    Body(stringResource(R.string.keyhelp_step_allow_tick), 1)
+                    Body(stringResource(R.string.keyhelp_if_forgotten))
+                }
             }
         }
     }

@@ -8,6 +8,7 @@ import dev.speedcompiler.tv.adb.AdbShell
 import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.ConnectionKeeper
+import dev.speedcompiler.tv.adb.KeyChecker
 import dev.speedcompiler.tv.adb.LibAdb
 import dev.speedcompiler.tv.adb.Pairing
 import dev.speedcompiler.tv.engine.AndroidPackageSystem
@@ -47,7 +48,16 @@ class AppGraph(context: Context) {
     private val libAdb = LibAdb(app, legacy = { settings.values.first().legacyAdb })
     val adbShell: AdbShell = libAdb
     val pairing: Pairing = libAdb
-    val connectionKeeper = ConnectionKeeper({ prompt -> libAdb.connect(prompt) }, libAdb, settings, app.packageName, appScope)
+    private val keyChecker = KeyChecker(libAdb::keyTrusted, libAdb, { libAdb.publicKeyBase64 })
+    val connectionKeeper = ConnectionKeeper(
+        { prompt -> libAdb.connect(prompt) },
+        libAdb,
+        settings,
+        app.packageName,
+        appScope,
+        checkKey = keyChecker::check,
+        disconnect = { libAdb.disconnect() },
+    )
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()
     var clock: Clock = SystemClock

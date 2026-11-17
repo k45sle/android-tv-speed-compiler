@@ -32,6 +32,7 @@ import dev.speedcompiler.tv.ui.Routes
 import org.junit.Assert.assertTrue
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.watch.Eta
 import dev.speedcompiler.tv.watch.Event
@@ -151,6 +152,55 @@ class HomeActivityTest : ComposeTestBase() {
         home(ConnectionState.Unpaired) { went = it }
         rule.onNodeWithText("Fix connection", ignoreCase = true).invokeClick()
         assertEquals(Routes.QuickRepair, went)
+    }
+
+    @Test
+    fun homeLegacyKeyNotSavedWarnsAndOffersHowToFix() {
+        var went: String? = null
+        show {
+            HomeContent(
+                HomeState(ConnectionState.Connected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.NotSaved),
+                { went = it }, now, utc,
+            )
+        }
+        rule.onNodeWithText("The TV didn't save Always allow, so it will ask again after a restart.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("How to fix", ignoreCase = true).invokeClick()
+        assertEquals(Routes.KeyHelp, went)
+    }
+
+    @Test
+    fun homeLegacyKeySavedShowsNeither() {
+        show {
+            HomeContent(
+                HomeState(ConnectionState.Connected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.Saved),
+                {}, now, utc,
+            )
+        }
+        rule.onAllNodesWithText("Always allow", substring = true).assertCountEquals(0)
+        rule.onNodeWithText("How to fix", ignoreCase = true).assertDoesNotExist()
+        rule.onNodeWithText("Connected", ignoreCase = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun homeKeyWarningNeedsLegacyMode() {
+        show {
+            HomeContent(
+                HomeState(ConnectionState.Connected, true, watched, queue, events, look, legacy = false, keyCheck = KeyCheck.NotSaved),
+                {}, now, utc,
+            )
+        }
+        rule.onAllNodesWithText("Always allow", substring = true).assertCountEquals(0)
+        rule.onNodeWithText("How to fix", ignoreCase = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun homeDisconnectedForgottenKeyKeepsFixConnection() {
+        show {
+            HomeContent(HomeState(ConnectionState.Disconnected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.Forgotten), {}, now, utc)
+        }
+        rule.onNodeWithText("The TV forgot Always allow when it restarted.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Fix connection", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("How to fix", ignoreCase = true).assertDoesNotExist()
     }
 
     @Test

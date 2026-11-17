@@ -3,6 +3,8 @@ package dev.speedcompiler.tv.adb
 import dev.speedcompiler.tv.engine.Settings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** What the user has to do to get a failed connection working again. */
@@ -35,6 +38,8 @@ fun fixFor(e: Throwable): Fix = when (e) {
  * Keeps the app's ADB link usable: connects, self-grants WRITE_SECURE_SETTINGS once, and applies the
  * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`); its argument says
  * whether the TV may show its Allow prompt, which only [connectNow] (a person on one of the app's screens) asks for.
+ * [checkKey] checks whether the TV kept Always allow (ADB debugging mode); null skips it. [disconnect] drops the link,
+ * for reallow.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
@@ -43,15 +48,23 @@ class ConnectionKeeper(
     private val settings: Settings,
     private val packageName: String,
     private val scope: CoroutineScope,
+    private val checkKey: (suspend () -> KeyCheck)? = null,
+    private val disconnect: suspend () -> Unit = {},
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
+
+    private val _keyChecking = MutableStateFlow(false)
+
+    /** True while a key check runs. */
+    val keyChecking: StateFlow<Boolean> get() = _keyChecking
 
     /** Reasons the follow-up shell steps (grant, trust toggle) failed; null when fine. */
     val grantFailure = MutableStateFlow<String?>(null)
     val trustFailure = MutableStateFlow<String?>(null)
 
     private var granted = false
+    private var keyCheckJob: Job? = null
     private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
@@ -108,11 +121,55 @@ class ConnectionKeeper(
         } catch (e: Exception) {
             val err = mapAdbError(e)
             _status.value = KeeperStatus.Failed(err, fixFor(err))
+            onLegacyRefused(prompt, err)
             return@withLock _status.value
         }
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
+        onLegacyConnected()
         _status.value
+    }
+
+    /**
+     * ADB debugging mode, from the "How to fix" page: drops the link and connects again with the TV's prompt allowed,
+     * so the person can tick Always allow; the key check then runs again. Returns the new status.
+     */
+    suspend fun reallow(): KeeperStatus {
+        keyCheckJob?.cancelAndJoin() // the new connection gets its own check
+        try {
+            disconnect()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // already gone
+        }
+        return reconnect(prompt = true)
+    }
+
+    /** ADB debugging mode: after every connect, check (in the background) whether the TV would let this key back in after a restart. */
+    private suspend fun onLegacyConnected() {
+        val check = checkKey ?: return
+        if (!settings.values.first().legacyAdb || keyCheckJob?.isActive == true) return
+        _keyChecking.value = true
+        keyCheckJob = scope.launch {
+            try {
+                val r = check()
+                if (r != KeyCheck.Unknown) storeKeyCheck(r) // couldn't tell: keep what we knew
+            } finally {
+                _keyChecking.value = false
+            }
+        }
+    }
+
+    /** A quiet reconnect the TV refused although the key was saved: the TV dropped it (for example at a restart). */
+    private suspend fun onLegacyRefused(prompt: Boolean, err: Throwable) {
+        if (checkKey == null || prompt || err !is AdbFailure.NotAuthorized) return
+        val s = settings.values.first()
+        if (s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved) storeKeyCheck(KeyCheck.Forgotten)
+    }
+
+    private suspend fun storeKeyCheck(k: KeyCheck) {
+        if (settings.values.first().legacyKeyCheck != k) settings.update { it.copy(legacyKeyCheck = k) }
     }
 
     private suspend fun grant() {

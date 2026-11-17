@@ -15,6 +15,7 @@ import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.adb.LEGACY_HOST
 import dev.speedcompiler.tv.adb.LEGACY_PORT
 import dev.speedcompiler.tv.ui.apps.AppInfo
@@ -22,6 +23,7 @@ import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -146,6 +148,22 @@ fun rememberSetupDeps(): SetupDeps {
             },
             legacy = graph.settings.values.map { it.legacyAdb },
             setLegacy = { on -> graph.settings.update { it.copy(legacyAdb = on) } },
+        )
+    }
+}
+
+@Composable
+fun rememberKeyHelpDeps(): KeyHelpDeps {
+    val context = LocalContext.current
+    return remember(context) {
+        val graph = (context.applicationContext as SpeedApp).graph
+        KeyHelpDeps(
+            check = graph.settings.values.map { it.legacyKeyCheck },
+            busy = combine(graph.connectionKeeper.status, graph.connectionKeeper.keyChecking) { s, c ->
+                s == KeeperStatus.Reconnecting || c
+            },
+            allowAgain = { graph.appScope.launch { graph.connectionKeeper.reallow() } },
+            openDeveloperOptions = AndroidSetupEnv(context.applicationContext, graph.connectionMonitor)::openDeveloperOptions,
         )
     }
 }

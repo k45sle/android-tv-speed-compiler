@@ -60,6 +60,17 @@ class SettingsTest {
     }
 
     @Test
+    fun legacyKeyCheckDefaultsToUnknownAndPersists() = runBlocking {
+        val file = tmp.newFile("lk.preferences_pb").also { it.delete() }
+        val settings = DataStoreSettings(PreferenceDataStoreFactory.create { file })
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
+        settings.update { it.copy(legacyKeyCheck = dev.speedcompiler.tv.adb.KeyCheck.NotSaved) }
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        settings.update { it.copy(legacyKeyCheck = dev.speedcompiler.tv.adb.KeyCheck.Saved) }
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
     fun concurrentUpdatesKeepEveryField() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("c.preferences_pb").also { it.delete() } }
         val settings = DataStoreSettings(store)

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import dev.speedcompiler.tv.adb.KeyCheck
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -29,6 +30,8 @@ data class SettingsValues(
     val keepWifiDebugging: Boolean = true,
     /** Connect through the older ADB port 5555 instead of Wireless debugging (TVs without Wireless debugging). */
     val legacyAdb: Boolean = false,
+    /** ADB debugging mode: whether the TV kept Always allow for this app's key, as last checked. */
+    val legacyKeyCheck: KeyCheck = KeyCheck.Unknown,
     val optimizeHow: OptimizeHow = OptimizeHow.Automatic,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
@@ -54,6 +57,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val keepWifiDebugging = booleanPreferencesKey("keep_wifi_debugging")
     private val legacyAdb = booleanPreferencesKey("legacy_adb")
+    private val legacyKeyCheck = stringPreferencesKey("legacy_key_check")
     private val optimizeHow = stringPreferencesKey("optimize_how")
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
@@ -72,6 +76,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
             keepWifiDebugging = p[keepWifiDebugging] ?: d.keepWifiDebugging,
             legacyAdb = p[legacyAdb] ?: d.legacyAdb,
+            legacyKeyCheck = p[legacyKeyCheck]?.let { runCatching { KeyCheck.valueOf(it) }.getOrNull() } ?: d.legacyKeyCheck,
             optimizeHow = p[optimizeHow]?.let { runCatching { OptimizeHow.valueOf(it) }.getOrNull() } ?: d.optimizeHow,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
@@ -95,6 +100,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[keepTrusting] = new.keepTrusting
             p[keepWifiDebugging] = new.keepWifiDebugging
             p[legacyAdb] = new.legacyAdb
+            p[legacyKeyCheck] = new.legacyKeyCheck.name
             p[optimizeHow] = new.optimizeHow.name
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset

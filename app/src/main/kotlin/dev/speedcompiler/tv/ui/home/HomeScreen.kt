@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.Button
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.engine.Mode
@@ -72,6 +73,10 @@ class HomeState(
     /** False until settings have loaded; the status row waits so it never shows a wrong first state. */
     val loaded: Boolean = true,
     val history: List<QueueItem> = emptyList(),
+    /** ADB debugging mode: whether the TV may forget Always allow at a restart. */
+    val legacy: Boolean = false,
+    /** What the TV last said about Always allow. */
+    val keyCheck: KeyCheck = KeyCheck.Unknown,
 )
 
 private fun appResult(app: WatchedApp, queue: List<QueueEntry>) =
@@ -88,7 +93,7 @@ fun HomeScreen(go: (String) -> Unit) {
     val events by remember(graph) { graph.database.events().recent(4) }.collectAsState(emptyList())
     val history by remember(graph) { graph.scheduler.history }.collectAsState(emptyList())
     val settings = loadedSettings ?: SettingsValues()
-    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null, history), go)
+    HomeContent(HomeState(connection, !settings.paused && settings.mode == Mode.Auto, watched, queue, events, look, settings.setupDone, loadedSettings != null, history, legacy = settings.legacyAdb, keyCheck = settings.legacyKeyCheck), go)
 }
 
 @Composable
@@ -105,13 +110,20 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
         next.isEmpty() -> pluralStringResource(R.plurals.home_waiting_count, waiting, waiting)
         else -> pluralStringResource(R.plurals.home_waiting_next, waiting, waiting, next)
     }.let { if (batch == null || waiting == 0) it else stringResource(R.string.common_join, it, batch) }
+    // ADB debugging mode: the TV may not keep Always allow, so say what it does at a restart.
+    val keyLine = if (!s.loaded || !s.setupDone || !s.legacy) null else when (s.keyCheck) {
+        KeyCheck.NotSaved -> R.string.home_key_not_saved
+        KeyCheck.AllowedOnce -> R.string.home_key_allowed_once
+        KeyCheck.Forgotten -> R.string.home_key_forgotten
+        else -> null
+    }
     // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
     val (title, subtitle) = when {
         !s.loaded -> "" to null
         !s.setupDone -> stringResource(R.string.home_not_set_up) to null
-        s.connection == ConnectionState.Disconnected -> stringResource(R.string.home_disconnected) to if (waiting == 0) stringResource(R.string.home_nothing_waiting) else pluralStringResource(R.plurals.home_waiting_count, waiting, waiting)
+        s.connection == ConnectionState.Disconnected -> stringResource(R.string.home_disconnected) to (keyLine?.let { stringResource(it) } ?: if (waiting == 0) stringResource(R.string.home_nothing_waiting) else pluralStringResource(R.plurals.home_waiting_count, waiting, waiting))
         s.connection == ConnectionState.Unpaired -> stringResource(R.string.home_not_paired) to stringResource(R.string.home_forgot_subtitle)
-        else -> onOff to queueLine
+        else -> onOff to (keyLine?.let { stringResource(it) } ?: queueLine)
     }
     val action = if (!s.loaded) null else if (!s.setupDone) stringResource(R.string.home_set_up) else when (s.connection) {
         ConnectionState.Disconnected, ConnectionState.Unpaired -> stringResource(R.string.common_fix_connection)
@@ -124,6 +136,10 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                     { go(if (!s.setupDone) Routes.Setup else fixRoute(if (s.connection == ConnectionState.Unpaired) Fix.QuickRepair else Fix.Retry)) },
                     Modifier.remembersFocus(mem, "status"),
                 ) { Text(action.upper()) }
+                else if (s.loaded && online && keyLine != null) Button(
+                    { go(Routes.KeyHelp) },
+                    Modifier.remembersFocus(mem, "status"),
+                ) { Text(stringResource(R.string.home_key_fix).upper()) }
                 else if (s.loaded && online) {
                     val connected = s.connection == ConnectionState.Connected
                     StatusChip(stringResource(if (connected) R.string.home_connected else R.string.home_connecting), if (connected) Tone.Ok else Tone.Info)
