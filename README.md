@@ -28,7 +28,7 @@
   <sub>Pick an app, press Optimize now, and it is done in about a minute. <a href="docs/media/demo.mp4">Watch the full demo (MP4)</a>.</sub>
 </p>
 
-Android normally compiles an app a bit at a time, based on how you use it. Speed Compile asks the TV to compile the apps you choose ahead of time, with Android's `speed-profile` filter (it falls back to `speed`, see below), and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging.
+Android normally compiles an app a bit at a time, based on how you use it. Speed Compile asks the TV to compile the apps you choose ahead of time, with Android's `speed-profile` filter (it falls back to `speed`, see below), and does it again whenever one of them updates. It talks to the TV through the TV's own Wireless debugging, or through ADB debugging on TVs that don't have Wireless debugging.
 
 Results vary by app and by TV. Some apps open or scroll more smoothly, and some show no difference. Each compiled app takes up a bit more storage.
 
@@ -134,7 +134,7 @@ These numbers come from one TV. Other TVs and apps will differ.
 - Measures how smoothly each app runs while you use it, and says so on App detail. If an app is still choppy, Smoother mode compiles it fully, and Back to normal mode undoes that if it didn't help.
 - Checks once a week, and right after a system update, that each watched app is still compiled, and compiles it again if not.
 - Reset puts an app back the way the TV had it.
-- Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging back on at those moments (you can turn this off in Settings).
+- Reconnects by itself after the TV restarts, when you open the app, or when a job loses its connection, and turns Wireless debugging (or ADB debugging) back on at those moments (you can turn this off in Settings).
 - Has an arcade with three games, Alien Run, Star Arrow and Cosmic Worm. It opens while a compile runs, and Home's Arcade button opens it at any time.
 - Keeps a history of each job, with the reason when one fails.
 - Help lists the usual setup problems, Diagnostics sends a cleaned-up log file to your phone, and Quick re-pair takes one scan if the TV forgets the app.
@@ -172,7 +172,7 @@ apksigner verify --print-certs speed-compile.apk
 
 1. Get the APK onto the TV. Download it from the [Releases page](https://github.com/k45sle/android-tv-speed-compiler/releases). The stable link `https://github.com/k45sle/android-tv-speed-compiler/releases/latest/download/speed-compile.apk` always points to the newest APK. The quickest way on a TV is the Downloader app with code 6791955 (or the short link https://aftv.news/6791955). You can also send the file from your phone with Send Files to TV, or add the repo to [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/k45sle/android-tv-speed-compiler) for updates.
 2. Open the APK on the TV and allow installs from that source if asked.
-3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV.
+3. Open Speed Compile and follow the setup. It walks you through Developer options and Wireless debugging, then shows a QR code. Scan it with your phone and type the 6-digit pairing code from the TV. If your TV has no Wireless debugging, choose No Wireless debugging? and switch on ADB debugging instead; there is no pairing code, and the TV asks you to allow debugging.
 
 <details>
 <summary><b>Setup help</b></summary>
@@ -189,6 +189,7 @@ If setup gets stuck, these are the usual causes.
 | The TV asks to allow debugging | Choose Always allow from this computer, then OK. If you turned off Keep this TV trusting the app in Settings, Android can ask again after a while. |
 | Wireless debugging is off | It can switch off after a network change. With Keep Wireless debugging on (the default), the app turns it back on as soon as you open it, after the TV restarts, or when an optimization or weekly check loses its connection. If you turned that setting off, turn Wireless debugging on again in Developer options and the app reconnects by itself. |
 | The TV forgot this app | Open the app and choose Fix connection. |
+| The TV asks to allow debugging after every restart (ADB debugging) | Some TVs forget Always allow when they fully restart. Choose Allow again and the app carries on. Standby from the remote doesn't cause this. |
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
 
@@ -196,15 +197,15 @@ Inside the app, Help lists the same fixes, and Settings > Export diagnostics mak
 
 ## Compatibility
 
-Speed Compile needs Android TV or Google TV 11 or later, because Wireless debugging arrived in Android 11.
+Speed Compile needs Android TV or Google TV 11 or later.
 
-The TV also has to show Wireless debugging in Developer options, and at least one Android 12 TV does not: a user's Sony Bravia KD-43X81J only has ADB debugging, so setup can't get past the pairing step there.
+It connects through Wireless debugging in Developer options. Some TVs don't have it, such as a user's Sony Bravia KD-43X81J (Android 12), which only has ADB debugging. On those, setup offers ADB debugging instead: the app connects to it on the TV itself (the older network ADB port, 5555), with no pairing code. That works only if the TV's ADB debugging switch opens that port.
 
 | Device | Android | Worked? |
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
 | Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
-| Sony Bravia KD-43X81J | 12 | No, Wireless debugging is missing (user report, see the [device matrix](docs/device-matrix.md)) |
+| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging; after a full restart the TV asks to allow debugging again (user report, see the [device matrix](docs/device-matrix.md)) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -218,13 +219,13 @@ If you try it on a real TV or streaming box, please fill in the [Device report f
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
 **What exactly does it change on the TV?**
-For each app you pick, it asks the app to install the usage profile it ships with (a broadcast to the app's own profile installer, if it has one) and then runs `cmd package compile -m speed-profile -f` on that app. It uses `-m speed` instead when you choose Smoother mode or Full compile, or when the app still has no usage profile 2 days after an install or update. Reset runs `cmd package compile -r install -f`, which puts the app back on the TV's own compile choice. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging back on when it finds it off, and it stops Android from forgetting that you allowed debugging. To change those settings it grants itself Android's `WRITE_SECURE_SETTINGS` permission. It also reads some state without changing it: whether the screen is on, what is playing, which app is in front, and that app's frame counters. Nothing else.
+For each app you pick, it asks the app to install the usage profile it ships with (a broadcast to the app's own profile installer, if it has one) and then runs `cmd package compile -m speed-profile -f` on that app. It uses `-m speed` instead when you choose Smoother mode or Full compile, or when the app still has no usage profile 2 days after an install or update. Reset runs `cmd package compile -r install -f`, which puts the app back on the TV's own compile choice. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging (or ADB debugging) back on when it finds it off, and it stops Android from forgetting that you allowed debugging. To change those settings it grants itself Android's `WRITE_SECURE_SETTINGS` permission. It also reads some state without changing it: whether the screen is on, what is playing, which app is in front, and that app's frame counters. Nothing else.
 
 **Why does it need Developer options?**
-Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging on the TV itself. The two settings above are on by default:
+Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging, or ADB debugging, on the TV itself. The two settings above are on by default:
 
-- Keep Wireless debugging on: each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself.
-- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again.
+- Keep Wireless debugging on: each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself. In ADB debugging mode the setting is called Keep ADB debugging on and does the same for ADB debugging.
+- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again. Some TVs in ADB debugging mode still ask after a full restart (see Setup help).
 
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
@@ -232,7 +233,7 @@ You can turn either one off in the app's Settings, but things get less convenien
 It can. A system update may throw away compiled code. When the TV starts up after an update, Speed Compile sees the new system version and checks every watched app right away, and queues any that are no longer at `speed-profile` or `speed`. The weekly check catches anything that slips through. App updates are a separate case: Speed Compile looks for them every 30 minutes and after each restart, and queues an updated app as soon as it finds one. The system update case hasn't been checked on a real TV yet.
 
 **Does it work on Ethernet?**
-Unknown so far. Android's Wireless debugging is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.
+Unknown so far for Wireless debugging. It is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.
 
 **How is this different from running `pm compile` myself, or from other ADB tools?**
 The compile is the same. The difference is that Speed Compile runs on the TV, does it again after every update without a laptop, waits until nothing is playing, and reconnects after reboots.
@@ -285,7 +286,7 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 
 Things that might come later, if enough people want them:
 
-- Support for the older TCP debugging mode (port 5555) next to Wireless debugging. It would cover Android 9 and 10, and newer TVs without Wireless debugging, such as the Sony Bravia KD-43X81J above, whose ADB debugging switch probably opens that port already. Other TVs expose it with a network-debugging switch; some need a computer and a USB cable once to turn it on, and some may not allow it at all. It also needs real TVs to test on. Open an issue if you want it.
+- Android 9 and 10. The ADB debugging mode would work there too, but the app needs Android 11 for now, and many of those TVs need a computer once to open the port. It also needs real TVs to test on. Open an issue if you want it.
 - Fire TV support. The app is untested there. If you have a Fire TV and want to try it, an issue with what happened is the fastest way to find out.
 
 ## License

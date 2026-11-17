@@ -25,7 +25,10 @@ data class SettingsValues(
     val gateMode: GateMode = GateMode.Idle,
     val paused: Boolean = false,
     val keepTrusting: Boolean = true,
+    /** Keep debugging on: Wireless debugging, or ADB debugging while [legacyAdb]. */
     val keepWifiDebugging: Boolean = true,
+    /** Connect through the older ADB port 5555 instead of Wireless debugging (TVs without Wireless debugging). */
+    val legacyAdb: Boolean = false,
     val optimizeHow: OptimizeHow = OptimizeHow.Automatic,
     val theme: ThemeChoice = ThemeChoice.System,
     /** Index into the accent presets; ignored while [customHue] is set. */
@@ -50,6 +53,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
     private val paused = booleanPreferencesKey("paused")
     private val keepTrusting = booleanPreferencesKey("keep_trusting")
     private val keepWifiDebugging = booleanPreferencesKey("keep_wifi_debugging")
+    private val legacyAdb = booleanPreferencesKey("legacy_adb")
     private val optimizeHow = stringPreferencesKey("optimize_how")
     private val theme = stringPreferencesKey("theme")
     private val accentPreset = intPreferencesKey("accent_preset")
@@ -67,6 +71,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             paused = p[paused] ?: d.paused,
             keepTrusting = p[keepTrusting] ?: d.keepTrusting,
             keepWifiDebugging = p[keepWifiDebugging] ?: d.keepWifiDebugging,
+            legacyAdb = p[legacyAdb] ?: d.legacyAdb,
             optimizeHow = p[optimizeHow]?.let { runCatching { OptimizeHow.valueOf(it) }.getOrNull() } ?: d.optimizeHow,
             theme = p[theme]?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: d.theme,
             accentPreset = p[accentPreset] ?: d.accentPreset,
@@ -89,6 +94,7 @@ class DataStoreSettings(private val store: DataStore<Preferences>) : Settings {
             p[paused] = new.paused
             p[keepTrusting] = new.keepTrusting
             p[keepWifiDebugging] = new.keepWifiDebugging
+            p[legacyAdb] = new.legacyAdb
             p[optimizeHow] = new.optimizeHow.name
             p[theme] = new.theme.name
             p[accentPreset] = new.accentPreset

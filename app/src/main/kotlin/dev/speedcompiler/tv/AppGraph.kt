@@ -43,10 +43,10 @@ class AppGraph(context: Context) {
     /** Lives as long as the process. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val libAdb = LibAdb(app)
+    val settings: Settings = DataStoreSettings(app.settingsStore)
+    private val libAdb = LibAdb(app, legacy = { settings.values.first().legacyAdb })
     val adbShell: AdbShell = libAdb
     val pairing: Pairing = libAdb
-    val settings: Settings = DataStoreSettings(app.settingsStore)
     val connectionKeeper = ConnectionKeeper({ libAdb.connect() }, libAdb, settings, app.packageName, appScope)
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()

@@ -122,14 +122,18 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
     var help by remember { mutableStateOf(false) }
     val failures = remember { mutableStateMapOf<Int, Int>() }
     val conn by deps.connection.collectAsState(ConnectionState.Unpaired)
+    val legacy by deps.legacy.collectAsState(false)
+    var portOpen by remember { mutableStateOf(false) }
+    // A socket cannot run on the main thread, so the port is polled here and read as state.
+    LaunchedEffect(legacy) { portOpen = false; if (legacy) while (true) { portOpen = env.legacyPortOpen(); delay(PollMs) } }
     var apps by remember { mutableStateOf(emptyList<SetupApp>()) }
     val picked = rememberSaveable(saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
 
     // Connecting/Disconnected also happen on a fresh install (the TLS handshake fails when unpaired), so they count only once this app holds a pairing.
     fun done(s: Int) = when (s) {
         2 -> env.developerOptionsOn()
-        3 -> env.wirelessDebuggingOn()
-        4 -> conn == ConnectionState.Connected || (conn != ConnectionState.Unpaired && deps.holdsPairing())
+        3 -> if (legacy) portOpen else env.wirelessDebuggingOn()
+        4 -> legacy || conn == ConnectionState.Connected || (conn != ConnectionState.Unpaired && deps.holdsPairing()) // plain ADB needs no pairing
         5 -> conn == ConnectionState.Connected
         else -> false
     }
@@ -151,7 +155,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
 
     val pageBack = { if (help) help = false else if (step > first) back() else onBack() }
     CompositionLocalProvider(LocalPageBack provides pageBack) {
-    if (help) HelpPage(step) { help = false } else when (step) {
+    if (help) HelpPage(step, legacy) { help = false } else when (step) {
         1 -> Page(null, stringResource(R.string.setup_intro_title)) {
             Body(stringResource(R.string.setup_intro_body))
             PrimaryButton(stringResource(R.string.setup_start), onClick = ::advance)
@@ -164,9 +168,29 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             FailWhenStuck(::fail)
             AutoAdvance({ env.developerOptionsOn() }, ::advance)
         }
-        3 -> Page(3, stringResource(R.string.setup_wifi_title)) {
+        3 -> if (legacy) Page(3, stringResource(R.string.setup_adb_title)) {
+            var portClosed by remember { mutableStateOf(false) }
+            // ADB debugging on for about 3 s with the port still closed: this TV does not offer it.
+            LaunchedEffect(Unit) {
+                var on = 0
+                while (true) { on = if (env.adbDebuggingOn() && !portOpen) on + 1 else 0; portClosed = on * PollMs >= 3_000; delay(PollMs) }
+            }
+            Body(stringResource(R.string.setup_adb_body))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
+                Button(onClick = { scope.launch { deps.setLegacy(false) } }) { Text(stringResource(R.string.setup_use_wireless).upper()) }
+            }
+            helpOffer?.let { ShowMeHow(it) }
+            if (portClosed) Body(stringResource(R.string.setup_adb_port_closed)) else Waiting()
+            FailWhenStuck(::fail)
+            // Back never lands here while the port is open (back() skips done steps), so no wait for "not met" first.
+            LaunchedEffect(Unit) { while (!portOpen) delay(PollMs); advance() }
+        } else Page(3, stringResource(R.string.setup_wifi_title)) {
             Body(stringResource(R.string.setup_wifi_body))
-            PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
+                Button(onClick = { scope.launch { deps.setLegacy(true) } }) { Text(stringResource(R.string.setup_no_wireless).upper()) }
+            }
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
             FailWhenStuck(::fail)
@@ -179,6 +203,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
             var stalled by remember { mutableStateOf(false) }
             var attempt by remember { mutableIntStateOf(0) }
             val reason by deps.reason.collectAsState(null)
+            LaunchedEffect(Unit) { if (legacy) env.reconnect() } // the port just opened; nothing else asks to connect
             LaunchedEffect(conn) {
                 if (conn == ConnectionState.Connecting) { sawConnecting = true; stalled = false }
                 else if ((conn == ConnectionState.Disconnected || conn == ConnectionState.Unpaired) && sawConnecting) { sawConnecting = false; denied = true; fail() }
@@ -221,7 +246,8 @@ fun QuickRepairScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps())
     SetupScreen(onBack, SetupMode.Repair, deps)
 
 /**
- * Reconnect (tier 3): one button to Developer options. Reconnects as soon as Wireless debugging is on,
+ * Reconnect (tier 3): one button to Developer options. Reconnects as soon as Wireless debugging is on
+ * (in legacy mode: as soon as port 5555 accepts),
  * then returns to the app, which is already connected. Skips the button if it is on or already connected.
  */
 @Composable
@@ -233,9 +259,11 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     var repair by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     val reason by deps.reason.collectAsState(null)
+    val legacy by deps.legacy.collectAsState(false)
+    var portOpen by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(attempt) {
-        while (!env.wirelessDebuggingOn()) delay(PollMs)
+    LaunchedEffect(attempt, legacy) {
+        while (!(if (legacy) env.legacyPortOpen().also { portOpen = it } else env.wirelessDebuggingOn())) delay(PollMs)
         waiting = true
         if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
         deps.connection.first { it == ConnectionState.Connected }
@@ -247,18 +275,23 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(ReconnectMs); stuck = true }
     }
     if (repair) return QuickRepairScreen(onBack, deps)
-    if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3) { help = false } }
+    if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3, legacy) { help = false } }
     CompositionLocalProvider(LocalPageBack provides onBack) {
         Page(null, stringResource(R.string.setup_reconnect_title)) {
             if (stuck) {
-                Body(reason ?: stringResource(if (env.wirelessDebuggingOn()) R.string.setup_reason_timeout else R.string.setup_reason_debugging_off))
+                val fallback = when {
+                    legacy -> if (portOpen) R.string.setup_reason_timeout else R.string.setup_reason_adb_off
+                    env.wirelessDebuggingOn() -> R.string.setup_reason_timeout
+                    else -> R.string.setup_reason_debugging_off
+                }
+                Body(reason ?: stringResource(fallback))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                     PrimaryButton(stringResource(R.string.setup_try_again)) { attempt++ }
-                    Button(onClick = { repair = true }) { Text(stringResource(R.string.setup_pair_again).upper()) }
+                    if (!legacy) Button(onClick = { repair = true }) { Text(stringResource(R.string.setup_pair_again).upper()) } // plain ADB has no pairing
                     ShowMeHow({ help = true })
                 }
             } else {
-                Body(stringResource(R.string.setup_reconnect_body))
+                Body(stringResource(if (legacy) R.string.setup_reconnect_body_adb else R.string.setup_reconnect_body))
                 if (waiting) StatusPill(stringResource(R.string.setup_connecting), Tone.Info)
                 else PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
             }
@@ -361,13 +394,13 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
 }
 
 @Composable
-private fun HelpPage(step: Int, onClose: () -> Unit) {
+private fun HelpPage(step: Int, legacy: Boolean, onClose: () -> Unit) {
     val text = stringResource(
         when (step) {
             2 -> R.string.setup_help_settings
-            3 -> R.string.setup_help_wireless
+            3 -> if (legacy) R.string.setup_help_adb else R.string.setup_help_wireless
             4 -> R.string.setup_help_pair
-            else -> R.string.setup_help_allow
+            else -> if (legacy) R.string.setup_help_allow_adb else R.string.setup_help_allow
         },
     )
     Page(null, stringResource(R.string.setup_show_me_how)) {

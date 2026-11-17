@@ -32,6 +32,7 @@
     <string name="home_fix_forgot">The TV forgot this app. Approve it again on the TV.</string>
     <string name="home_fix_wireless">Turn on Wireless debugging in Developer options on the TV.</string>
     <string name="home_fix_allow">Press Allow on the prompt on the TV.</string>
+    <string name="home_fix_adb">Turn on ADB debugging in Developer options on the TV.</string>
     <string name="home_fix_retry">The TV did not answer. Try again.</string>
     <string name="home_optimized">Optimized</string>
     <string name="home_compiled">Optimized</string>
@@ -75,6 +76,7 @@
     <string name="activity_no_output">No output recorded</string>
     <string name="setup_reason_not_paired">The TV does not trust this app yet.</string>
     <string name="setup_reason_debugging_off">Wireless debugging is off.</string>
+    <string name="setup_reason_adb_off">ADB debugging is off, or the TV doesn\'t accept the connection on port 5555.</string>
     <string name="setup_reason_not_allowed">The TV did not allow this app.</string>
     <string name="setup_reason_timeout">The TV did not answer in time.</string>
     <string name="setup_reason_could_not_connect">Could not connect.</string>
@@ -86,6 +88,11 @@
     <string name="setup_open_settings">Open Settings</string>
     <string name="setup_wifi_title">Turn on Wireless debugging.</string>
     <string name="setup_wifi_body">In Developer options, switch on Wireless debugging.</string>
+    <string name="setup_no_wireless">No Wireless debugging?</string>
+    <string name="setup_adb_title">Turn on ADB debugging.</string>
+    <string name="setup_adb_body">Your TV can use the older ADB connection instead. In Developer options, switch on ADB debugging (some TVs call it USB debugging).</string>
+    <string name="setup_adb_port_closed">ADB debugging is on, but this TV doesn\'t accept the connection on port 5555. Speed Compile needs Wireless debugging on this TV.</string>
+    <string name="setup_use_wireless">Use Wireless debugging</string>
     <string name="setup_open_developer_options">Open Developer options</string>
     <string name="setup_allow_title">Allow this app.</string>
     <string name="setup_allow_body">Your TV will ask to allow debugging. Choose Always allow from this computer.</string>
@@ -110,6 +117,8 @@
     <string name="setup_help_wireless">In Developer options, scroll to Wireless debugging and switch it on. If the TV asks about Wi-Fi, choose Allow.</string>
     <string name="setup_help_pair">Keep the phone on the same Wi-Fi as the TV. If the QR will not scan, type the short address into the phone\'s browser. If the TV\'s pairing code times out, open Pair device with pairing code again.</string>
     <string name="setup_help_allow">Choose Always allow from this computer on the TV\'s prompt, then OK. If no prompt appears, switch Wireless debugging off and on again.</string>
+    <string name="setup_help_adb">In Developer options, find ADB debugging (or USB debugging) and switch it on. Speed Compile connects to it on this TV, so no pairing code is needed. If your TV has Wireless debugging after all, go back and use that.</string>
+    <string name="setup_help_allow_adb">Choose Always allow from this computer on the TV\'s prompt, then OK. If no prompt appears, switch ADB debugging off and on again.</string>
     <string name="setup_qr_help">QR code for the help page</string>
     <string name="setup_qr_pair">QR code for the pairing page</string>
     <string name="setup_scan_me">Scan me</string>
@@ -120,6 +129,7 @@
     <string name="setup_pair_body_tv">On the TV, open Wireless debugging and choose Pair device with pairing code.</string>
     <string name="setup_reconnect_title">Reconnect</string>
     <string name="setup_reconnect_body">Turn Wireless debugging back on and this app reconnects by itself.</string>
+    <string name="setup_reconnect_body_adb">Turn ADB debugging back on and this app reconnects by itself.</string>
     <string name="setup_try_again">Try again</string>
     <string name="setup_pair_again">Pair again</string>
     <string name="setup_pick_title">Pick apps to optimize.</string>
@@ -257,6 +267,8 @@
     <string name="settings_keep_trusting_title">Keep this TV trusting the app</string>
     <string name="settings_keep_trusting_subtitle">Stops the TV asking to allow debugging again. If off, you may need to approve the app again later</string>
     <string name="settings_keep_wifi_title">Keep Wireless debugging on</string>
+    <string name="settings_keep_adb_title">Keep ADB debugging on</string>
+    <string name="settings_keep_adb_off_body">Automatic optimizing after updates and Watch can\'t work while ADB debugging is off.</string>
     <string name="settings_keep_wifi_off_body">Automatic optimizing after updates and Watch can\'t work while Wireless debugging is off.</string>
     <string name="common_ok">OK</string>
     <string name="settings_keep_wifi_subtitle">Turns it back on after a restart, when you open the app, or when a job loses its connection. If off, optimizing stops until you turn it on again</string>

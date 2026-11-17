@@ -17,6 +17,10 @@ import java.io.IOException
 import java.security.cert.Certificate
 import java.util.concurrent.TimeUnit
 
+/** The older plain ADB connection on this device, which some TVs (for example Sony Bravia) open with ADB debugging. */
+const val LEGACY_HOST = "127.0.0.1"
+const val LEGACY_PORT = 5555
+
 /** Exit code reported when the `__rc=` marker never arrived (the stream ended early). */
 const val MISSING_RC = -1
 
@@ -31,17 +35,21 @@ fun parseShellOutput(raw: String): ShellResult {
 
 /**
  * The real [AdbShell] and [Pairing] over libadb-android, talking to this device's own adbd.
- * With [direct] null it finds the TLS port by mDNS (`_adb-tls-connect._tcp`, Wireless debugging);
- * otherwise it dials that host and port (for example after `adb tcpip 5555`).
+ * With [direct] null it finds the TLS port by mDNS (`_adb-tls-connect._tcp`, Wireless debugging), or, while
+ * [legacy] says so, dials the older plain ADB port on this device ([LEGACY_HOST]:[LEGACY_PORT]), which some TVs
+ * open with their ADB debugging switch. With [direct] set it dials that host and port (for example after `adb tcpip 5555`).
  * An unknown key fails fast with [AdbFailure.NotAuthorized], unless [promptForApproval] is set: then adbd
  * shows its "Allow debugging?" prompt and [connect] waits up to [connectTimeoutMillis] for someone to accept.
+ * The legacy port has no pairing, so it always prompts and waits up to [legacyConnectTimeoutMillis].
  */
 class LibAdb(
     context: Context,
     private val direct: Pair<String, Int>? = null,
     private val timeoutMillis: Long = 15 * 60 * 1000L,
     private val connectTimeoutMillis: Long = 10_000L,
-    promptForApproval: Boolean = false,
+    private val promptForApproval: Boolean = false,
+    private val legacy: suspend () -> Boolean = { false },
+    private val legacyConnectTimeoutMillis: Long = 60_000L,
 ) : AdbShell, Pairing {
     private val app = context.applicationContext
     private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb")) }
@@ -53,29 +61,40 @@ class LibAdb(
         override fun getDeviceName() = "speed-compiler"
     }.apply {
         setApi(Build.VERSION.SDK_INT)
-        setTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
-        setThrowOnUnauthorised(!promptForApproval)
     }
 
     /** Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain. */
     suspend fun connect() = connecting.withLock {
         if (manager.isConnected) return@withLock
+        val viaPort = direct == null && legacy()
+        // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
+        manager.setThrowOnUnauthorised(!(promptForApproval || viaPort))
+        manager.setTimeout(if (viaPort) legacyConnectTimeoutMillis else connectTimeoutMillis, TimeUnit.MILLISECONDS)
         var ok = false
         try {
-            ok = adbCall(::dial)
+            ok = try {
+                adbCall { dial(viaPort) }
+            } catch (e: AdbFailure.DebuggingOff) {
+                throw if (viaPort) AdbFailure.DebuggingOff(e.cause, legacy = true) else e
+            }
         } finally {
             if (!ok) runCatching { manager.disconnect() } // drop any half-open session
         }
-        if (!ok) throw AdbFailure.Timeout()
+        // On the plain port, a socket that opened but never finished the handshake is waiting on the TV's Allow prompt.
+        if (!ok) throw if (viaPort) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
     }
 
-    private fun dial(): Boolean = try {
-        if (direct == null) manager.connectTls(app, connectTimeoutMillis) else manager.connect(direct.first, direct.second)
+    private fun dial(viaPort: Boolean): Boolean = try {
+        when {
+            direct != null -> manager.connect(direct.first, direct.second)
+            viaPort -> manager.connect(LEGACY_HOST, LEGACY_PORT)
+            else -> manager.connectTls(app, connectTimeoutMillis)
+        }
     } catch (e: InterruptedException) {
         // libadb's way of saying no _adb-tls-connect service showed up in time
-        if (direct == null && e.message?.startsWith("Timed out") == true) throw AdbFailure.DebuggingOff(e) else throw e
+        if (direct == null && !viaPort && e.message?.startsWith("Timed out") == true) throw AdbFailure.DebuggingOff(e) else throw e
     } catch (e: IOException) {
-        if (direct == null && e.message?.startsWith("Could not find") == true) throw AdbFailure.DebuggingOff(e) else throw e
+        if (direct == null && !viaPort && e.message?.startsWith("Could not find") == true) throw AdbFailure.DebuggingOff(e) else throw e
     }
 
     override suspend fun run(command: String): ShellResult {

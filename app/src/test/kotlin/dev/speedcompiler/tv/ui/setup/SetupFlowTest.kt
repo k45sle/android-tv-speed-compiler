@@ -18,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -36,7 +37,7 @@ class SetupFlowTest : ComposeTestBase() {
     private var finished: Pair<List<String>, Boolean>? = null
     private var backs = 0
     private var presses = 0
-    private val deps = SetupDeps(env, monitor.state, url) { sel, now -> finished = sel to now }
+    private val deps = SetupDeps(env, monitor.state, url, onFinish = { sel, now -> finished = sel to now })
     private val pairUrl = "http://tv.local:8080/t0ken"
 
     private fun show(content: @Composable () -> Unit) {
@@ -437,6 +438,70 @@ class SetupFlowTest : ComposeTestBase() {
         tick(31_000)
         see("Try again")
         env.wireless = true; monitor.flow.value = ConnectionState.Connected; tick()
+        assertEquals(1, backs)
+    }
+
+    private val legacy = MutableStateFlow(false)
+    private fun legacyDeps(reason: MutableStateFlow<String?> = MutableStateFlow(null)) =
+        SetupDeps(env, monitor.state, url, reason, holdsPairing = { false }, onFinish = { sel, now -> finished = sel to now }, legacy = legacy, setLegacy = { legacy.value = it })
+
+    private fun click(text: String) { rule.onNodeWithText(text, ignoreCase = true).performClick(); rule.waitForIdle() }
+
+    @Test
+    fun legacyWalksFromNoWirelessDebuggingToAllowWithoutPairing() {
+        env.developerOptions = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
+        enter()
+        see("Turn on Wireless debugging.")
+        click("No Wireless debugging?")
+        assertEquals(true, legacy.value)
+        see("Turn on ADB debugging."); see("Step 2 of 5"); shot("3_adb_debugging")
+        env.adbDebugging = true; tick(4000)
+        see("ADB debugging is on, but this TV doesn't accept the connection on port 5555. Speed Compile needs Wireless debugging on this TV."); shot("3_adb_port_closed")
+        env.portOpen = true; tick()
+        see("Allow this app.")
+        assertTrue("reconnect" in env.calls)
+        assertTrue("startPairing" !in env.calls)
+        monitor.flow.value = ConnectionState.Connected; tick()
+        see("Pick apps to optimize.")
+    }
+
+    @Test
+    fun legacyNoPortClosedMessageWhileAdbDebuggingIsOff() {
+        env.developerOptions = true; legacy.value = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
+        enter()
+        see("Turn on ADB debugging.")
+        tick(10_000)
+        rule.onNodeWithText("ADB debugging is on, but", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun legacySwitchesBackToWirelessDebugging() {
+        env.developerOptions = true; legacy.value = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
+        enter()
+        see("Turn on ADB debugging.")
+        click("Use Wireless debugging")
+        assertEquals(false, legacy.value)
+        see("Turn on Wireless debugging.")
+        env.wireless = true; tick()
+        see("Use your phone.")
+    }
+
+    @Test
+    fun legacyReconnectWaitsForThePortAndHidesPairAgain() {
+        legacy.value = true
+        monitor.flow.value = ConnectionState.Disconnected
+        show { ReconnectScreen({ backs++ }, legacyDeps()) }
+        see("Turn ADB debugging back on and this app reconnects by itself.")
+        tick(31_000)
+        see("ADB debugging is off, or the TV doesn't accept the connection on port 5555."); shot("reconnect_adb_timeout")
+        rule.onNodeWithText("Pair again").assertDoesNotExist()
+        assertTrue("reconnect" !in env.calls)
+        env.portOpen = true; tick()
+        assertTrue("reconnect" in env.calls)
+        monitor.flow.value = ConnectionState.Connected; tick()
         assertEquals(1, backs)
     }
 }

@@ -49,6 +49,17 @@ class SettingsTest {
     }
 
     @Test
+    fun legacyAdbIsOffByDefaultAndPersists() = runBlocking {
+        val file = tmp.newFile("l.preferences_pb").also { it.delete() }
+        val settings = DataStoreSettings(PreferenceDataStoreFactory.create { file })
+        assertEquals(false, settings.values.first().legacyAdb)
+        settings.update { it.copy(legacyAdb = true) }
+        assertEquals(true, settings.values.first().legacyAdb)
+        settings.update { it.copy(legacyAdb = false) }
+        assertEquals(false, settings.values.first().legacyAdb)
+    }
+
+    @Test
     fun concurrentUpdatesKeepEveryField() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("c.preferences_pb").also { it.delete() } }
         val settings = DataStoreSettings(store)

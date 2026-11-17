@@ -57,10 +57,13 @@ suspend fun reconnectWithRetry(
     }
 }
 
-/** Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on. */
-fun enableWifiAdb(context: Context) {
+/**
+ * Turns the debugging the app connects through back on: Wireless debugging, or ADB debugging with [legacy]
+ * (the older port-5555 connection). Needs the self-granted WRITE_SECURE_SETTINGS; without it, carry on.
+ */
+fun enableWifiAdb(context: Context, legacy: Boolean) {
     try {
-        Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1)
+        Settings.Global.putInt(context.contentResolver, if (legacy) Settings.Global.ADB_ENABLED else "adb_wifi_enabled", 1)
     } catch (_: SecurityException) {
     }
 }
@@ -69,10 +72,11 @@ fun enableWifiAdb(context: Context) {
 class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as SpeedApp).graph
+        val s = graph.settings.values.first()
         reconnectWithRetry(
-            turnOnWifiAdb = graph.settings.values.first().keepWifiDebugging,
+            turnOnWifiAdb = s.keepWifiDebugging,
             waitForNetwork = { awaitNetwork(applicationContext, NETWORK_WAIT_MS) },
-            enableWifiAdb = { enableWifiAdb(applicationContext) },
+            enableWifiAdb = { enableWifiAdb(applicationContext, s.legacyAdb) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
         )

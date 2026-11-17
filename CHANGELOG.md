@@ -4,6 +4,10 @@ What changed in each version of Speed Compile, in plain words. Newest first.
 
 Speed Compile prepares the code of the apps you pick ahead of time. This is called compiling, and it can make an app open and scroll more smoothly.
 
+## Unreleased
+
+- TVs without Wireless debugging can use ADB debugging instead. Choose No Wireless debugging? in setup and switch on ADB debugging; there is no pairing code. It needs a TV whose ADB debugging switch opens the network ADB port (5555). Some TVs ask to allow debugging again after a full restart.
+
 ## 1.0.0 (25 October 2026)
 
 The first full release. The main differences from the test build:

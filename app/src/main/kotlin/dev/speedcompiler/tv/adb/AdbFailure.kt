@@ -12,8 +12,11 @@ sealed class AdbFailure(message: String, cause: Throwable? = null) : IOException
     /** The TV no longer trusts this app's key: pair again. */
     class NotPaired(cause: Throwable? = null) : AdbFailure("not paired", cause)
 
-    /** Nothing is listening: wireless debugging (or adb over TCP) is off. */
-    class DebuggingOff(cause: Throwable? = null) : AdbFailure("debugging is off", cause)
+    /**
+     * Nothing is listening: Wireless debugging is off, or with [legacy] (the older ADB connection on port 5555)
+     * ADB debugging is off or the TV doesn't open that port.
+     */
+    class DebuggingOff(cause: Throwable? = null, val legacy: Boolean = false) : AdbFailure("debugging is off", cause)
 
     /** The TV rejected this app's key, or is waiting for someone to allow it. */
     class NotAuthorized(cause: Throwable? = null) : AdbFailure("not authorized", cause)

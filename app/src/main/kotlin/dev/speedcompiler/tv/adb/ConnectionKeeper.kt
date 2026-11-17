@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 
 /** What the user has to do to get a failed connection working again. */
-enum class Fix { QuickRepair, TurnOnWirelessDebugging, AllowPrompt, Retry }
+enum class Fix { QuickRepair, TurnOnWirelessDebugging, TurnOnAdbDebugging, AllowPrompt, Retry }
 
 sealed interface KeeperStatus {
     data object Reconnecting : KeeperStatus
@@ -26,7 +26,7 @@ sealed interface KeeperStatus {
 
 fun fixFor(e: Throwable): Fix = when (e) {
     is AdbFailure.NotPaired -> Fix.QuickRepair
-    is AdbFailure.DebuggingOff -> Fix.TurnOnWirelessDebugging
+    is AdbFailure.DebuggingOff -> if (e.legacy) Fix.TurnOnAdbDebugging else Fix.TurnOnWirelessDebugging
     is AdbFailure.NotAuthorized -> Fix.AllowPrompt
     else -> Fix.Retry // Timeout and anything unknown
 }

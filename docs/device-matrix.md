@@ -43,5 +43,8 @@ Reported by a user in November 2026, with photos of Settings. Not tested by the 
 | --- | --- |
 | Software | Android TV OS 12, security patch from August 2026. |
 | Developer options | Has ADB debugging (on) and Revoke USB debugging authorisations. There is no Wireless debugging entry and no separate network-debugging switch. |
-| Setup and pairing | Fails. Setup stops at the pairing step because there is no Wireless debugging to pair with. |
-| Other ADB apps | Launcher Manager and ATVTools connect without a pairing code, which suggests the ADB debugging switch also opens the older network ADB port (5555). Not checked. |
+| Setup with Wireless debugging | Fails. Setup stops at the pairing step because there is no Wireless debugging to pair with. |
+| Other ADB apps | Launcher Manager and ATVTools connect without a pairing code. |
+| Setup with ADB debugging (1.1.0 pre-release) | Works. The ADB debugging switch opens the network ADB port (5555); the TV asked to allow debugging, and optimizing worked. |
+| Standby from the remote | The connection stays. |
+| Full restart | ADB debugging stays on, but the TV shows the "Allow USB debugging?" prompt again even though Always allow was chosen. Pressing Allow brings the connection back. Speed Compile keeps one key, stored in its own data, and the same key reconnected without a prompt after an app restart on the emulator, so the TV seems to forget the allowed key when it restarts. |

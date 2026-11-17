@@ -15,6 +15,8 @@ import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.adb.LEGACY_HOST
+import dev.speedcompiler.tv.adb.LEGACY_PORT
 import dev.speedcompiler.tv.ui.apps.AppInfo
 import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
@@ -24,6 +26,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
 
 typealias SetupApp = AppInfo
 
@@ -31,6 +36,10 @@ typealias SetupApp = AppInfo
 interface SetupEnv {
     fun developerOptionsOn(): Boolean
     fun wirelessDebuggingOn(): Boolean
+    /** The plain ADB (USB) debugging switch, which opens the legacy port on some TVs. */
+    fun adbDebuggingOn(): Boolean
+    /** Whether something listens on the legacy ADB port ([LEGACY_HOST]:[LEGACY_PORT]). Runs on IO itself. */
+    suspend fun legacyPortOpen(): Boolean
     /** Opens Settings at About, where Build is pressed 7 times. */
     fun openSettings()
     fun openDeveloperOptions()
@@ -52,6 +61,9 @@ class SetupDeps(
     val holdsPairing: () -> Boolean = { true },
     /** Called when the user finishes: saves the picks and starts the run. */
     val onFinish: suspend (selected: List<String>, optimizeNow: Boolean) -> Unit = { _, _ -> },
+    /** Plain ADB on port 5555 instead of Wireless debugging, for TVs without it. */
+    val legacy: Flow<Boolean> = flowOf(false),
+    val setLegacy: suspend (Boolean) -> Unit = {},
 )
 
 class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
@@ -59,6 +71,15 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
 
     override fun developerOptionsOn() = global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)
     override fun wirelessDebuggingOn() = global("adb_wifi_enabled")
+    override fun adbDebuggingOn() = global(Settings.Global.ADB_ENABLED)
+
+    override suspend fun legacyPortOpen(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            Socket().use { it.connect(InetSocketAddress(LEGACY_HOST, LEGACY_PORT), 500); true }
+        } catch (_: IOException) {
+            false
+        }
+    }
 
     override fun openSettings() = launch(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
     override fun openDeveloperOptions() =
@@ -95,7 +116,7 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
 fun reasonText(res: Resources, e: Throwable): String = res.getString(
     when (e) {
         is AdbFailure.NotPaired -> R.string.setup_reason_not_paired
-        is AdbFailure.DebuggingOff -> R.string.setup_reason_debugging_off
+        is AdbFailure.DebuggingOff -> if (e.legacy) R.string.setup_reason_adb_off else R.string.setup_reason_debugging_off
         is AdbFailure.NotAuthorized -> R.string.setup_reason_not_allowed
         is AdbFailure.Timeout -> R.string.setup_reason_timeout
         else -> R.string.setup_reason_could_not_connect
@@ -123,6 +144,8 @@ fun rememberSetupDeps(): SetupDeps {
                     if (optimizeNow) selected.forEach { graph.scheduler.optimizeNow(it) }
                 }
             },
+            legacy = graph.settings.values.map { it.legacyAdb },
+            setLegacy = { on -> graph.settings.update { it.copy(legacyAdb = on) } },
         )
     }
 }
