@@ -30,13 +30,16 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
         val keyFile = File(dir, "adb.key")
         val certFile = File(dir, "adb.crt")
         dir.mkdirs()
-        val keyBytes = if (keyFile.exists()) runCatching { keyFile.readBytes() }.getOrNull() else null
+        // A read failure (EIO, storage not ready at boot) says nothing about the content: let the IOException
+        // propagate, so the caller's lazy retries instead of replacing a key that is still fine on disk.
+        val keyBytes = if (keyFile.exists()) keyFile.readBytes() else null
         val key = keyBytes?.let { loadRsaKey(it, decode) }
         if (key is RSAPrivateCrtKey) {
             // The key is the identity the TV trusts. A missing, corrupt or mismatched cert (a crash between the two writes)
             // is rebuilt from the key's own public half, so pairing survives.
             val publicKey = KeyFactory.getInstance("RSA").generatePublic(RSAPublicKeySpec(key.modulus, key.publicExponent))
-            val saved = runCatching { parseCertificate(certFile.readBytes()) }.getOrNull()
+            val certBytes = if (certFile.exists()) certFile.readBytes() else null
+            val saved = certBytes?.let { runCatching { parseCertificate(it) }.getOrNull() }
             privateKey = key
             certificate = saved?.takeIf { (it.publicKey as? RSAPublicKey)?.modulus == key.modulus }
                 ?: parseCertificate(selfSignedCertificate(publicKey.encoded, key)).also { writeAtomically(certFile, it.encoded) }

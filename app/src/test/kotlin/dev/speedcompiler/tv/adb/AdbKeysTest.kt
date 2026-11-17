@@ -1,6 +1,7 @@
 package dev.speedcompiler.tv.adb
 
 import java.io.File
+import java.io.IOException
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
@@ -12,6 +13,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -65,6 +67,33 @@ class AdbKeysTest {
         assertArrayEquals(byteArrayOf(7, 8, 9), File(dir, "adb.key.bad.2").readBytes())
         assertEquals(1, logs.size)
         assertTrue(logs.single().contains("copy limit"))
+    }
+
+    @Test fun unreadableKeyFileThrowsAndLeavesTheFileAlone() {
+        val dir = tmp.newFolder()
+        val keyFile = File(dir, "adb.key")
+        // A directory here reads like a storage error: exists, but readBytes throws.
+        assertTrue(keyFile.mkdir())
+        assertThrows(IOException::class.java) { AdbKeys(dir) }
+        // The identity may still be fine on disk: no bad copy, no new key, no cert.
+        assertTrue(keyFile.isDirectory)
+        assertFalse(File(dir, "adb.key.bad").exists())
+        assertFalse(File(dir, "adb.key.bad.1").exists())
+        assertFalse(File(dir, "adb.crt").exists())
+        assertEquals(emptyList<String>(), keyFile.list()!!.toList())
+    }
+
+    @Test fun unreadableCertFileThrowsAndKeepsTheKey() {
+        val dir = tmp.newFolder()
+        val first = AdbKeys(dir)
+        val saved = File(dir, "adb.key").readBytes()
+        val certFile = File(dir, "adb.crt")
+        assertTrue(certFile.delete())
+        assertTrue(certFile.mkdir())
+        assertThrows(IOException::class.java) { AdbKeys(dir) }
+        assertArrayEquals(saved, File(dir, "adb.key").readBytes()) // not regenerated
+        assertArrayEquals(first.privateKey.encoded, saved)
+        assertTrue(certFile.isDirectory)
     }
 
     @Test fun savedKeyIsKeptWhenKeyFactoryDropsTheCrtFields() {

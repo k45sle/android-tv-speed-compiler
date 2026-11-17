@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 import java.io.IOException
@@ -55,6 +56,25 @@ class ConnectionKeeperTest {
             connect, shell, settings, "dev.test", scope,
             checkKey = checkKey, disconnect = disconnect, keyId = keyId,
         )
+
+    @Test
+    fun grantDropNoKeyCheck() = runTest(UnconfinedTestDispatcher()) {
+        // The grant command is the first shell step after the handshake, and it can report the link dropping.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        var checks = 0
+        val shell = object : AdbShell {
+            override suspend fun run(command: String): ShellResult = throw AdbFailure.Timeout()
+        }
+        val k = keeper(shell, settings, checkKey = { checks++; KeyCheck.NotSaved })
+        val status = k.reconnect(prompt = true)
+        val failed = status as KeeperStatus.Failed
+        assertEquals(Fix.Retry, failed.fix)
+        assertEquals(KeeperStatus.Failed(failed.reason, Fix.Retry), k.status.value)
+        assertEquals(0, checks) // the drop happened before the key check could start
+        assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
+        assertEquals(null, settings.values.first().legacyKeyCheckKey)
+        assertEquals(false, k.keyChecking.value)
+    }
 
     @Test
     fun grantRunsOnceAfterConnect() = runTest {

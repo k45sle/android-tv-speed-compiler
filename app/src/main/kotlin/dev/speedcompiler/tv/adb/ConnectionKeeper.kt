@@ -3,6 +3,7 @@ package dev.speedcompiler.tv.adb
 import dev.speedcompiler.tv.engine.Settings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -79,7 +80,7 @@ class ConnectionKeeper(
     val trustFailure = MutableStateFlow<String?>(null)
 
     private var granted = false
-    private var keyCheckJob: Job? = null
+    @Volatile private var keyCheckJob: Job? = null
     private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
@@ -137,7 +138,8 @@ class ConnectionKeeper(
         }
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
-        onLegacyConnected(prompt, fresh)
+        // grant() can flip the status to Failed when the link drops: then nothing is stored or checked.
+        if (_status.value == KeeperStatus.Connected) onLegacyConnected(prompt, fresh)
         return _status.value
     }
 
@@ -194,8 +196,9 @@ class ConnectionKeeper(
             return
         }
         if (keyCheckJob?.isActive == true) return
-        _keyChecking.value = true
-        val job = scope.launch {
+        // Lazy start: the completion handler is registered before the job can run, so an old job's completion
+        // (which only clears the flag for its own job) can't hide the new job's busy flag.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             // a failed settings write must not crash the app
             try {
                 // The person was just let in, so store even Unknown: an older negative result must not linger.
@@ -207,8 +210,10 @@ class ConnectionKeeper(
             }
         }
         keyCheckJob = job
+        _keyChecking.value = true
         // Also clears the flag when the job is cancelled before it ever starts (its finally would never run).
-        job.invokeOnCompletion { if (keyCheckJob?.isActive != true) _keyChecking.value = false }
+        job.invokeOnCompletion { if (keyCheckJob === job) _keyChecking.value = false }
+        job.start()
     }
 
     /**
