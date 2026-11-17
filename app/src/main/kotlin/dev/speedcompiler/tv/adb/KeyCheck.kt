@@ -16,7 +16,7 @@ enum class KeyCheck {
     Saved,
     /** Refused, and the TV has no record of Always allow: Allow was chosen without ticking it. */
     AllowedOnce,
-    /** Refused although the TV recorded Always allow: it didn't save the key. */
+    /** Refused, and the TV lists the key as allowed but not in the file adbd trusts: it didn't save it. */
     NotSaved,
     /** Was [Saved], then a quiet reconnect was refused: the TV dropped the key, for example at a restart. */
     Forgotten,
@@ -42,10 +42,15 @@ fun parseDumpsysAdb(dump: String, keyBase64: String): KeyPlaces? {
     return KeyPlaces(section("user_keys").contains(keyBase64), section("keystore").contains(keyBase64))
 }
 
-/** Explains a refused quiet connection by where the TV lists the key. */
+/**
+ * Explains a refused quiet connection by where the TV lists the key. A key in user_keys reached the file adbd trusts, so
+ * the save did land, just after the probes and too late for this connection; only a key in the framework's keystore
+ * alone (the Android 12 EACCES case, where the file write failed) means it didn't save.
+ */
 fun classifyRefused(places: KeyPlaces?): KeyCheck = when {
     places == null -> KeyCheck.Unknown
-    places.inUserKeys || places.inKeystore -> KeyCheck.NotSaved
+    places.inUserKeys -> KeyCheck.Saved
+    places.inKeystore -> KeyCheck.NotSaved
     else -> KeyCheck.AllowedOnce
 }
 

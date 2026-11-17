@@ -44,10 +44,9 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
             // No usable key (first run, or the file is corrupt): a new identity, so the TV has to be paired again.
             if (keyFile.exists()) {
                 // Never drop an identity silently: keep the unreadable file for diagnosis and say so in the log.
-                val bad = File(dir, "adb.key.bad")
-                bad.delete()
-                keyFile.renameTo(bad)
-                log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), kept as adb.key.bad; the TV will ask to allow the new key")
+                // An earlier adb.key.bad (likely the key the TV still trusts) is never overwritten.
+                val kept = keepBadCopy(keyFile)
+                log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), kept as ${kept.name}; the TV will ask to allow the new key")
             }
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
             privateKey = pair.private
@@ -61,6 +60,14 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
         val tmp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(tmp).use { it.write(bytes); it.fd.sync() } // on disk before the rename, so a power cut can't leave an empty key
         check(tmp.renameTo(file)) { "could not save ${file.name}" }
+    }
+
+    /** Moves [file] to `<name>.bad`, or to `<name>.bad.<millis>` if that name is taken, so an earlier copy survives. */
+    private fun keepBadCopy(file: File): File {
+        val bad = File(file.parentFile, file.name + ".bad")
+        val target = if (bad.exists()) File(file.parentFile, "${bad.name}.${System.currentTimeMillis()}") else bad
+        file.renameTo(target)
+        return target
     }
 }
 

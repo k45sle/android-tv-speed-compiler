@@ -77,7 +77,7 @@ class ConnectionKeeper(
     private val lock = Mutex()
     private val inFlight = AtomicBoolean(false)
 
-    /** Prompted callers queued for (or holding) [lock]: while one waits, a quiet failure must not flash. */
+    /** Prompted callers queued for [lock] (not yet holding it): while one waits, a quiet failure must not flash. */
     private val promptedWaiting = AtomicInteger(0)
 
     /** Starts [reconnect] in the app scope, allowing the TV's prompt; ignored while one is already running. */
@@ -123,19 +123,24 @@ class ConnectionKeeper(
      * A prompted caller is counted as waiting from before it queues until it holds [lock], so a quiet try failing
      * meanwhile doesn't show a failure the prompt is about to replace.
      */
-    suspend fun reconnect(prompt: Boolean = false): KeeperStatus {
-        if (prompt) promptedWaiting.incrementAndGet()
+    suspend fun reconnect(prompt: Boolean = false): KeeperStatus =
+        if (prompt) withPromptedLock { reconnectLocked(true) } else lock.withLock { reconnectLocked(false) }
+
+    /**
+     * Runs [block] holding [lock], counted as a prompted caller from before it queues until it holds the lock, so a
+     * quiet try failing meanwhile doesn't flash a failure the prompt is about to replace. A cancelled wait uncounts.
+     */
+    private suspend fun <T> withPromptedLock(block: suspend () -> T): T {
+        promptedWaiting.incrementAndGet()
         var held = false
         try {
             return lock.withLock {
-                if (prompt) {
-                    promptedWaiting.decrementAndGet()
-                    held = true
-                }
-                reconnectLocked(prompt)
+                promptedWaiting.decrementAndGet()
+                held = true
+                block()
             }
         } finally {
-            if (prompt && !held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
+            if (!held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
         }
     }
 
@@ -172,12 +177,8 @@ class ConnectionKeeper(
      */
     suspend fun reallow(): KeeperStatus {
         _reallowing.value = true
-        promptedWaiting.incrementAndGet()
-        var held = false
         try {
-            return lock.withLock {
-                promptedWaiting.decrementAndGet()
-                held = true
+            return withPromptedLock {
                 keyCheckJob?.cancelAndJoin() // the new connection gets its own check
                 try {
                     disconnect()
@@ -189,7 +190,6 @@ class ConnectionKeeper(
                 reconnectLocked(prompt = true)
             }
         } finally {
-            if (!held) promptedWaiting.decrementAndGet() // cancelled while waiting for the lock
             _reallowing.value = false
         }
     }
@@ -210,8 +210,15 @@ class ConnectionKeeper(
         _keyChecking.value = true
         keyCheckJob = scope.launch {
             try {
-                val r = check()
-                if (r != KeyCheck.Unknown) storeKeyCheck(r) // couldn't tell: keep what we knew
+                // a failed settings write must not crash the app
+                try {
+                    val r = check()
+                    if (r != KeyCheck.Unknown) storeKeyCheck(r) // couldn't tell: keep what we knew
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // keep the old result
+                }
             } finally {
                 _keyChecking.value = false
             }
@@ -224,10 +231,15 @@ class ConnectionKeeper(
     suspend fun quietRetriesFailed(last: KeeperStatus) {
         val failed = last as? KeeperStatus.Failed ?: return
         if (checkKey == null || failed.reason !is AdbFailure.NotAuthorized) return
-        val s = settings.values.first()
-        if (s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved && s.legacyKeyCheckKey == keyId()) {
+        if (keyKnownSaved()) {
             storeKeyCheck(KeyCheck.Forgotten)
         }
+    }
+
+    /** True when the TV is known to keep this app's key (legacy ADB debugging mode, result found for this key). */
+    suspend fun keyKnownSaved(): Boolean {
+        val s = settings.values.first()
+        return s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved && s.legacyKeyCheckKey == keyId()
     }
 
     /**
@@ -235,6 +247,8 @@ class ConnectionKeeper(
      * about this one.
      */
     suspend fun forgetStaleKeyCheck() {
+        // Nothing stored, nothing to compare: keyId() may load or generate the RSA key, so skip it then.
+        if (settings.values.first().legacyKeyCheck == KeyCheck.Unknown) return
         val id = keyId()
         // Decided inside the transform: a result stored meanwhile for this key must not be wiped.
         settings.update {
@@ -248,9 +262,14 @@ class ConnectionKeeper(
 
     private suspend fun storeKeyCheck(k: KeyCheck) {
         val id = keyId()
-        val s = settings.values.first()
-        if (s.legacyKeyCheck == k && s.legacyKeyCheckKey == id) return
-        settings.update { it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id) }
+        // Decided inside the transform: never store a result while ADB debugging mode is off.
+        settings.update {
+            if (!it.legacyAdb || (it.legacyKeyCheck == k && it.legacyKeyCheckKey == id)) {
+                it
+            } else {
+                it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id)
+            }
+        }
     }
 
     private suspend fun grant() {

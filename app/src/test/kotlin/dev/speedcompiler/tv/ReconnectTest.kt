@@ -91,6 +91,23 @@ class ReconnectTest {
         assertEquals(emptyList<KeeperStatus>(), gaveUp)
     }
 
+    @Test fun onGaveUpNeedsEveryTryRefused() = runTest {
+        // The first try's port was closed (a timeout says nothing about the key), so a refusal at the end
+        // must not be read as "the TV dropped the saved key".
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(
+            true,
+            TIMEOUT,
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            retryNotAllowed = true,
+            onGaveUp = { gaveUp += it },
+        )
+        assertEquals(4, log.count { it == "connect" })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
     @Test fun noGaveUpOnQuickRepairEarlyStop() = runTest {
         val gaveUp = mutableListOf<KeeperStatus>()
         run(true, NOT_PAIRED, retryNotAllowed = true, onGaveUp = { gaveUp += it })

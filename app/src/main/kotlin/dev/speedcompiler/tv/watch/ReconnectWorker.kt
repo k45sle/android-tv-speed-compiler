@@ -17,7 +17,6 @@ import androidx.work.WorkerParameters
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
-import dev.speedcompiler.tv.adb.KeyCheck
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -40,7 +39,9 @@ fun enqueueReconnect(context: Context) {
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
  * With [retryNotAllowed] (the legacy port) a refused key is retried too: these tries never show the TV's prompt,
  * and right after boot the TV may refuse a key it accepts a few seconds later.
- * Calls [onGaveUp] with the last status only when every try fails, never on an early stop.
+ * Calls [onGaveUp] with the last status only when every try was refused ([Fix.AllowPrompt]) and no try connected
+ * or stopped early, never on an early stop. A run where the port was closed for some tries, or timed out,
+ * says nothing about the key.
  * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).
  */
 suspend fun reconnectWithRetry(
@@ -56,14 +57,16 @@ suspend fun reconnectWithRetry(
     waitForNetwork()
     if (turnOnWifiAdb) enableWifiAdb()
     var last: KeeperStatus = KeeperStatus.Reconnecting
+    var allRefused = true
     for (i in 0..backoff.size) {
         val s = reconnect()
         last = s
         if (s == KeeperStatus.Connected) return
+        if (s !is KeeperStatus.Failed || s.fix != Fix.AllowPrompt) allRefused = false
         if (s is KeeperStatus.Failed && (s.fix == Fix.QuickRepair || (s.fix == Fix.AllowPrompt && !retryNotAllowed))) return
         if (i < backoff.size) pause(backoff[i])
     }
-    onGaveUp(last)
+    if (allRefused) onGaveUp(last)
 }
 
 /**
@@ -90,7 +93,7 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
             // Only a key the TV is known to have saved is worth retrying quietly after a refusal; otherwise stop at
             // once so Home offers Fix connection.
-            retryNotAllowed = s.legacyAdb && s.legacyKeyCheck == KeyCheck.Saved,
+            retryNotAllowed = s.legacyAdb && graph.connectionKeeper.keyKnownSaved(),
             onGaveUp = graph.connectionKeeper::quietRetriesFailed,
         )
         return Result.success()

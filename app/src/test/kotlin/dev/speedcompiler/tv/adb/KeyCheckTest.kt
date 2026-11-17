@@ -42,7 +42,11 @@ class KeyCheckTest {
     @Test fun classifyRefusedByPlaces() {
         assertEquals(KeyCheck.Unknown, classifyRefused(null))
         assertEquals(KeyCheck.AllowedOnce, classifyRefused(KeyPlaces(false, false)))
-        assertEquals(KeyCheck.NotSaved, classifyRefused(KeyPlaces(true, false)))
+        // In the file adbd trusts: the save landed, just after the probes.
+        assertEquals(KeyCheck.Saved, classifyRefused(KeyPlaces(true, false)))
+        // Only in the framework's list: the file write failed, so adbd will ask again.
+        assertEquals(KeyCheck.NotSaved, classifyRefused(KeyPlaces(false, true)))
+        assertEquals(KeyCheck.Saved, classifyRefused(KeyPlaces(true, true)))
     }
 
     @Test fun classifyRefusedWithoutPlacesIsUnknown() {
@@ -87,10 +91,18 @@ class KeyCheckTest {
         assertTrue(shell.commands.isEmpty())
     }
 
-    @Test fun refusedThenErrorStillClassifies() = runTest {
-        // The first try was refused, the second got no answer: the refusal still asks where the TV lists the key.
+    @Test fun keyInUserKeysIsSaved() = runTest {
         val dump = DUMP.replace("OTHER host@pc", "$K speed-compiler")
         val shell = FakeAdbShell(mapOf("dumpsys adb" to ShellResult(0, dump)))
+        val check = KeyChecker({ false }, shell, { K }, pause = {})
+        assertEquals(KeyCheck.Saved, check.check())
+        assertEquals(listOf("dumpsys adb"), shell.commands)
+    }
+
+    @Test fun refusedThenErrorStillClassifies() = runTest {
+        // The first try was refused, the second got no answer: the refusal still asks where the TV lists the key.
+        // DUMP lists the key only in the keystore, the failed-write case, so this still means NotSaved.
+        val shell = FakeAdbShell(mapOf("dumpsys adb" to ShellResult(0, DUMP)))
         val answers = ArrayDeque<Boolean?>(listOf(false, null))
         val check = KeyChecker({ answers.removeFirst() }, shell, { K }, pause = {})
         assertEquals(KeyCheck.NotSaved, check.check())

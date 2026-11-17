@@ -3,8 +3,10 @@ package dev.speedcompiler.tv.adb
 import dev.speedcompiler.tv.engine.Settings
 import dev.speedcompiler.tv.engine.SettingsValues
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -288,6 +290,72 @@ class ConnectionKeeperTest {
         )
         k.quietRetriesFailed(k.reconnect())
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun noResultStoredWhileLegacyOff() = runTest(UnconfinedTestDispatcher()) {
+        val saved = FakeSettings(legacy = false, check = KeyCheck.Saved, key = "A")
+        val k = keeper(
+            FakeAdbShell(),
+            saved,
+            checkKey = { KeyCheck.Unknown },
+            keyId = { "A" },
+            connect = { throw AdbFailure.NotAuthorized() },
+        )
+        k.quietRetriesFailed(k.reconnect())
+        assertEquals(KeyCheck.Saved, saved.values.first().legacyKeyCheck)
+        assertEquals("A", saved.values.first().legacyKeyCheckKey)
+
+        val fresh = FakeSettings(legacy = false, check = KeyCheck.Unknown)
+        keeper(FakeAdbShell(), fresh, checkKey = { KeyCheck.NotSaved }, keyId = { "A" }).reconnect()
+        assertEquals(KeyCheck.Unknown, fresh.values.first().legacyKeyCheck)
+        assertEquals(null, fresh.values.first().legacyKeyCheckKey)
+
+        // The decision happens inside the transform: turning ADB debugging mode off meanwhile skips the write.
+        val turnedOff = object : Settings {
+            val flow = MutableStateFlow(SettingsValues(legacyAdb = true, legacyKeyCheck = KeyCheck.Unknown))
+            override val values get() = flow
+            override suspend fun update(transform: (SettingsValues) -> SettingsValues) {
+                flow.value = transform(flow.value.copy(legacyAdb = false))
+            }
+        }
+        keeper(FakeAdbShell(), turnedOff, checkKey = { KeyCheck.NotSaved }, keyId = { "A" }).reconnect()
+        assertEquals(KeyCheck.Unknown, turnedOff.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun keyCheckWriteFailureDoesNotCrash() = runTest(UnconfinedTestDispatcher()) {
+        val escaped = mutableListOf<Throwable>()
+        val handler = CoroutineExceptionHandler { _, e -> escaped += e }
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(testScheduler) + handler)
+        val inner = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val settings = object : Settings {
+            override val values get() = inner.values
+            override suspend fun update(transform: (SettingsValues) -> SettingsValues) {
+                if (transform(inner.values.first()) != inner.values.first()) throw IOException("settings write failed")
+                inner.update(transform)
+            }
+        }
+        val k = keeper(FakeAdbShell(), settings, scope = scope, checkKey = { KeyCheck.NotSaved })
+        k.reconnect(prompt = true)
+        assertEquals(KeyCheck.Unknown, inner.values.first().legacyKeyCheck)
+        assertEquals(false, k.keyChecking.value)
+        assertEquals(emptyList<Throwable>(), escaped)
+    }
+
+    @Test
+    fun keyKnownSavedNeedsTheSameKey() = runTest(UnconfinedTestDispatcher()) {
+        val same = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "A")
+        assertEquals(true, keeper(FakeAdbShell(), same, keyId = { "A" }).keyKnownSaved())
+
+        val other = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "A")
+        assertEquals(false, keeper(FakeAdbShell(), other, keyId = { "B" }).keyKnownSaved())
+
+        val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved, key = "A")
+        assertEquals(false, keeper(FakeAdbShell(), notSaved, keyId = { "A" }).keyKnownSaved())
+
+        val legacyOff = FakeSettings(legacy = false, check = KeyCheck.Saved, key = "A")
+        assertEquals(false, keeper(FakeAdbShell(), legacyOff, keyId = { "A" }).keyKnownSaved())
     }
 
     @Test
