@@ -42,12 +42,13 @@ class AdbKeysTest {
         File(dir, "adb.key").writeBytes(byteArrayOf(1, 2, 3))
         AdbKeys(dir)
         File(dir, "adb.key").writeBytes(byteArrayOf(4, 5, 6))
-        AdbKeys(dir)
-        // The first bad key may be the one the TV still trusts: it must survive the second move.
+        val logs = mutableListOf<String>()
+        AdbKeys(dir, log = { logs += it })
+        // The first bad key may be the one the TV still trusts: it must survive the second load.
         assertArrayEquals(byteArrayOf(1, 2, 3), File(dir, "adb.key.bad").readBytes())
-        val moved = dir.listFiles().orEmpty().filter { it.name.startsWith("adb.key.bad.") }
-        assertEquals(1, moved.size)
-        assertArrayEquals(byteArrayOf(4, 5, 6), moved.single().readBytes())
+        assertEquals(0, dir.listFiles().orEmpty().count { it.name.startsWith("adb.key.bad.") }) // no timestamp copies
+        assertEquals(1, logs.size)
+        assertTrue(logs.single().contains("an earlier copy is kept as adb.key.bad"))
     }
 
     @Test fun savedKeyIsKeptWhenKeyFactoryDropsTheCrtFields() {

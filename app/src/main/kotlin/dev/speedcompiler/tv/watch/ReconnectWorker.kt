@@ -15,8 +15,10 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.speedcompiler.tv.SpeedApp
+import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -94,14 +96,40 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
             // Retry a refused key quietly unless the TV is known not to keep it (Unknown, e.g. after updating from
             // 1.1.0, must still ride out the early-boot refusal).
-            retryNotAllowed = s.legacyAdb && !graph.connectionKeeper.keyKnownRefused(),
-            onGaveUp = graph.connectionKeeper::quietRetriesFailed,
+            retryNotAllowed = s.legacyAdb && !keyKnownRefused(graph.connectionKeeper),
+            onGaveUp = { last -> quietRetriesFailed(graph.connectionKeeper, last) },
         )
         return Result.success()
     }
 
     /** Needed for expedited work below API 31. */
     override suspend fun getForegroundInfo() = foregroundInfo(applicationContext, 2, "reconnect", applicationContext.getString(dev.speedcompiler.tv.R.string.notif_reconnecting))
+}
+
+/**
+ * [ConnectionKeeper.keyKnownRefused] with a settings or key-load error counting as "not known", so it never fails the
+ * worker before the tries; cancelling still cancels.
+ */
+private suspend fun keyKnownRefused(keeper: ConnectionKeeper): Boolean = try {
+    keeper.keyKnownRefused()
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    false
+}
+
+/**
+ * [ConnectionKeeper.quietRetriesFailed] after the tries, with a settings or key-load error ignored: the status already
+ * carries the failure, and the worker must not fail on bookkeeping. Cancelling still cancels.
+ */
+private suspend fun quietRetriesFailed(keeper: ConnectionKeeper, last: KeeperStatus) {
+    try {
+        keeper.quietRetriesFailed(last)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // ignored: a bookkeeping error must not fail the worker
+    }
 }
 
 /** Notification for expedited work below API 31. */

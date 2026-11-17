@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -81,7 +82,7 @@ class ConnectionKeeper(
     private val promptedWaiting = AtomicInteger(0)
 
     /** A quiet failure hidden behind a queued prompted try; put back if that try is cancelled before it runs. */
-    private var maskedFailure: KeeperStatus.Failed? = null
+    private val maskedFailure = AtomicReference<KeeperStatus.Failed?>(null)
 
     /** Starts [reconnect] in the app scope, allowing the TV's prompt; ignored while one is already running. */
     override fun connectNow() {
@@ -145,19 +146,17 @@ class ConnectionKeeper(
         } finally {
             if (!held) { // cancelled while waiting for the lock
                 promptedWaiting.decrementAndGet()
-                val masked = maskedFailure
-                // Nobody is trying any more: show the failure the quiet try was hiding instead of staying Connecting.
-                if (promptedWaiting.get() == 0 && masked != null) {
-                    _status.compareAndSet(KeeperStatus.Reconnecting, masked)
-                    maskedFailure = null
-                }
+                // Nobody is trying any more: show the failure the quiet try was hiding instead of staying
+                // Connecting. Taken once, so a hidden failure is never shown twice.
+                val masked = if (promptedWaiting.get() == 0) maskedFailure.getAndSet(null) else null
+                if (masked != null) _status.compareAndSet(KeeperStatus.Reconnecting, masked)
             }
         }
     }
 
     /** [reconnect] without taking [lock]: the caller already holds it. */
     private suspend fun reconnectLocked(prompt: Boolean): KeeperStatus {
-        maskedFailure = null
+        maskedFailure.set(null)
         val before = _status.value
         _status.value = KeeperStatus.Reconnecting
         val fresh = try {
@@ -171,7 +170,7 @@ class ConnectionKeeper(
             // A quiet try failing while a prompted try is queued for the lock must not flash a failure
             // (Setup would show a false denial).
             if (!prompt && promptedWaiting.get() > 0) {
-                maskedFailure = KeeperStatus.Failed(err, fixFor(err))
+                maskedFailure.set(KeeperStatus.Failed(err, fixFor(err)))
                 _status.value = KeeperStatus.Reconnecting
                 return _status.value
             }
@@ -208,18 +207,31 @@ class ConnectionKeeper(
     }
 
     /**
-     * ADB debugging mode, after a connect that made a new handshake ([fresh]): if the TV accepted a quiet one it
-     * trusts the key, so save [KeyCheck.Saved] directly. A prompted connect proves nothing about a restart, so the
-     * full [checkKey] probe runs there instead, and its result is stored even when [KeyCheck.Unknown] (the person just
-     * allowed the app, so an older negative result must not linger). No handshake (already connected) means nothing to
-     * learn. A failed settings read or write must not fail [reconnect].
+     * ADB debugging mode, after a connect ([fresh] says the call made a new handshake): a quiet fresh handshake proves
+     * the TV trusts the key, so save [KeyCheck.Saved] directly and cancel any running check (its later result must not
+     * overwrite Saved). A prompted connect proves nothing about a restart, so the full [checkKey] probe runs there
+     * instead, and its result is stored even when [KeyCheck.Unknown] (the person just allowed the app, so an older
+     * negative result must not linger). Without a handshake the link was already open: a quiet one then means the TV
+     * trusts the key again, so a stored [KeyCheck.Forgotten] becomes [KeyCheck.Saved]; nothing else to learn. A failed
+     * settings read or write must not fail [reconnect].
      */
     private suspend fun onLegacyConnected(prompt: Boolean, fresh: Boolean) {
         val check = checkKey ?: return
         // A failed settings read or write (or a storeKeyCheck that can't load the key) must not fail reconnect().
         try {
-            if (!settings.values.first().legacyAdb || !fresh) return
+            val s = settings.values.first()
+            if (!s.legacyAdb) return
+            if (!fresh) {
+                // Forgotten is only set after every boot retry was refused, so no link existed then. Any link open now
+                // was opened afterwards by a quiet LibAdb.run() connect (a prompted keeper connect would have been
+                // fresh), so the TV trusts the key again. Other values stay: only Forgotten says that much.
+                if (!prompt && s.legacyKeyCheck == KeyCheck.Forgotten) storeKeyCheck(KeyCheck.Saved)
+                return
+            }
             if (!prompt) {
+                // The quiet handshake already proves the key is trusted: cancel a running check, whose later result
+                // must not overwrite Saved.
+                keyCheckJob?.cancelAndJoin()
                 storeKeyCheck(KeyCheck.Saved) // also clears a stale Forgotten
                 return
             }

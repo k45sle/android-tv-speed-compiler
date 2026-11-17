@@ -45,8 +45,7 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
             if (keyFile.exists()) {
                 // Never drop an identity silently: keep the unreadable file for diagnosis and say so in the log.
                 // An earlier adb.key.bad (likely the key the TV still trusts) is never overwritten.
-                val kept = keepBadCopy(keyFile)
-                val what = kept?.let { "kept as ${it.name}" } ?: "couldn't keep a copy"
+                val what = keepBadCopy(keyFile)
                 log("adb.key unreadable (${keyBytes?.size ?: -1} bytes), $what; the TV will ask to allow the new key")
             }
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
@@ -64,20 +63,22 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
     }
 
     /**
-     * Moves [file] to `<name>.bad`, or to `<name>.bad.<millis>` if that name is taken, so an earlier copy survives.
-     * Returns the file that holds the copy, or null when neither the move nor a copy worked.
+     * Keeps only the first unreadable copy, as `<name>.bad`: if that already exists, [file] is deleted instead, so the
+     * earlier copy (likely the key the TV still trusts) survives. Returns what the log should say about the copy.
      */
-    private fun keepBadCopy(file: File): File? {
+    private fun keepBadCopy(file: File): String {
         val bad = File(file.parentFile, file.name + ".bad")
-        val target = if (bad.exists()) File(file.parentFile, "${bad.name}.${System.currentTimeMillis()}") else bad
-        if (file.renameTo(target)) return target
-        // The move can fail (another filesystem, a locked file): a copy still keeps the evidence, but never over a
-        // copy that is already there.
+        if (bad.exists()) {
+            file.delete()
+            return "an earlier copy is kept as ${bad.name}"
+        }
+        if (file.renameTo(bad)) return "kept as ${bad.name}"
+        // The move can fail (a locked file): a copy still keeps the evidence.
         return try {
-            file.copyTo(target, overwrite = false)
-            target
+            file.copyTo(bad, overwrite = false)
+            "kept as ${bad.name}"
         } catch (e: Exception) {
-            null
+            "couldn't keep a copy"
         }
     }
 }

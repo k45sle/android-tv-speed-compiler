@@ -198,6 +198,29 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun quietHandshakeCancelsRunningCheck() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val never = CompletableDeferred<Unit>()
+        var checks = 0
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            checkKey = { checks++; never.await(); KeyCheck.NotSaved },
+            connect = { true },
+        )
+        k.reconnect(prompt = true) // its key check starts and never finishes
+        assertEquals(1, checks)
+        assertEquals(true, k.keyChecking.value)
+        k.reconnect() // a quiet fresh handshake already proves the key is trusted
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(1, checks) // no second check
+        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
+        // The cancelled check never ran its storeKeyCheck, so Saved stays.
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
     fun noHandshakeNoCheck() = runTest(UnconfinedTestDispatcher()) {
         var checks = 0
         val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
@@ -206,6 +229,22 @@ class ConnectionKeeperTest {
         assertEquals(0, checks)
         assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
         assertEquals(false, k.keyChecking.value)
+    }
+
+    @Test
+    fun quietLinkClearsForgotten() = runTest(UnconfinedTestDispatcher()) {
+        // No new handshake and a quiet call: the open link was made by a quiet connect, so the TV trusts the key
+        // again (Forgotten only ever follows refused boot retries, when no link existed).
+        var checks = 0
+        val forgotten = FakeSettings(legacy = true, check = KeyCheck.Forgotten)
+        keeper(FakeAdbShell(), forgotten, checkKey = { checks++; KeyCheck.NotSaved }, connect = { false }).reconnect()
+        assertEquals(KeyCheck.Saved, forgotten.values.first().legacyKeyCheck)
+        assertEquals(0, checks)
+
+        // Any other stored result stays: only Forgotten says every retry had been refused.
+        val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
+        keeper(FakeAdbShell(), notSaved, checkKey = { KeyCheck.Unknown }, connect = { false }).reconnect()
+        assertEquals(KeyCheck.NotSaved, notSaved.values.first().legacyKeyCheck)
     }
 
     @Test
