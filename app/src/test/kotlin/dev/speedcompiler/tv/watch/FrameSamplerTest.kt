@@ -59,6 +59,31 @@ HISTOGRAM: 5ms=0 6ms=0
         assertEquals(114727L, parseGfxinfo(two)!!.total)
     }
 
+    /** Android 12 TV emulator, TV Settings in front: the process-wide set (since process start) comes first, then one per window. */
+    @Test fun android12ReadsTheProcessSetBeforeTheWindowSet() {
+        val a12 = """
+Applications Graphics Acceleration Info:
+Uptime: 74285 Realtime: 74285
+
+** Graphics info for pid 835 [com.android.tv.settings] **
+
+Stats since: 6321041127ns
+Total frames rendered: 62
+Janky frames: 0 (0.00%)
+Janky frames (legacy): 52 (83.87%)
+Number Slow UI thread: 0
+Number Slow bitmap uploads: 0
+Number Slow issue draw commands: 0
+Number Frame deadline missed: 0
+
+Stats since: 66978914572ns
+Total frames rendered: 61
+Janky frames: 0 (0.00%)
+Janky frames (legacy): 51 (83.61%)
+"""
+        assertEquals(GfxStats(835, 62, 0, 0, 0, 0, 74285 - 6321), parseGfxinfo(a12))
+    }
+
     private fun g(total: Long, janky: Long, age: Long?, pid: Int? = 1, ui: Long = 0, bmp: Long = 0, draw: Long = 0) = GfxStats(pid, total, janky, ui, bmp, draw, age)
 
     @Test fun aFreshSessionCountsItsFirstReadingIntoStart() {
