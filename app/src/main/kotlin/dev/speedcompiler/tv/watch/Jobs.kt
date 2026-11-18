@@ -4,6 +4,7 @@ import dev.speedcompiler.tv.engine.NOT_INSTALLED
 import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import dev.speedcompiler.tv.engine.OptimizeHow
+import dev.speedcompiler.tv.engine.RECOMPILED_AT_START
 import dev.speedcompiler.tv.engine.TOP_RESUMED_COMMAND
 import dev.speedcompiler.tv.engine.topResumedPackage
 import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
@@ -194,8 +195,7 @@ suspend fun wantRecompile(g: AppGraph, packageName: String, fingerprint: String)
 }
 
 /**
- * Runs the wanted recompiles with the same call as the after-use refresh (its Event, "Asked the TV to refresh this app's compiled code.",
- * shows in Activity). Never for the app in use: right before each refresh the app in front is read from the TV, the only source
+ * Runs the wanted recompiles with the same call as the after-use refresh, under their own Activity event ([RECOMPILED_AT_START]). Never for the app in use: right before each refresh the app in front is read from the TV, the only source
  * for it (a caller's earlier reading may be stale, since one refresh is a long compile); if the screen is on and that read fails,
  * that app waits. The gate must be open (idle not required, since the app is not in front).
  */
@@ -217,7 +217,7 @@ suspend fun runWantedRecompiles(g: AppGraph) {
             if (!notInFront(g, pkg)) continue
             sync.put(SyncState(key, "${p[0]}|${p[1]}|${g.clock.nowMillis()}")) // before the call, so a failure is not retried at once
             try {
-                g.optimizer.refresh(pkg)
+                g.optimizer.refresh(pkg, RECOMPILED_AT_START)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

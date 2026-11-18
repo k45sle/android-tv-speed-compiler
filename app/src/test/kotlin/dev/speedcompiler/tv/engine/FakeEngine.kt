@@ -9,7 +9,8 @@ class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimiz
     override suspend fun verify(packageName: String) = filters[packageName]
     val usedFilters = mutableListOf<String>()
     val refreshed = mutableListOf<String>()
-    override suspend fun refresh(packageName: String) { refreshed += packageName }
+    val refreshMessages = mutableListOf<String>()
+    override suspend fun refresh(packageName: String, message: String) { refreshed += packageName; refreshMessages += message }
     /** Overrides [result] per call when set. */
     var resultFor: (String) -> OptimizeResult = { result }
     override suspend fun optimize(packageName: String, filter: String): OptimizeResult {

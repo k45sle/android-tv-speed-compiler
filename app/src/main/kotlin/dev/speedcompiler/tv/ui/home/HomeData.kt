@@ -9,6 +9,7 @@ import dev.speedcompiler.tv.engine.NOT_INSTALLED
 import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import dev.speedcompiler.tv.engine.REFRESHED
+import dev.speedcompiler.tv.engine.RECOMPILED_AT_START
 import dev.speedcompiler.tv.engine.NOT_PAIRED_TAIL
 import dev.speedcompiler.tv.engine.OPTIMIZED_CHECKED
 import dev.speedcompiler.tv.engine.OPTIMIZED_UNVERIFIED
@@ -199,6 +200,7 @@ private val StoredFixed = mapOf(
     VERIFY_UNKNOWN to R.string.stored_verify_unknown,
     NO_PROFILE_YET to R.string.stored_no_profile,
     REFRESHED to R.string.stored_refreshed,
+    RECOMPILED_AT_START to R.string.stored_recompiled_start,
     NOT_INSTALLED to R.string.stored_not_installed,
     DEBUG_BUILD to R.string.stored_debug_build,
 )

@@ -646,6 +646,7 @@ class SchedulingTest {
         record()
         restartOpenedGates(g)
         assertEquals(listOf("a"), optimizer.refreshed)
+        assertEquals(listOf(dev.speedcompiler.tv.engine.REFRESHED), optimizer.refreshMessages)
         dev.speedcompiler.tv.watch.dropRefresh(g, "a") // as after a Reset
         (g.clock as FakeClock).now = 2 * day
         restartOpenedGates(g)
@@ -668,6 +669,7 @@ class SchedulingTest {
         g.adbShell = frontShell("b")
         runWantedRecompiles(g)
         assertEquals(listOf("a"), optimizer.refreshed)
+        assertEquals(listOf(dev.speedcompiler.tv.engine.RECOMPILED_AT_START), optimizer.refreshMessages) // its own line in Activity
         // Wanted again within 24 h (same version): not recorded, not run.
         dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
         runWantedRecompiles(g)

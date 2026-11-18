@@ -68,6 +68,7 @@ class StoredTextTest {
             NO_PROFILE_YET to "Waiting for the app's first launch.",
             DEBUG_BUILD to "Didn't finish: this is a debug build, and Android never compiles debug builds ahead of time.",
             REFRESHED to "Asked the TV to refresh this app's compiled code.",
+            RECOMPILED_AT_START to "It was still compiling code as it started, so the TV was asked to compile what you used.",
         )
         for ((built, stored) in all) {
             assertEquals(stored, built)
