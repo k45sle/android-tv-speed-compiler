@@ -70,6 +70,8 @@ class LibAdb(
     /** Whether the main link is open right now. */
     val isConnected: Boolean get() = manager.isConnected
 
+    @Volatile private var linkViaPort = false // whether the open link goes through the legacy port; set by connect()
+
     /** A fresh connection manager over this app's key, for [connect] and the side connections ([keyTrusted], [askSeparately]). */
     private fun newManager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
         override fun getPrivateKey() = keys.privateKey
@@ -80,12 +82,18 @@ class LibAdb(
     }
 
     /**
-     * Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain.
+     * Connects if not already connected through the transport the current mode needs (an open link through the other
+     * one is dropped first). Throws [AdbFailure] for the failures the UI can explain.
      * Returns true when this call made a new connection (a handshake), false when one was already open.
      */
     suspend fun connect(prompt: Boolean = false): Boolean = connecting.withLock {
-        if (manager.isConnected) return@withLock false
         val viaPort = direct == null && legacy()
+        if (manager.isConnected) {
+            if (linkViaPort == viaPort) return@withLock false
+            // The connection mode changed (Setup's switch): the open link goes through the other port, so drop it and dial
+            // the right one. Only that user action gets here, so ending whatever ran on the old link is expected.
+            runCatching { adbCall { manager.disconnect() } }
+        }
         val waitForAllow = viaPort && prompt
         // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
         manager.setThrowOnUnauthorised(!(promptForApproval || waitForAllow))
@@ -102,6 +110,7 @@ class LibAdb(
         }
         // A socket that opened but never finished the handshake was waiting on the TV's Allow prompt, if one was asked for.
         if (!ok) throw if (waitForAllow) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
+        linkViaPort = viaPort
         true
     }
 

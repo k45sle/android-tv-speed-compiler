@@ -11,7 +11,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,12 +29,6 @@ sealed interface KeeperStatus {
     data class Failed(val reason: Throwable, val fix: Fix) : KeeperStatus
 }
 
-fun KeeperStatus.toConnectionState(): ConnectionState = when (this) {
-    KeeperStatus.Connected -> ConnectionState.Connected
-    KeeperStatus.Reconnecting -> ConnectionState.Connecting
-    is KeeperStatus.Failed -> if (reason is AdbFailure.NotPaired) ConnectionState.Unpaired else ConnectionState.Disconnected
-}
-
 fun fixFor(e: Throwable): Fix = when (e) {
     is AdbFailure.NotPaired -> Fix.QuickRepair
     is AdbFailure.DebuggingOff -> if (e.legacy) Fix.TurnOnAdbDebugging else Fix.TurnOnWirelessDebugging
@@ -50,9 +43,11 @@ fun fixFor(e: Throwable): Fix = when (e) {
  * It returns true when the call made a new connection (a handshake), false when one was already open.
  * ADB debugging mode only: [checkKey] checks whether the TV kept Always allow (null skips it); [askSeparately] opens a
  * second connection that may show the TV's prompt while the main link stays up (true = let in); [linkOpen] says
- * whether the main link is open. [disconnect] drops the link, only when the connection mode changes ([modeChanged]).
+ * whether the main link is open.
  * [keyId] fingerprints this app's current key, so a stored result is only trusted for the key it was found for; null
  * means unknown.
+ * [bootId] identifies the current boot (Settings.Global.BOOT_COUNT), so a quiet handshake or refusal can tell whether a
+ * restart happened since a result was stored; null means unknown.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
@@ -64,8 +59,8 @@ class ConnectionKeeper(
     private val checkKey: (suspend () -> KeyCheck)? = null,
     private val askSeparately: suspend () -> Boolean? = { null },
     private val linkOpen: () -> Boolean = { false },
-    private val disconnect: suspend () -> Unit = {},
     private val keyId: () -> String? = { null },
+    private val bootId: () -> Int? = { null },
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
@@ -91,7 +86,7 @@ class ConnectionKeeper(
     private var prompted: Deferred<KeeperStatus>? = null // guarded by promptLock
     private val checkLock = Mutex()
     @Volatile private var keyCheckJob: Job? = null // written under checkLock
-    private val reallowRunning = AtomicBoolean(false)
+    private val flagLock = Any()
 
     /**
      * Starts a [reconnect] that lets the TV show its prompt, in the app scope, or returns the one already running, so the
@@ -111,7 +106,13 @@ class ConnectionKeeper(
      */
     suspend fun connectNowAndWait(): KeeperStatus = connectNowAsync().await()
 
-    override val state: Flow<ConnectionState> = _status.map { it.toConnectionState() }
+    override val state: Flow<ConnectionState> = _status.map { s ->
+        when (s) {
+            KeeperStatus.Connected -> ConnectionState.Connected
+            KeeperStatus.Reconnecting -> ConnectionState.Connecting
+            is KeeperStatus.Failed -> if (s.reason is AdbFailure.NotPaired) ConnectionState.Unpaired else ConnectionState.Disconnected
+        }
+    }
 
     /**
      * Runs [wait] (a retry loop's pause) while showing Connecting instead of the last failure, so Home doesn't
@@ -158,11 +159,12 @@ class ConnectionKeeper(
     }
 
     /**
-     * ADB debugging mode, after a new handshake. A quiet one proves the TV kept the key by itself, as it must after a
-     * restart, so [KeyCheck.Saved] is stored at once (clearing any earlier result) and a running check is cancelled, so
-     * its later result can't overwrite that. A prompted one proves nothing about a restart, so the full check runs. An
-     * already open link proves nothing (it may come from an Allow-once), so this only runs after a handshake. A failed
-     * settings read or write never fails [reconnect].
+     * ADB debugging mode, after a new handshake. A quiet one proves the TV kept the key by itself, so [KeyCheck.Saved]
+     * is stored unless a result about restarts was stored in this same boot (then that result stands, for example after
+     * the app's process was restarted), and a running check is cancelled, so its later result can't overwrite that. A
+     * prompted one proves nothing about a restart, so the full check runs. An already open link proves nothing (it may
+     * come from an Allow-once), so this only runs after a handshake. A failed settings read or write never fails
+     * [reconnect].
      */
     private suspend fun onHandshake(prompt: Boolean) {
         if (checkKey == null || tryOrNull { settings.values.first().legacyAdb } != true) return
@@ -170,7 +172,7 @@ class ConnectionKeeper(
             startKeyCheck()
         } else {
             cancelKeyCheck()
-            tryOrNull { storeKeyCheck { KeyCheck.Saved } }
+            tryOrNull { storeKeyCheck(::afterQuietHandshake) }
         }
     }
 
@@ -181,8 +183,7 @@ class ConnectionKeeper(
      * connection. Returns true when the TV let the app in; false when it didn't, or another Allow again is running.
      */
     suspend fun reallow(): Boolean {
-        if (!reallowRunning.compareAndSet(false, true)) return false
-        reallowing.value = true
+        if (!reallowing.compareAndSet(false, true)) return false
         _lastAllow.value = null
         try {
             cancelKeyCheck() // a check from before this answer says nothing about it
@@ -198,18 +199,7 @@ class ConnectionKeeper(
             return letIn
         } finally {
             reallowing.value = false
-            reallowRunning.set(false)
         }
-    }
-
-    /**
-     * The connection mode changed (Setup's Wireless debugging / ADB debugging switch): the open link goes through the
-     * other port, so drop it and connect again quietly through the new one. Only for that user action, because it ends
-     * a running compile.
-     */
-    suspend fun modeChanged(): KeeperStatus = lock.withLock {
-        tryOrNull { disconnect() } // already gone is fine
-        reconnectLocked(prompt = false)
     }
 
     /** Starts the key check unless one is running, and returns the running one; null without [checkKey]. */
@@ -222,11 +212,13 @@ class ConnectionKeeper(
                 val job = scope.launch(start = CoroutineStart.LAZY) {
                     // A failed check or settings write keeps the old result and must not crash the app.
                     val found = tryOrNull { check() } ?: return@launch
-                    tryOrNull { storeKeyCheck { stored -> afterPromptedCheck(stored, found) } }
+                    tryOrNull { storeKeyCheck { stored, _ -> afterPromptedCheck(stored, found) } }
                 }
-                keyCheckJob = job
-                checking.value = true
-                job.invokeOnCompletion { if (keyCheckJob === job) checking.value = false }
+                synchronized(flagLock) {
+                    keyCheckJob = job
+                    checking.value = true
+                }
+                job.invokeOnCompletion { synchronized(flagLock) { if (keyCheckJob === job) checking.value = false } }
                 job.start()
                 job
             }
@@ -240,8 +232,8 @@ class ConnectionKeeper(
 
     /**
      * ReconnectWorker's run ended on a refusal ([last]) and every quiet try of it was refused: a key the TV had saved is
-     * no longer accepted, so [afterQuietRefusal] moves Saved to Forgotten and a key saved again to ForgetsAtRestart.
-     * Skipped once the app is connected again meanwhile (someone just allowed it).
+     * no longer accepted, so [afterQuietRefusal] moves Saved to Forgotten, and a key saved again to ForgetsAtRestart
+     * only after a restart. Skipped once the app is connected again meanwhile (someone just allowed it).
      */
     suspend fun quietlyRefused(last: KeeperStatus) {
         val failed = last as? KeeperStatus.Failed ?: return
@@ -275,7 +267,7 @@ class ConnectionKeeper(
         // Decided inside the transform: a result stored meanwhile for this key must not be wiped.
         settings.update {
             if (it.legacyKeyCheck != KeyCheck.Unknown && it.legacyKeyCheckKey != id) {
-                it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
+                it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null, legacyKeyCheckBoot = null)
             } else {
                 it
             }
@@ -283,16 +275,20 @@ class ConnectionKeeper(
     }
 
     /**
-     * Stores [next] of the result kept for this key (Unknown when nothing, or a result for another key, is stored).
-     * Decided inside the transform, so concurrent writers each build on the latest result; never while ADB debugging
-     * mode is off.
+     * Stores [next] of the result kept for this key (Unknown when nothing, or a result for another key, is stored) and
+     * whether that result is from this boot, together with this boot. Decided inside the transform, so concurrent
+     * writers each build on the latest result; never while ADB debugging mode is off.
      */
-    private suspend fun storeKeyCheck(next: (KeyCheck) -> KeyCheck) {
+    private suspend fun storeKeyCheck(next: (stored: KeyCheck, sameBoot: Boolean) -> KeyCheck) {
         val id = keyId()
+        val boot = bootId()
         settings.update {
             if (!it.legacyAdb) return@update it
-            val k = next(if (it.legacyKeyCheckKey == id) it.legacyKeyCheck else KeyCheck.Unknown)
-            if (k == it.legacyKeyCheck && id == it.legacyKeyCheckKey) it else it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id)
+            val mine = it.legacyKeyCheckKey == id
+            val sameBoot = boot != null && mine && it.legacyKeyCheckBoot == boot
+            val k = next(if (mine) it.legacyKeyCheck else KeyCheck.Unknown, sameBoot)
+            if (k == it.legacyKeyCheck && mine && boot == it.legacyKeyCheckBoot) it
+            else it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id, legacyKeyCheckBoot = boot)
         }
     }
 

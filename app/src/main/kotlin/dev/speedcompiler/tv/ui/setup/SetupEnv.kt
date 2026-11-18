@@ -83,8 +83,7 @@ class AndroidSetupEnv(private val context: Context, private val keeper: Connecti
     }
 
     override fun openSettings() = launch(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
-    override fun openDeveloperOptions() =
-        launch(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)
+    override fun openDeveloperOptions() = openDeveloperOptions(context)
 
     private fun launch(vararg actions: String) {
         for (a in actions) try {
@@ -110,6 +109,15 @@ class AndroidSetupEnv(private val context: Context, private val keeper: Connecti
             context.packageManager.queryIntentActivities(launch, 0).map { it.activityInfo.packageName }.distinct()
         }
         return loadUserApps(context, packages).sortedByDescending { it.updatedAt }
+    }
+}
+
+/** Opens Developer options, or Settings where that screen doesn't exist. */
+fun openDeveloperOptions(context: Context) {
+    for (a in listOf(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)) try {
+        context.startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return
+    } catch (_: ActivityNotFoundException) {
     }
 }
 
@@ -150,13 +158,13 @@ fun rememberSetupDeps(): SetupDeps {
                 graph.settings.update {
                     if (on != it.legacyAdb) {
                         changed = true
-                        it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
+                        it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null, legacyKeyCheckBoot = null)
                     } else {
                         it
                     }
                 }
-                // The open link goes through the other port: drop it and connect through the new one, not tied to this screen.
-                if (changed) graph.appScope.launch { graph.connectionKeeper.modeChanged() }
+                // Refresh the status through the new port (LibAdb drops a link through the other one); quiet, so it can't race Setup's own prompt.
+                if (changed) graph.appScope.launch { graph.connectionKeeper.reconnect() }
             },
         )
     }
@@ -171,7 +179,7 @@ fun rememberKeyHelpDeps(): KeyHelpDeps {
             check = graph.settings.values.map { it.legacyKeyCheck },
             busy = graph.connectionKeeper.keyHelpBusy,
             allowAgain = { graph.appScope.launch { graph.connectionKeeper.reallow() } },
-            openDeveloperOptions = AndroidSetupEnv(context.applicationContext, graph.connectionKeeper)::openDeveloperOptions,
+            openDeveloperOptions = { openDeveloperOptions(context.applicationContext) },
             lastAllow = graph.connectionKeeper.lastAllow,
         )
     }

@@ -212,7 +212,7 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
                 trying = true
                 failure = env.connect()
                 trying = false
-                if (failure != null) fail()
+                if (failure != null) fail() else if (step == 5) advance() // its own try connected; don't wait for the shared status, which a later drop could flip first
             }
             val problem = failure?.let { reasonText(res, it) }
             Page(5, stringResource(R.string.setup_allow_title)) {

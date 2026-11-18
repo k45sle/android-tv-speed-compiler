@@ -356,6 +356,15 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     @Test
+    fun allowStepAdvancesOnItsOwnSuccess() {
+        // The step's own try connected, the shared status may still say Disconnected (a later drop could flip it first).
+        allowStep()
+        env.answer.complete(null)
+        tick()
+        see("Pick apps to optimize.")
+    }
+
+    @Test
     fun b16_allowStepShowsDeniedAndRetries() {
         allowStep()
         env.answer.complete(AdbFailure.NotAuthorized())

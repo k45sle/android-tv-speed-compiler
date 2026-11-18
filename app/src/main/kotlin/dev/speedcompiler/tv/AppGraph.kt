@@ -59,8 +59,8 @@ class AppGraph(context: Context) {
         checkKey = keyChecker::check,
         askSeparately = libAdb::askSeparately,
         linkOpen = { libAdb.isConnected },
-        disconnect = { libAdb.disconnect() },
         keyId = { libAdb.publicKeyId },
+        bootId = { android.provider.Settings.Global.getInt(app.contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 } },
     )
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()

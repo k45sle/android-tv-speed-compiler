@@ -130,13 +130,30 @@ class KeyCheckTest {
     }
 
     @Test fun afterQuietRefusalMovesSavedKeysOnly() {
-        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Saved))
-        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.SavedAgain))
-        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.ForgetsAtRestart))
-        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Forgotten))
-        assertEquals(KeyCheck.Unknown, afterQuietRefusal(KeyCheck.Unknown))
-        assertEquals(KeyCheck.AllowedOnce, afterQuietRefusal(KeyCheck.AllowedOnce))
-        assertEquals(KeyCheck.NotSaved, afterQuietRefusal(KeyCheck.NotSaved))
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Saved, sameBoot = true))
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Saved, sameBoot = false))
+        // Saved again, then refused after a restart: the TV forgets it at restarts.
+        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.SavedAgain, sameBoot = false))
+        // Refused within the same boot: the TV just stopped accepting it.
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.SavedAgain, sameBoot = true))
+        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.ForgetsAtRestart, sameBoot = false))
+        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.ForgetsAtRestart, sameBoot = true))
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Forgotten, sameBoot = false))
+        assertEquals(KeyCheck.Unknown, afterQuietRefusal(KeyCheck.Unknown, sameBoot = false))
+        assertEquals(KeyCheck.AllowedOnce, afterQuietRefusal(KeyCheck.AllowedOnce, sameBoot = false))
+        assertEquals(KeyCheck.NotSaved, afterQuietRefusal(KeyCheck.NotSaved, sameBoot = true))
+    }
+
+    @Test fun afterQuietHandshakeKeepsARestartResultFromTheSameBoot() {
+        for (stored in listOf(KeyCheck.Forgotten, KeyCheck.SavedAgain, KeyCheck.ForgetsAtRestart)) {
+            assertEquals(stored, afterQuietHandshake(stored, sameBoot = true))
+        }
+        for (stored in listOf(KeyCheck.Unknown, KeyCheck.AllowedOnce, KeyCheck.NotSaved, KeyCheck.Saved)) {
+            assertEquals(KeyCheck.Saved, afterQuietHandshake(stored, sameBoot = true))
+        }
+        for (stored in KeyCheck.entries) {
+            assertEquals(KeyCheck.Saved, afterQuietHandshake(stored, sameBoot = false))
+        }
     }
 
     @Test fun tryOrNullRethrowsCancellation() {

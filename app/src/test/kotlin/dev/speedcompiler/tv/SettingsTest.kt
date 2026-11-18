@@ -79,6 +79,11 @@ class SettingsTest {
         assertEquals("abc123", settings.values.first().legacyKeyCheckKey)
         settings.update { it.copy(legacyKeyCheckKey = null) }
         assertEquals(null, settings.values.first().legacyKeyCheckKey)
+        assertEquals(null, settings.values.first().legacyKeyCheckBoot)
+        settings.update { it.copy(legacyKeyCheckBoot = 42) }
+        assertEquals(42, settings.values.first().legacyKeyCheckBoot)
+        settings.update { it.copy(legacyKeyCheckBoot = null) }
+        assertEquals(null, settings.values.first().legacyKeyCheckBoot)
     }
 
     @Test

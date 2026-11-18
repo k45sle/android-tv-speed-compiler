@@ -27,9 +27,10 @@ private class FakeSettings(
     legacy: Boolean = false,
     check: KeyCheck = KeyCheck.Unknown,
     key: String? = null,
+    boot: Int? = null,
 ) : Settings {
     val flow = MutableStateFlow(
-        SettingsValues(keepTrusting = keep, legacyAdb = legacy, legacyKeyCheck = check, legacyKeyCheckKey = key),
+        SettingsValues(keepTrusting = keep, legacyAdb = legacy, legacyKeyCheck = check, legacyKeyCheckKey = key, legacyKeyCheckBoot = boot),
     )
     override val values = flow
     override suspend fun update(transform: (SettingsValues) -> SettingsValues) {
@@ -50,8 +51,8 @@ class ConnectionKeeperTest {
         checkKey: (suspend () -> KeyCheck)? = null,
         askSeparately: suspend () -> Boolean? = { null },
         linkOpen: () -> Boolean = { false },
-        disconnect: suspend () -> Unit = {},
         keyId: () -> String? = { null },
+        bootId: () -> Int? = { null },
         connect: suspend (Boolean) -> Boolean = { true },
     ) =
         ConnectionKeeper(
@@ -59,8 +60,8 @@ class ConnectionKeeperTest {
             checkKey = checkKey,
             askSeparately = askSeparately,
             linkOpen = linkOpen,
-            disconnect = disconnect,
             keyId = keyId,
+            bootId = bootId,
         )
 
     @Test
@@ -381,6 +382,62 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun quietHandshakeSameBootKeepsSavedAgain() = runTest(UnconfinedTestDispatcher()) {
+        // The app's process restarted, not the TV: a quiet handshake now proves nothing about a restart.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1", boot = 5)
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown }, keyId = { "k1" }, bootId = { 5 }).reconnect()
+        assertEquals(KeyCheck.SavedAgain, settings.values.first().legacyKeyCheck)
+        assertEquals(5, settings.values.first().legacyKeyCheckBoot)
+    }
+
+    @Test
+    fun quietHandshakeAfterARestartStoresSaved() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1", boot = 5)
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown }, keyId = { "k1" }, bootId = { 6 }).reconnect()
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(6, settings.values.first().legacyKeyCheckBoot)
+    }
+
+    @Test
+    fun quietRefusalSameBootIsOnlyForgotten() = runTest(UnconfinedTestDispatcher()) {
+        // Authorizations were revoked while the TV stayed up: not a restart, so it isn't known to forget at restarts.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1", boot = 5)
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            checkKey = { KeyCheck.Unknown },
+            keyId = { "k1" },
+            bootId = { 5 },
+            connect = { throw AdbFailure.NotAuthorized() },
+        )
+        k.quietlyRefused(k.reconnect())
+        assertEquals(KeyCheck.Forgotten, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun quietRefusalAfterARestartForgetsAtRestart() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1", boot = 5)
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            checkKey = { KeyCheck.Unknown },
+            keyId = { "k1" },
+            bootId = { 6 },
+            connect = { throw AdbFailure.NotAuthorized() },
+        )
+        k.quietlyRefused(k.reconnect())
+        assertEquals(KeyCheck.ForgetsAtRestart, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun promptedCheckStoresTheBoot() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown, key = "k1")
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Saved }, keyId = { "k1" }, bootId = { 7 }).reconnect(prompt = true)
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(7, settings.values.first().legacyKeyCheckBoot)
+    }
+
+    @Test
     fun quietRefusalIgnoredOnceConnected() = runTest(UnconfinedTestDispatcher()) {
         // Someone allowed the app meanwhile: the run's refusals say nothing any more.
         val settings = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "k1")
@@ -564,9 +621,8 @@ class ConnectionKeeperTest {
 
     @Test
     fun reallowWithOpenLinkAsksSeparatelyAndKeepsTheLink() = runTest(UnconfinedTestDispatcher()) {
-        // A running compile carries on: no disconnect, no reconnect, just a second connection asking the TV.
+        // A running compile carries on: no reconnect, just a second connection asking the TV.
         val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
-        var disconnects = 0
         val prompts = mutableListOf<Boolean>()
         val k = keeper(
             FakeAdbShell(),
@@ -575,12 +631,10 @@ class ConnectionKeeperTest {
             checkKey = { KeyCheck.NotSaved },
             askSeparately = { true },
             linkOpen = { true },
-            disconnect = { disconnects++ },
             keyId = { "k1" },
             connect = { prompts += it; false },
         )
         assertEquals(true, k.reallow())
-        assertEquals(0, disconnects)
         assertEquals(emptyList<Boolean>(), prompts)
         assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
         assertEquals(true, k.lastAllow.value)
@@ -665,20 +719,6 @@ class ConnectionKeeperTest {
         first.join()
         assertEquals(1, asks)
         assertEquals(true, k.lastAllow.value)
-    }
-
-    @Test
-    fun modeChangedDropsTheLinkAndReconnectsQuietly() = runTest(UnconfinedTestDispatcher()) {
-        val prompts = mutableListOf<Boolean>()
-        var disconnects = 0
-        val k = keeper(
-            FakeAdbShell(),
-            connect = { prompts += it; true },
-            disconnect = { disconnects++ },
-        )
-        k.modeChanged()
-        assertEquals(1, disconnects)
-        assertEquals(listOf(false), prompts) // the other port, without a prompt
     }
 
     @Test

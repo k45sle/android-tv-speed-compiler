@@ -69,12 +69,27 @@ fun afterPromptedCheck(stored: KeyCheck, found: KeyCheck): KeyCheck = when {
     else -> found
 }
 
-/** The result to keep after the TV refused the quiet reconnects of a run for this key; [stored] is the result kept. */
-fun afterQuietRefusal(stored: KeyCheck): KeyCheck = when (stored) {
+/**
+ * The result to keep after the TV refused every quiet reconnect of a run for this key; [stored] is the result kept and
+ * [sameBoot] says it was stored in this boot. A key saved again and refused after a restart means the TV forgets it at
+ * restarts; refused within the same boot it only shows the TV stopped accepting it (for example authorizations were
+ * revoked).
+ */
+fun afterQuietRefusal(stored: KeyCheck, sameBoot: Boolean): KeyCheck = when (stored) {
     KeyCheck.Saved -> KeyCheck.Forgotten
-    KeyCheck.SavedAgain, KeyCheck.ForgetsAtRestart -> KeyCheck.ForgetsAtRestart
+    KeyCheck.SavedAgain -> if (sameBoot) KeyCheck.Forgotten else KeyCheck.ForgetsAtRestart
+    KeyCheck.ForgetsAtRestart -> KeyCheck.ForgetsAtRestart
     else -> stored
 }
+
+/**
+ * The result to keep after a quiet handshake (the TV let the key in by itself). That proves the TV kept the key across a
+ * restart only when [stored] was stored in an earlier boot; within the same boot ([sameBoot]) a result about restarts
+ * stands, for example after the app's process was restarted.
+ */
+fun afterQuietHandshake(stored: KeyCheck, sameBoot: Boolean): KeyCheck =
+    if (sameBoot && (stored == KeyCheck.Forgotten || stored == KeyCheck.SavedAgain || stored == KeyCheck.ForgetsAtRestart)) stored
+    else KeyCheck.Saved
 
 /**
  * Right after someone allowed the app: will the TV let the same key back in without asking, as it must after a
@@ -91,13 +106,12 @@ class KeyChecker(
     private val waits: List<Long> = listOf(1_500L, 3_000L),
 ) {
     suspend fun check(): KeyCheck {
-        var last: Boolean? = null
         var refused = false
         for (w in waits) {
             pause(w)
-            last = trusted()
-            if (last == true) return KeyCheck.Saved
-            if (last == false) refused = true
+            val r = trusted()
+            if (r == true) return KeyCheck.Saved
+            if (r == false) refused = true
         }
         // Nothing was refused (every try failed to answer, so all were null): there is nothing to explain.
         if (!refused) return KeyCheck.Unknown

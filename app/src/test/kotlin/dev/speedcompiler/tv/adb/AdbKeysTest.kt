@@ -114,6 +114,17 @@ class AdbKeysTest {
         assertEquals(emptyList<String>(), logs)
     }
 
+    @Test fun aFailingDecodeOnAValidKeyKeepsIt() {
+        val dir = tmp.newFolder()
+        val first = AdbKeys(dir)
+        // A KeyFactory failure on well-formed bytes is not corruption: the saved identity must stay.
+        val logs = mutableListOf<String>()
+        val second = AdbKeys(dir, log = { logs += it }, decode = { throw IllegalStateException("KeyFactory failed") })
+        assertEquals((first.privateKey as RSAPrivateCrtKey).modulus, (second.privateKey as RSAPrivateCrtKey).modulus)
+        assertFalse(File(dir, "adb.key.bad").exists())
+        assertEquals(emptyList<String>(), logs)
+    }
+
     @Test fun crtSpecReadsEveryFieldOfAPkcs8Key() {
         val key = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair().private as RSAPrivateCrtKey
         val spec = rsaPrivateCrtKeySpec(key.encoded)

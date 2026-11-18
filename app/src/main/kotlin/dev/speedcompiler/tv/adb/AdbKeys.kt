@@ -89,14 +89,20 @@ class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> Priv
 private fun decodePkcs8(bytes: ByteArray): PrivateKey = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(bytes))
 
 /**
- * [pkcs8] as an [RSAPrivateCrtKey], or null if it isn't a usable RSA key. Android 12's KeyFactory returns a plain
- * RSAPrivateKey for a PKCS#8 key (it drops the CRT fields), so then the key is rebuilt from the fields in the file.
+ * [pkcs8] as an [RSAPrivateCrtKey], or null if the file isn't well-formed RSA PKCS#8. A decode failure alone is not
+ * corruption when the bytes are a well-formed key: that propagates instead, so the caller retries later rather than
+ * replacing the identity the TV trusts. Android 12's KeyFactory returns a plain RSAPrivateKey for a PKCS#8 key (it
+ * drops the CRT fields), so then the key is rebuilt from the fields in the file.
  */
 internal fun loadRsaKey(pkcs8: ByteArray, decode: (ByteArray) -> PrivateKey = ::decodePkcs8): RSAPrivateCrtKey? {
-    val decoded = runCatching { decode(pkcs8) }.getOrNull() as? RSAPrivateKey ?: return null
+    val decoded = runCatching { decode(pkcs8) }.getOrNull() as? RSAPrivateKey
     if (decoded is RSAPrivateCrtKey) return decoded
-    val rebuilt = runCatching { KeyFactory.getInstance("RSA").generatePrivate(rsaPrivateCrtKeySpec(pkcs8)) }.getOrNull() as? RSAPrivateCrtKey
-    return rebuilt?.takeIf { it.modulus == decoded.modulus && it.privateExponent == decoded.privateExponent }
+    // Not even well-formed DER with the RSA fields: the file is corrupt.
+    val spec = runCatching { rsaPrivateCrtKeySpec(pkcs8) }.getOrNull() ?: return null
+    // Well-formed: a KeyFactory failure here is not corruption, so it propagates and the caller retries later instead
+    // of replacing the identity the TV trusts.
+    val rebuilt = KeyFactory.getInstance("RSA").generatePrivate(spec) as? RSAPrivateCrtKey ?: return null
+    return rebuilt.takeIf { decoded == null || (it.modulus == decoded.modulus && it.privateExponent == decoded.privateExponent) }
 }
 
 /** The RSA fields of a PKCS#8 PrivateKeyInfo: SEQUENCE { version, algorithm, OCTET STRING { RSAPrivateKey } }. */
