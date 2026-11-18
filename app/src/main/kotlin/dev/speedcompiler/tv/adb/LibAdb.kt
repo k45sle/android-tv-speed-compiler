@@ -2,8 +2,11 @@ package dev.speedcompiler.tv.adb
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
+import io.github.muntashirakon.adb.AdbAuthenticationFailedException
 import io.github.muntashirakon.adb.AdbStream
+import io.github.muntashirakon.adb.adbPublicKeyBase64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -14,12 +17,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.security.cert.Certificate
+import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** The older plain ADB connection on this device, which some TVs (for example Sony Bravia) open with ADB debugging. */
 const val LEGACY_HOST = "127.0.0.1"
 const val LEGACY_PORT = 5555
+
+/** Timeout for the quiet key check: enough for this device's own adbd to answer, short enough to run in the background. */
+private const val KEY_CHECK_TIMEOUT_MS = 5_000L
 
 /** Exit code reported when the `__rc=` marker never arrived (the stream ended early). */
 const val MISSING_RC = -1
@@ -40,7 +49,9 @@ fun parseShellOutput(raw: String): ShellResult {
  * open with their ADB debugging switch. With [direct] set it dials that host and port (for example after `adb tcpip 5555`).
  * An unknown key fails fast with [AdbFailure.NotAuthorized], unless [promptForApproval] is set: then adbd
  * shows its "Allow debugging?" prompt and [connect] waits up to [connectTimeoutMillis] for someone to accept.
- * The legacy port has no pairing, so it always prompts and waits up to [legacyConnectTimeoutMillis].
+ * The legacy port has no pairing, so there [connect] with `prompt` set shows the prompt and waits up to
+ * [legacyConnectTimeoutMillis]. Without it (boot, background work) an unknown key fails fast instead, so no prompt
+ * appears on screen that the person didn't ask for.
  */
 class LibAdb(
     context: Context,
@@ -52,10 +63,20 @@ class LibAdb(
     private val legacyConnectTimeoutMillis: Long = 60_000L,
 ) : AdbShell, Pairing {
     private val app = context.applicationContext
-    private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb")) }
+    private val keys by lazy { AdbKeys(app.noBackupFilesDir.resolve("adb"), log = { Log.w("AdbKeys", it) }) }
     private val connecting = Mutex()
 
-    private val manager = object : AbsAdbConnectionManager() {
+    private val manager = newManager()
+
+    /** Whether the main link is open right now. */
+    val isConnected: Boolean get() = manager.isConnected
+
+    @Volatile private var linkViaPort = false // whether the open link goes through the legacy port; set by connect()
+
+    private val runHandshake = AtomicBoolean(false)
+
+    /** A fresh connection manager over this app's key, for [connect] and the side connections ([keyTrusted], [askSeparately]). */
+    private fun newManager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
         override fun getPrivateKey() = keys.privateKey
         override fun getCertificate(): Certificate = keys.certificate
         override fun getDeviceName() = "speed-compiler"
@@ -63,13 +84,23 @@ class LibAdb(
         setApi(Build.VERSION.SDK_INT)
     }
 
-    /** Connects if not already connected. Throws [AdbFailure] for the failures the UI can explain. */
-    suspend fun connect() = connecting.withLock {
-        if (manager.isConnected) return@withLock
+    /**
+     * Connects if not already connected through the transport the current mode needs (an open link through the other
+     * one is dropped first). Throws [AdbFailure] for the failures the UI can explain.
+     * Returns true when this call made a new connection (a handshake), false when one was already open.
+     */
+    suspend fun connect(prompt: Boolean = false): Boolean = connecting.withLock {
         val viaPort = direct == null && legacy()
+        if (manager.isConnected) {
+            if (linkViaPort == viaPort) return@withLock false
+            // The connection mode changed (Setup's switch): the open link goes through the other port, so drop it and dial
+            // the right one. Only that user action gets here, so ending whatever ran on the old link is expected.
+            tryOrNull { adbCall { manager.disconnect() } }
+        }
+        val waitForAllow = viaPort && prompt
         // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
-        manager.setThrowOnUnauthorised(!(promptForApproval || viaPort))
-        manager.setTimeout(if (viaPort) legacyConnectTimeoutMillis else connectTimeoutMillis, TimeUnit.MILLISECONDS)
+        manager.setThrowOnUnauthorised(!(promptForApproval || waitForAllow))
+        manager.setTimeout(if (waitForAllow) legacyConnectTimeoutMillis else connectTimeoutMillis, TimeUnit.MILLISECONDS)
         var ok = false
         try {
             ok = try {
@@ -80,8 +111,10 @@ class LibAdb(
         } finally {
             if (!ok) runCatching { manager.disconnect() } // drop any half-open session
         }
-        // On the plain port, a socket that opened but never finished the handshake is waiting on the TV's Allow prompt.
-        if (!ok) throw if (viaPort) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
+        // A socket that opened but never finished the handshake was waiting on the TV's Allow prompt, if one was asked for.
+        if (!ok) throw if (waitForAllow) AdbFailure.NotAuthorized() else AdbFailure.Timeout()
+        linkViaPort = viaPort
+        true
     }
 
     private fun dial(viaPort: Boolean): Boolean = try {
@@ -98,7 +131,7 @@ class LibAdb(
     }
 
     override suspend fun run(command: String): ShellResult {
-        connect()
+        if (connect()) runHandshake.set(true) // a handshake the keeper didn't make
         // withTimeoutOrNull only reacts to its own deadline, so a caller's withTimeout still propagates as usual.
         val raw = withTimeoutOrNull(timeoutMillis) {
             adbCall {
@@ -128,7 +161,58 @@ class LibAdb(
         false // wrong or expired code: libadb reports it as a failed message exchange
     }
 
-    suspend fun disconnect() = adbCall { manager.disconnect() }
+    suspend fun disconnect() = connecting.withLock { adbCall { manager.disconnect() } }
+
+    /** True once after run() made a new connection by itself (always quiet, no prompt), so the keeper can count that handshake; clears it. */
+    fun takeRunHandshake(): Boolean = runHandshake.getAndSet(false)
+
+    /** This app's public key in adb's format, as the TV lists it in `dumpsys adb`. */
+    val publicKeyBase64: String by lazy { adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey) }
+
+    /** Short fingerprint of this app's key (first 16 hex chars of SHA-256 of [publicKeyBase64]); not secret. */
+    val publicKeyId: String by lazy {
+        MessageDigest.getInstance("SHA-256").digest(publicKeyBase64.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            .take(16)
+    }
+
+    /**
+     * ADB debugging mode: dials [LEGACY_HOST]:[LEGACY_PORT] again with a second, quiet connection (the public key is
+     * never sent, so the TV shows no prompt) to see whether the TV now trusts this app's key by itself, as it has to
+     * after a restart. True = let in, false = refused, null = couldn't tell (port closed, timeout, other error).
+     * Always the legacy port, also when [direct] is set: only ADB debugging mode asks this.
+     */
+    suspend fun keyTrusted(): Boolean? = sideConnection(prompt = false, KEY_CHECK_TIMEOUT_MS)
+
+    /**
+     * ADB debugging mode, "Allow again": a second connection to [LEGACY_HOST]:[LEGACY_PORT] that sends the public key,
+     * so the TV shows its Allow prompt while the main link, and a compile running on it, carries on. Waits up to
+     * [legacyConnectTimeoutMillis]. True = let in (also at once when the TV already trusts the key), false = refused or
+     * no answer in time, null = couldn't tell (port closed, other error).
+     */
+    suspend fun askSeparately(): Boolean? = sideConnection(prompt = true, legacyConnectTimeoutMillis)
+
+    /** A throwaway second connection to the legacy port with this app's key, for [keyTrusted] and [askSeparately]. */
+    private suspend fun sideConnection(prompt: Boolean, timeoutMillis: Long): Boolean? {
+        val side = newManager().apply {
+            setThrowOnUnauthorised(!prompt)
+            setTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        }
+        return try {
+            val ok = runInterruptible(Dispatchers.IO) { side.connect(LEGACY_HOST, LEGACY_PORT) }
+            // false = no handshake in time: unanswered when the prompt was allowed, otherwise nothing to go on
+            if (ok) true else if (prompt) false else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AdbAuthenticationFailedException) {
+            false
+        } catch (e: Exception) {
+            null
+        } finally {
+            // disconnect, not close: libadb's close() also destroys getPrivateKey(), and the side connection shares the app's key.
+            withContext(NonCancellable + Dispatchers.IO) { runCatching { side.disconnect() } }
+        }
+    }
 
     /**
      * Reads until adbd closes the stream or our closing `__rc=` line has arrived with nothing queued after it.

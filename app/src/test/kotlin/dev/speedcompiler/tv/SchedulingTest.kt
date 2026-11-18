@@ -38,16 +38,19 @@ import dev.speedcompiler.tv.watch.freeBytes
 import dev.speedcompiler.tv.watch.refreshDue
 import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.restartOpenedGates
+import dev.speedcompiler.tv.watch.requeueStaleRunning
 import dev.speedcompiler.tv.watch.runDetect
 import dev.speedcompiler.tv.watch.runVerify
 import dev.speedcompiler.tv.watch.systemUpdated
 import dev.speedcompiler.tv.watch.workName
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -324,6 +327,32 @@ class SchedulingTest {
         val id = dao.insert(QueueItem(packageName = "a", source = QueueSource.MANUAL, state = QueueState.SKIPPED, enqueuedAt = 1, finishedAt = 2))
         dao.requeueIfRunning(id)
         assertEquals(QueueState.SKIPPED, dao.get(id)!!.state)
+    }
+
+    @Test fun staleRunningRowGoesBackToQueued() = runBlocking {
+        val dao = g.database.queue()
+        val id = dao.insert(
+            QueueItem(packageName = "a", source = QueueSource.MANUAL, state = QueueState.RUNNING, enqueuedAt = 1, startedAt = 5),
+        )
+        requeueStaleRunning(g)
+        assertEquals(QueueState.QUEUED, dao.get(id)!!.state)
+        assertNull(dao.get(id)!!.startedAt)
+    }
+
+    @Test fun requeueStaleRunningLeavesALiveCompileAlone() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        optimizer.before = { release.await() }
+        g.scheduler.enqueue("a")
+        skipDelay("a")
+        await("running") { state(1) == QueueState.RUNNING }
+        // UNDISPATCHED runs until it suspends on the run lock the live compile holds, so the check below is deterministic.
+        val requeue = launch(start = CoroutineStart.UNDISPATCHED) { requeueStaleRunning(g) }
+        assertFalse(requeue.isCompleted)
+        assertEquals(QueueState.RUNNING, state(1))
+        release.complete(Unit)
+        await("done") { state(1) == QueueState.DONE }
+        await("requeue done") { requeue.isCompleted }
+        assertEquals(QueueState.DONE, state(1))
     }
 
     @Test fun weeklyVerifyRequeuesADowngradedApp() = runBlocking {

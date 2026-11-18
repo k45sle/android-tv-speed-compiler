@@ -3,16 +3,21 @@ package dev.speedcompiler.tv.adb
 import dev.speedcompiler.tv.engine.Settings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /** What the user has to do to get a failed connection working again. */
@@ -33,18 +38,46 @@ fun fixFor(e: Throwable): Fix = when (e) {
 
 /**
  * Keeps the app's ADB link usable: connects, self-grants WRITE_SECURE_SETTINGS once, and applies the
- * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`).
+ * keep-trusting setting. [connect] is the real connection call (for example `LibAdb::connect`); its argument says
+ * whether the TV may show its Allow prompt, which only [connectNow] (a person on one of the app's screens) asks for.
+ * It returns true when the call made a new connection (a handshake), false when one was already open.
+ * ADB debugging mode only: [checkKey] checks whether the TV kept Always allow (null skips it); [askSeparately] opens a
+ * second connection that may show the TV's prompt while the main link stays up (true = let in); [linkOpen] says
+ * whether the main link is open.
+ * [keyId] fingerprints this app's current key, so a stored result is only trusted for the key it was found for; null
+ * means unknown.
+ * [bootId] identifies the current boot (Settings.Global.BOOT_COUNT), so a quiet handshake or refusal can tell whether a
+ * restart happened since a result was stored; null means unknown.
+ * [takeQuietHandshake] says (once) whether a shell command opened the main link by itself since the last call, which is a
+ * quiet handshake the keeper didn't make.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
-    private val connect: suspend () -> Unit,
+    private val connect: suspend (prompt: Boolean) -> Boolean,
     private val shell: AdbShell,
     private val settings: Settings,
     private val packageName: String,
     private val scope: CoroutineScope,
+    private val checkKey: (suspend () -> KeyCheck)? = null,
+    private val askSeparately: suspend () -> Boolean? = { null },
+    private val linkOpen: () -> Boolean = { false },
+    private val keyId: () -> String? = { null },
+    private val bootId: () -> Int? = { null },
+    private val takeQuietHandshake: () -> Boolean = { false },
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
+
+    private val checking = MutableStateFlow(false)
+    private val reallowing = MutableStateFlow(false)
+
+    /** True while a key check or an Allow again runs (not while background reconnects retry). */
+    val keyHelpBusy: Flow<Boolean> = combine(checking, reallowing) { c, r -> c || r }
+
+    private val _lastAllow = MutableStateFlow<Boolean?>(null)
+
+    /** How the last Allow again ended: true = the TV let the app in, false = it didn't; null before the first, or while one runs. */
+    val lastAllow: StateFlow<Boolean?> get() = _lastAllow
 
     /** Reasons the follow-up shell steps (grant, trust toggle) failed; null when fine. */
     val grantFailure = MutableStateFlow<String?>(null)
@@ -52,26 +85,35 @@ class ConnectionKeeper(
 
     private var granted = false
     private val lock = Mutex()
-    private val inFlight = AtomicBoolean(false)
+    private val promptLock = Any()
+    private var prompted: Deferred<KeeperStatus>? = null // guarded by promptLock
+    private val checkLock = Mutex()
+    @Volatile private var keyCheckJob: Job? = null // written under checkLock
+    private val flagLock = Any()
 
-    /** Starts [reconnect] in the app scope; ignored while one is already running. */
-    override fun connectNow() {
-        if (!inFlight.compareAndSet(false, true)) return
-        scope.launch {
-            try {
-                reconnect()
-            } finally {
-                inFlight.set(false)
-            }
-        }
+    /**
+     * Starts a [reconnect] that lets the TV show its prompt, in the app scope, or returns the one already running, so the
+     * app's screens never start two prompts at once.
+     */
+    fun connectNowAsync(): Deferred<KeeperStatus> = synchronized(promptLock) {
+        prompted?.takeIf { it.isActive } ?: scope.async { reconnect(prompt = true) }.also { prompted = it }
     }
 
-    override val state: Flow<ConnectionState> = _status.map {
-        when (it) {
+    override fun connectNow() {
+        connectNowAsync()
+    }
+
+    /**
+     * [connectNow] and the outcome of that very try (or of the prompted one already running). Cancelling the caller
+     * doesn't cancel the try: the TV's prompt stays up either way.
+     */
+    suspend fun connectNowAndWait(): KeeperStatus = connectNowAsync().await()
+
+    override val state: Flow<ConnectionState> = _status.map { s ->
+        when (s) {
             KeeperStatus.Connected -> ConnectionState.Connected
             KeeperStatus.Reconnecting -> ConnectionState.Connecting
-            is KeeperStatus.Failed ->
-                if (it.reason is AdbFailure.NotPaired) ConnectionState.Unpaired else ConnectionState.Disconnected
+            is KeeperStatus.Failed -> if (s.reason is AdbFailure.NotPaired) ConnectionState.Unpaired else ConnectionState.Disconnected
         }
     }
 
@@ -90,13 +132,19 @@ class ConnectionKeeper(
         }
     }
 
-    /** Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. */
-    /** Callers queue behind one another, so the boot worker and Reconnect never overlap. Returns the new status. */
-    suspend fun reconnect(): KeeperStatus = lock.withLock {
+    /**
+     * Connects, then grants WRITE_SECURE_SETTINGS if that has not succeeded yet. Call again to retry. Callers queue
+     * behind one another, so the boot worker and Reconnect never overlap. Returns the new status. [prompt] lets the TV
+     * show its Allow prompt for an unknown key; background callers leave it off.
+     */
+    suspend fun reconnect(prompt: Boolean = false): KeeperStatus = lock.withLock { reconnectLocked(prompt) }
+
+    /** [reconnect] without taking [lock]: the caller already holds it. */
+    private suspend fun reconnectLocked(prompt: Boolean): KeeperStatus {
         val before = _status.value
         _status.value = KeeperStatus.Reconnecting
-        try {
-            connect()
+        val fresh = try {
+            connect(prompt)
         } catch (e: CancellationException) {
             // Never leave Connecting with nobody trying; before can itself be Connecting (app start, after a pause).
             _status.compareAndSet(KeeperStatus.Reconnecting, before.takeIf { it != KeeperStatus.Reconnecting } ?: KeeperStatus.Failed(AdbFailure.Timeout(), Fix.Retry))
@@ -104,11 +152,161 @@ class ConnectionKeeper(
         } catch (e: Exception) {
             val err = mapAdbError(e)
             _status.value = KeeperStatus.Failed(err, fixFor(err))
-            return@withLock _status.value
+            return _status.value
         }
+        // Once on every successful connect, so the flag never goes stale.
+        val quietElsewhere = takeQuietHandshake()
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
-        _status.value
+        // grant() can flip the status to Failed when the link drops: then nothing is stored or checked.
+        if (_status.value == KeeperStatus.Connected) {
+            when {
+                // A handshake this call made counts as prompted or quiet as asked for.
+                fresh -> onHandshake(prompt)
+                // A shell command opened the link by itself meanwhile: that handshake was quiet.
+                quietElsewhere -> onHandshake(false)
+            }
+        }
+        return _status.value
+    }
+
+    /**
+     * ADB debugging mode, after a new handshake. A quiet one proves the TV kept the key by itself, so [KeyCheck.Saved]
+     * is stored unless a result about restarts was stored in this same boot (then that result stands, for example after
+     * the app's process was restarted), and a running check is cancelled, so its later result can't overwrite that. A
+     * prompted one proves nothing about a restart, so the full check runs. An already open link proves nothing (it may
+     * come from an Allow-once), so this only runs after a handshake. A failed settings read or write never fails
+     * [reconnect].
+     */
+    private suspend fun onHandshake(prompt: Boolean) {
+        if (checkKey == null || tryOrNull { settings.values.first().legacyAdb } != true) return
+        if (prompt) {
+            startKeyCheck()
+        } else {
+            cancelKeyCheck()
+            tryOrNull { storeKeyCheck(::afterQuietHandshake) }
+        }
+    }
+
+    /**
+     * "Allow again" on the How to fix page (ADB debugging mode): lets the person answer the TV's prompt once more, for
+     * example to tick Always allow, then checks the key again. It never drops the main link, so a running compile
+     * carries on. With the link open, a second connection asks; with it down, this is the same prompted connect as Fix
+     * connection. Returns true when the TV let the app in; false when it didn't, or another Allow again is running.
+     */
+    suspend fun reallow(): Boolean {
+        if (!reallowing.compareAndSet(false, true)) return false
+        _lastAllow.value = null
+        try {
+            cancelKeyCheck() // a check from before this answer says nothing about it
+            val letIn = if (linkOpen()) {
+                tryOrNull { askSeparately() } == true
+            } else {
+                connectNowAndWait() == KeeperStatus.Connected
+            }
+            // A prompted handshake already started its own check: join it. Otherwise (second connection, or a link that
+            // someone else reopened meanwhile) start one, so the page never keeps an answer from before.
+            if (letIn) startKeyCheck()?.join()
+            _lastAllow.value = letIn
+            return letIn
+        } finally {
+            reallowing.value = false
+        }
+    }
+
+    /** Starts the key check unless one is running, and returns the running one; null without [checkKey]. */
+    private suspend fun startKeyCheck(): Job? {
+        val check = checkKey ?: return null
+        return checkLock.withLock {
+            keyCheckJob?.takeIf { it.isActive } ?: run {
+                // Lazy start: the completion handler is registered before the job can run, so an old job's completion
+                // (which only clears the flag for its own job) can't hide the new job's busy flag.
+                val job = scope.launch(start = CoroutineStart.LAZY) {
+                    // A failed check or settings write keeps the old result and must not crash the app.
+                    val found = tryOrNull { check() } ?: return@launch
+                    tryOrNull { storeKeyCheck { stored, _ -> afterPromptedCheck(stored, found) } }
+                }
+                synchronized(flagLock) {
+                    keyCheckJob = job
+                    checking.value = true
+                }
+                job.invokeOnCompletion { synchronized(flagLock) { if (keyCheckJob === job) checking.value = false } }
+                job.start()
+                job
+            }
+        }
+    }
+
+    /** Cancels a running key check and waits until it has stopped. */
+    private suspend fun cancelKeyCheck() {
+        checkLock.withLock { keyCheckJob?.cancelAndJoin() }
+    }
+
+    /**
+     * ReconnectWorker's run ended on a refusal ([last]) and every quiet try of it was refused: a key the TV had saved is
+     * no longer accepted, so [afterQuietRefusal] moves Saved to Forgotten, and a key saved again to ForgetsAtRestart
+     * only after a restart. Skipped once the app is connected again meanwhile (someone just allowed it).
+     */
+    suspend fun quietlyRefused(last: KeeperStatus) {
+        val failed = last as? KeeperStatus.Failed ?: return
+        if (checkKey == null || failed.reason !is AdbFailure.NotAuthorized) return
+        if (_status.value == KeeperStatus.Connected || !settings.values.first().legacyAdb) return
+        storeKeyCheck(::afterQuietRefusal)
+    }
+
+    /**
+     * True when the TV is known not to let this app's key back in by itself (legacy ADB debugging mode, result found
+     * for this key): it never saved it, or it forgets it at every restart. A quiet refusal is then the expected answer,
+     * so retrying it only keeps Home on Connecting; one quiet try still runs, and its success stores Saved.
+     * Forgotten stored in this boot counts too: a reconnect run in this boot was already refused at every try (the
+     * early-boot grace was used), and retrying again only keeps Home on Connecting for about 75 s without Fix connection,
+     * so later runs in this boot make one quiet try and stop. A Forgotten from an earlier boot still gets the retries
+     * after the next restart.
+     */
+    suspend fun keyKnownRefused(): Boolean {
+        val s = settings.values.first()
+        if (!s.legacyAdb) return false
+        val check = s.legacyKeyCheck
+        val known = check == KeyCheck.AllowedOnce || check == KeyCheck.NotSaved || check == KeyCheck.ForgetsAtRestart ||
+            (check == KeyCheck.Forgotten && s.legacyKeyCheckBoot != null && s.legacyKeyCheckBoot == bootId())
+        // Cheap fields first: keyId() may load or generate the RSA key, so only ask it once the result could match.
+        return known && s.legacyKeyCheckKey == keyId()
+    }
+
+    /**
+     * Drops a stored result found for another key (for example one an older version regenerated): it says nothing
+     * about this one.
+     */
+    suspend fun forgetStaleKeyCheck() {
+        // Nothing stored, nothing to compare: keyId() may load or generate the RSA key, so skip it then.
+        if (settings.values.first().legacyKeyCheck == KeyCheck.Unknown) return
+        val id = keyId()
+        // Decided inside the transform: a result stored meanwhile for this key must not be wiped.
+        settings.update {
+            if (it.legacyKeyCheck != KeyCheck.Unknown && it.legacyKeyCheckKey != id) {
+                it.copy(legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null, legacyKeyCheckBoot = null)
+            } else {
+                it
+            }
+        }
+    }
+
+    /**
+     * Stores [next] of the result kept for this key (Unknown when nothing, or a result for another key, is stored) and
+     * whether that result is from this boot, together with this boot. Decided inside the transform, so concurrent
+     * writers each build on the latest result; never while ADB debugging mode is off.
+     */
+    private suspend fun storeKeyCheck(next: (stored: KeyCheck, sameBoot: Boolean) -> KeyCheck) {
+        val id = keyId()
+        val boot = bootId()
+        settings.update {
+            if (!it.legacyAdb) return@update it
+            val mine = it.legacyKeyCheckKey == id
+            val sameBoot = boot != null && mine && it.legacyKeyCheckBoot == boot
+            val k = next(if (mine) it.legacyKeyCheck else KeyCheck.Unknown, sameBoot)
+            if (k == it.legacyKeyCheck && mine && boot == it.legacyKeyCheckBoot) it
+            else it.copy(legacyKeyCheck = k, legacyKeyCheckKey = id, legacyKeyCheckBoot = boot)
+        }
     }
 
     private suspend fun grant() {

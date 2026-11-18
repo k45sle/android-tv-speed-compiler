@@ -21,6 +21,8 @@ class FakeSetupEnv(
     override fun openDeveloperOptions() = call("openDeveloperOptions")
     override fun startPairing() = call("startPairing")
     override fun stopPairing() = call("stopPairing")
-    override fun reconnect() = call("reconnect")
+    /** Answer for the pending connect(): complete it with null (connected) or a failure; a fresh one is made per call. */
+    var answer = kotlinx.coroutines.CompletableDeferred<Throwable?>()
+    override suspend fun connect(): Throwable? { call("connect"); val a = answer; return a.await().also { if (answer === a) answer = kotlinx.coroutines.CompletableDeferred() } }
     override suspend fun recentApps() = apps
 }

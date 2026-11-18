@@ -17,6 +17,7 @@ import dev.speedcompiler.tv.ui.home.ActivityScreen
 import dev.speedcompiler.tv.ui.home.HomeScreen
 import dev.speedcompiler.tv.ui.settings.SettingsScreen
 import dev.speedcompiler.tv.ui.setup.QuickRepairScreen
+import dev.speedcompiler.tv.ui.setup.KeyHelpScreen
 import dev.speedcompiler.tv.ui.setup.ReconnectScreen
 import dev.speedcompiler.tv.ui.setup.SetupScreen
 import dev.speedcompiler.tv.ui.working.ArcadeScreen
@@ -33,6 +34,7 @@ object Routes {
     const val Activity = "activity"
     const val Settings = "settings"
     const val Reconnect = "reconnect"
+    const val KeyHelp = "keyhelp"
     const val QuickRepair = "repair"
     const val Diagnostics = "diagnostics"
     const val Help = "help"
@@ -61,6 +63,7 @@ fun AppNavHost() {
         composable(Routes.Activity) { ActivityScreen(back) }
         composable(Routes.Settings) { SettingsScreen(go, back) }
         composable(Routes.Reconnect) { ReconnectScreen(back) }
+        composable(Routes.KeyHelp) { KeyHelpScreen(back) }
         composable(Routes.QuickRepair) { QuickRepairScreen(back) }
         composable(Routes.Diagnostics) { DiagnosticsScreen(back) }
         composable(Routes.Help) { HelpScreen(go, back) }

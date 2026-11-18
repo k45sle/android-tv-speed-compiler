@@ -22,6 +22,7 @@ import org.robolectric.annotation.ConscryptMode
 
 private val NOT_PAIRED = KeeperStatus.Failed(AdbFailure.NotPaired(), Fix.QuickRepair)
 private val TIMEOUT = KeeperStatus.Failed(AdbFailure.Timeout(), Fix.Retry)
+private val NOT_ALLOWED = KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt)
 
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
@@ -29,7 +30,13 @@ class ReconnectTest {
     private val log = mutableListOf<String>()
     private val pauses = mutableListOf<Long>()
 
-    private suspend fun run(network: Boolean, vararg results: KeeperStatus, turnOnWifiAdb: Boolean = true) {
+    private suspend fun run(
+        network: Boolean,
+        vararg results: KeeperStatus,
+        turnOnWifiAdb: Boolean = true,
+        retryNotAllowed: Boolean = false,
+        onGaveUp: suspend (KeeperStatus) -> Unit = {},
+    ) {
         val queue = results.toMutableList()
         reconnectWithRetry(
             turnOnWifiAdb = turnOnWifiAdb,
@@ -38,6 +45,8 @@ class ReconnectTest {
             reconnect = { log += "connect"; queue.removeAt(0) },
             pause = { pauses += it },
             backoff = listOf(1L, 2L, 3L),
+            retryNotAllowed = retryNotAllowed,
+            onGaveUp = onGaveUp,
         )
     }
 
@@ -68,10 +77,79 @@ class ReconnectTest {
         assertEquals(listOf(1L, 2L, 3L), pauses)
     }
 
+    @Test fun gaveUpOnceWithLastFailureAfterAllTries() = runTest {
+        val attempts = List(4) { KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt) }
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, *attempts.toTypedArray(), retryNotAllowed = true, onGaveUp = { gaveUp += it })
+        assertEquals(4, log.count { it == "connect" })
+        assertEquals(listOf(attempts.last()), gaveUp)
+    }
+
+    @Test fun noGaveUpWhenATryConnects() = runTest {
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, TIMEOUT, KeeperStatus.Connected, onGaveUp = { gaveUp += it })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
+    @Test fun onGaveUpNeedsEveryTryRefused() = runTest {
+        // The first try's port was closed (a timeout says nothing about the key), so a refusal at the end
+        // must not be read as "the TV dropped the saved key".
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(
+            true,
+            TIMEOUT,
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt),
+            retryNotAllowed = true,
+            onGaveUp = { gaveUp += it },
+        )
+        assertEquals(4, log.count { it == "connect" })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
+    @Test fun noGaveUpOnQuickRepairEarlyStop() = runTest {
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, NOT_PAIRED, retryNotAllowed = true, onGaveUp = { gaveUp += it })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
     @Test fun stopsEarlyWhenNotPaired() = runTest {
         run(true, NOT_PAIRED)
         assertEquals(1, log.count { it == "connect" })
         assertEquals(emptyList<Long>(), pauses)
+    }
+
+    @Test fun stopsEarlyWhenNotAllowed() = runTest {
+        run(true, NOT_ALLOWED)
+        assertEquals(1, log.count { it == "connect" })
+    }
+
+    @Test fun refusalWithoutRetriesIsFinal() = runTest {
+        // Not retried (for example well after boot), so the first refusal ends the run and says the key was dropped.
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, NOT_ALLOWED, onGaveUp = { gaveUp += it })
+        assertEquals(1, log.count { it == "connect" })
+        assertEquals(listOf(NOT_ALLOWED), gaveUp)
+    }
+
+    @Test fun noGaveUpWhenAnEarlierTryTimedOut() = runTest {
+        // A timeout says nothing about the key, so the closing refusal is not read as "the TV dropped it".
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, TIMEOUT, NOT_ALLOWED, onGaveUp = { gaveUp += it })
+        assertEquals(2, log.count { it == "connect" })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
+    @Test fun legacyRetriesARefusedKey() = runTest {
+        run(true, NOT_ALLOWED, NOT_ALLOWED, KeeperStatus.Connected, retryNotAllowed = true)
+        assertEquals(3, log.count { it == "connect" })
+        assertEquals(listOf(1L, 2L), pauses)
+    }
+
+    @Test fun legacyStillStopsEarlyWhenNotPaired() = runTest {
+        run(true, NOT_PAIRED, retryNotAllowed = true)
+        assertEquals(1, log.count { it == "connect" })
     }
 
     @Test fun triesOnceEvenWithoutNetwork() = runTest {

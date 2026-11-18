@@ -60,6 +60,33 @@ class SettingsTest {
     }
 
     @Test
+    fun legacyKeyCheckDefaultsToUnknownAndPersists() = runBlocking {
+        val file = tmp.newFile("lk.preferences_pb").also { it.delete() }
+        val settings = DataStoreSettings(PreferenceDataStoreFactory.create { file })
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
+        settings.update { it.copy(legacyKeyCheck = dev.speedcompiler.tv.adb.KeyCheck.NotSaved) }
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        settings.update { it.copy(legacyKeyCheck = dev.speedcompiler.tv.adb.KeyCheck.Saved) }
+        assertEquals(dev.speedcompiler.tv.adb.KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun legacyKeyCheckKeyRoundTripsAndNullRemovesIt() = runBlocking {
+        val file = tmp.newFile("lkk.preferences_pb").also { it.delete() }
+        val settings = DataStoreSettings(PreferenceDataStoreFactory.create { file })
+        assertEquals(null, settings.values.first().legacyKeyCheckKey)
+        settings.update { it.copy(legacyKeyCheckKey = "abc123") }
+        assertEquals("abc123", settings.values.first().legacyKeyCheckKey)
+        settings.update { it.copy(legacyKeyCheckKey = null) }
+        assertEquals(null, settings.values.first().legacyKeyCheckKey)
+        assertEquals(null, settings.values.first().legacyKeyCheckBoot)
+        settings.update { it.copy(legacyKeyCheckBoot = 42) }
+        assertEquals(42, settings.values.first().legacyKeyCheckBoot)
+        settings.update { it.copy(legacyKeyCheckBoot = null) }
+        assertEquals(null, settings.values.first().legacyKeyCheckBoot)
+    }
+
+    @Test
     fun concurrentUpdatesKeepEveryField() = runBlocking {
         val store = PreferenceDataStoreFactory.create { tmp.newFile("c.preferences_pb").also { it.delete() } }
         val settings = DataStoreSettings(store)

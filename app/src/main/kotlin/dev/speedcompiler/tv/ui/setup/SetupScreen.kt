@@ -43,6 +43,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.theme.SelectRow
 import dev.speedcompiler.tv.theme.Cartridge
 import dev.speedcompiler.tv.ui.apps.AppBanner
@@ -91,6 +93,8 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
@@ -198,25 +202,25 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
         }
         4 -> PairStep(deps, helpOffer, onPaired = ::advance, onFail = ::fail)
         5 -> {
-            var sawConnecting by remember { mutableStateOf(false) }
-            var denied by remember { mutableStateOf(false) }
-            var stalled by remember { mutableStateOf(false) }
+            var failure by remember { mutableStateOf<Throwable?>(null) }
+            var trying by remember { mutableStateOf(false) }
             var attempt by remember { mutableIntStateOf(0) }
-            val reason by deps.reason.collectAsState(null)
-            LaunchedEffect(Unit) { if (legacy) env.reconnect() } // the port just opened; nothing else asks to connect
-            LaunchedEffect(conn) {
-                if (conn == ConnectionState.Connecting) { sawConnecting = true; stalled = false }
-                else if ((conn == ConnectionState.Disconnected || conn == ConnectionState.Unpaired) && sawConnecting) { sawConnecting = false; denied = true; fail() }
+            val res = LocalResources.current
+            // This step's own prompted try (or the one already running), judged by its own outcome: a background try
+            // failing meanwhile says nothing about it, and in ADB debugging mode it waits as long as the TV's prompt does.
+            LaunchedEffect(attempt) {
+                trying = true
+                failure = env.connect()
+                trying = false
+                if (failure != null) fail() else if (step == 5) advance() // its own try connected; don't wait for the shared status, which a later drop could flip first
             }
-            val lifecycle = LocalLifecycleOwner.current.lifecycle
-            LaunchedEffect(attempt) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { delay(NoProgressMs); stalled = true; fail() } }
-            val problem = if (denied) reason ?: stringResource(R.string.setup_reason_not_allowed) else if (stalled) stringResource(R.string.setup_no_answer) else null
+            val problem = failure?.let { reasonText(res, it) }
             Page(5, stringResource(R.string.setup_allow_title)) {
                 Body(stringResource(R.string.setup_allow_body))
                 if (problem != null) {
                     Body(problem)
-                    PrimaryButton(stringResource(R.string.common_retry)) { env.reconnect(); denied = false; stalled = false; sawConnecting = false; attempt++ }
-                } else StatusPill(stringResource(if (conn == ConnectionState.Connecting) R.string.setup_connecting else R.string.setup_waiting_for_you), Tone.Info)
+                    PrimaryButton(stringResource(R.string.common_retry)) { failure = null; attempt++ }
+                } else StatusPill(stringResource(if (trying) R.string.setup_connecting else R.string.setup_waiting_for_you), Tone.Info)
                 helpOffer?.let { ShowMeHow(it, grab = problem == null) }
                 AutoAdvance({ conn == ConnectionState.Connected }, ::advance)
             }
@@ -253,22 +257,33 @@ fun QuickRepairScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps())
 @Composable
 fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     val env = deps.env
-    var waiting by remember { mutableStateOf(false) }
+    var connecting by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<Throwable?>(null) }
     var stuck by remember { mutableStateOf(false) }
+    var left by remember { mutableStateOf(false) }
     var help by remember { mutableStateOf(false) }
     var repair by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
-    val reason by deps.reason.collectAsState(null)
     val legacy by deps.legacy.collectAsState(false)
     var portOpen by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val res = LocalResources.current
+    val leave = { if (!left) { left = true; onBack() } }
     LaunchedEffect(attempt, legacy) {
+        failure = null
         while (!(if (legacy) env.legacyPortOpen().also { portOpen = it } else env.wirelessDebuggingOn())) delay(PollMs)
-        waiting = true
-        if (deps.connection.first() != ConnectionState.Connected) env.reconnect()
-        deps.connection.first { it == ConnectionState.Connected }
-        onBack() // also after "stuck": a late connect still finishes
+        if (deps.connection.first() == ConnectionState.Connected) return@LaunchedEffect leave()
+        connecting = true
+        // A cancelled effect (for example the legacy placeholder changing) must not leave the page hiding its error and button.
+        try {
+            failure = env.connect() // its own try; in ADB debugging mode it waits as long as the TV's prompt does
+        } finally {
+            connecting = false
+        }
+        if (failure == null) leave()
     }
+    // A connect from elsewhere (the boot worker) also finishes, also after a failure or the timeout.
+    LaunchedEffect(Unit) { deps.connection.first { it == ConnectionState.Connected }; leave() }
     // Only time spent in front counts; the user may be in Settings.
     LaunchedEffect(attempt) {
         stuck = false
@@ -278,13 +293,13 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
     if (help) return CompositionLocalProvider(LocalPageBack provides { help = false }) { HelpPage(3, legacy) { help = false } }
     CompositionLocalProvider(LocalPageBack provides onBack) {
         Page(null, stringResource(R.string.setup_reconnect_title)) {
-            if (stuck) {
+            if (failure != null || (stuck && !connecting)) {
                 val fallback = when {
                     legacy -> if (portOpen) R.string.setup_reason_timeout else R.string.setup_reason_adb_off
                     env.wirelessDebuggingOn() -> R.string.setup_reason_timeout
                     else -> R.string.setup_reason_debugging_off
                 }
-                Body(reason ?: stringResource(fallback))
+                Body(failure?.let { reasonText(res, it) } ?: stringResource(fallback))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                     PrimaryButton(stringResource(R.string.setup_try_again)) { attempt++ }
                     if (!legacy) Button(onClick = { repair = true }) { Text(stringResource(R.string.setup_pair_again).upper()) } // plain ADB has no pairing
@@ -292,8 +307,62 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
                 }
             } else {
                 Body(stringResource(if (legacy) R.string.setup_reconnect_body_adb else R.string.setup_reconnect_body))
-                if (waiting) StatusPill(stringResource(R.string.setup_connecting), Tone.Info)
+                if (connecting) StatusPill(stringResource(R.string.setup_connecting), Tone.Info)
                 else PrimaryButton(stringResource(R.string.setup_open_developer_options), onClick = debounced(env::openDeveloperOptions))
+            }
+        }
+    }
+}
+
+/** What [KeyHelpScreen] needs; plain so tests can drive it. */
+class KeyHelpDeps(
+    val check: Flow<KeyCheck>,
+    /** A key check or a reallow is running; background retries do not count. */
+    val busy: Flow<Boolean>,
+    val allowAgain: () -> Unit,
+    val openDeveloperOptions: () -> Unit,
+    /** How the last Allow again ended (false = the TV didn't let the app in); null before any. */
+    val lastAllow: Flow<Boolean?> = flowOf(null),
+)
+
+/** ADB debugging mode: says whether the TV kept Always allow, and the steps to make it ask once more. */
+@Composable
+fun KeyHelpScreen(onBack: () -> Unit, deps: KeyHelpDeps = rememberKeyHelpDeps()) {
+    val check by deps.check.collectAsState(KeyCheck.Unknown)
+    val busy by deps.busy.collectAsState(false)
+    val lastAllow by deps.lastAllow.collectAsState(null)
+    CompositionLocalProvider(LocalPageBack provides onBack) {
+        Page(null, stringResource(R.string.keyhelp_title), side = {
+            // Step 1 happens in Developer options, so its button comes first.
+            if (check == KeyCheck.NotSaved || check == KeyCheck.Forgotten) {
+                Button(onClick = deps.openDeveloperOptions) { Text(stringResource(R.string.setup_open_developer_options).upper()) }
+            }
+            if (busy) StatusPill(stringResource(R.string.keyhelp_checking), Tone.Info)
+            else PrimaryButton(stringResource(R.string.keyhelp_allow_again), onClick = debounced(deps.allowAgain))
+        }) {
+            if (!busy && lastAllow == false) Body(stringResource(R.string.keyhelp_not_let_in))
+            when (check) {
+                KeyCheck.Saved -> Body(stringResource(R.string.keyhelp_saved))
+                KeyCheck.Unknown -> Body(stringResource(R.string.keyhelp_unknown))
+                KeyCheck.AllowedOnce -> {
+                    Body(stringResource(R.string.keyhelp_allowed_once))
+                    Body(stringResource(R.string.keyhelp_step_allow_again), 0)
+                    Body(stringResource(R.string.keyhelp_step_tick), 1)
+                }
+                KeyCheck.NotSaved -> {
+                    Body(stringResource(R.string.keyhelp_not_saved))
+                    Body(stringResource(R.string.keyhelp_step_revoke), 0)
+                    Body(stringResource(R.string.keyhelp_step_allow_tick), 1)
+                    Body(stringResource(R.string.keyhelp_if_not_saved))
+                }
+                KeyCheck.Forgotten -> {
+                    Body(stringResource(R.string.keyhelp_forgotten))
+                    Body(stringResource(R.string.keyhelp_step_revoke), 0)
+                    Body(stringResource(R.string.keyhelp_step_allow_tick), 1)
+                    Body(stringResource(R.string.keyhelp_if_forgotten))
+                }
+                KeyCheck.SavedAgain -> Body(stringResource(R.string.keyhelp_saved_again))
+                KeyCheck.ForgetsAtRestart -> Body(stringResource(R.string.keyhelp_forgets_at_restart))
             }
         }
     }

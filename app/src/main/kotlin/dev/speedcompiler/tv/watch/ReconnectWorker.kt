@@ -17,6 +17,7 @@ import androidx.work.WorkerParameters
 import dev.speedcompiler.tv.SpeedApp
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.adb.tryOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -24,6 +25,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 const val RECONNECT_WORK = "reconnect"
 private const val NETWORK_WAIT_MS = 60_000L
+private const val AFTER_BOOT_MS = 10 * 60_000L
 private val BACKOFF_MS = listOf(5_000L, 10_000L, 20_000L, 40_000L)
 
 /** The one entry point for boot, app open and the periodic job. Does nothing if a reconnect is already queued. */
@@ -37,6 +39,12 @@ fun enqueueReconnect(context: Context) {
 /**
  * Waits for the network, then tries [reconnect] up to `backoff.size + 1` times, pausing between tries.
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
+ * With [retryNotAllowed] (the legacy port, only just after a restart) a refused key is retried too: these tries never
+ * show the TV's prompt, and right after boot the TV may refuse a key it accepts a few seconds later. It is left off
+ * later, and when the check knows the TV won't keep the key, or a run in this boot was already refused at every try,
+ * so those runs stop at once and Home offers Fix connection.
+ * Calls [onGaveUp] with the last status when the run ends on a refusal ([Fix.AllowPrompt]) and every try of it was
+ * refused: after the last retry, or at once when refusals aren't retried (for example more than 10 minutes after boot).
  * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).
  */
 suspend fun reconnectWithRetry(
@@ -46,15 +54,27 @@ suspend fun reconnectWithRetry(
     reconnect: suspend () -> KeeperStatus,
     pause: suspend (Long) -> Unit = { delay(it) },
     backoff: List<Long> = BACKOFF_MS,
+    retryNotAllowed: Boolean = false,
+    onGaveUp: suspend (KeeperStatus) -> Unit = {},
 ) {
     waitForNetwork()
     if (turnOnWifiAdb) enableWifiAdb()
+    var last: KeeperStatus = KeeperStatus.Reconnecting
+    var allRefused = true
     for (i in 0..backoff.size) {
         val s = reconnect()
+        last = s
         if (s == KeeperStatus.Connected) return
-        if (s is KeeperStatus.Failed && (s.fix == Fix.QuickRepair || s.fix == Fix.AllowPrompt)) return
+        if (s !is KeeperStatus.Failed || s.fix != Fix.AllowPrompt) allRefused = false
+        if (s is KeeperStatus.Failed && s.fix == Fix.QuickRepair) return
+        if (s is KeeperStatus.Failed && s.fix == Fix.AllowPrompt && !retryNotAllowed) {
+            // Not retried, so this refusal is final, like the last one of a retry run.
+            if (allRefused) onGaveUp(s)
+            return
+        }
         if (i < backoff.size) pause(backoff[i])
     }
+    if (allRefused) onGaveUp(last)
 }
 
 /**
@@ -79,6 +99,9 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             enableWifiAdb = { enableWifiAdb(applicationContext, s.legacyAdb) },
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
+            // the TV may refuse a trusted key for a few seconds after boot; later, a refusal is final and Home should offer Fix connection at once
+            retryNotAllowed = s.legacyAdb && android.os.SystemClock.elapsedRealtime() < AFTER_BOOT_MS && tryOrNull { graph.connectionKeeper.keyKnownRefused() } != true,
+            onGaveUp = { last -> tryOrNull { graph.connectionKeeper.quietlyRefused(last) } },
         )
         return Result.success()
     }

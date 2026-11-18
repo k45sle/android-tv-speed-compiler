@@ -1,6 +1,5 @@
 package dev.speedcompiler.tv.ui.setup
 
-import androidx.compose.ui.platform.LocalResources
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -11,10 +10,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.SpeedApp
-import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.KeeperStatus
+import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.adb.LEGACY_HOST
 import dev.speedcompiler.tv.adb.LEGACY_PORT
 import dev.speedcompiler.tv.ui.apps.AppInfo
@@ -45,8 +45,11 @@ interface SetupEnv {
     fun openDeveloperOptions()
     fun startPairing()
     fun stopPairing()
-    /** Asks the connection layer to connect now (wireless debugging just came on). */
-    fun reconnect()
+    /**
+     * Asks the connection layer to connect now, allowing the TV's prompt, and waits for that try (or the prompted one
+     * already running): null once connected, otherwise why it failed.
+     */
+    suspend fun connect(): Throwable?
     /** Launchable apps, most recently updated first. */
     suspend fun recentApps(): List<SetupApp>
 }
@@ -55,8 +58,6 @@ class SetupDeps(
     val env: SetupEnv,
     val connection: Flow<ConnectionState>,
     val pairingUrl: Flow<String?>,
-    /** Why the last connect failed, in words for the user; null when it did not. */
-    val reason: Flow<String?> = flowOf(null),
     /** Whether this app already holds a pairing the TV trusts; a fresh install does not. */
     val holdsPairing: () -> Boolean = { true },
     /** Called when the user finishes: saves the picks and starts the run. */
@@ -66,7 +67,7 @@ class SetupDeps(
     val setLegacy: suspend (Boolean) -> Unit = {},
 )
 
-class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
+class AndroidSetupEnv(private val context: Context, private val keeper: ConnectionKeeper) : SetupEnv {
     private fun global(name: String) = Settings.Global.getInt(context.contentResolver, name, 0) == 1
 
     override fun developerOptionsOn() = global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)
@@ -81,17 +82,8 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
         }
     }
 
-    override fun openSettings() = launch(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
-    override fun openDeveloperOptions() =
-        launch(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)
-
-    private fun launch(vararg actions: String) {
-        for (a in actions) try {
-            context.startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
-        } catch (_: ActivityNotFoundException) {
-        }
-    }
+    override fun openSettings() = launchFirst(context, Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
+    override fun openDeveloperOptions() = openDeveloperOptions(context)
 
     override fun startPairing() {
         context.startForegroundService(Intent(context, PairingService::class.java))
@@ -101,7 +93,7 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
         context.stopService(Intent(context, PairingService::class.java))
     }
 
-    override fun reconnect() = monitor.connectNow()
+    override suspend fun connect(): Throwable? = (keeper.connectNowAndWait() as? KeeperStatus.Failed)?.reason
 
     override suspend fun recentApps(): List<SetupApp> {
         val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
@@ -109,6 +101,20 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
             context.packageManager.queryIntentActivities(launch, 0).map { it.activityInfo.packageName }.distinct()
         }
         return loadUserApps(context, packages).sortedByDescending { it.updatedAt }
+    }
+}
+
+/** Opens Developer options, or Settings where that screen doesn't exist. */
+fun openDeveloperOptions(context: Context) {
+    launchFirst(context, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)
+}
+
+/** Starts the first of [actions] this TV has a screen for. */
+private fun launchFirst(context: Context, vararg actions: String) {
+    for (a in actions) try {
+        context.startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return
+    } catch (_: ActivityNotFoundException) {
     }
 }
 
@@ -126,15 +132,13 @@ fun reasonText(res: Resources, e: Throwable): String = res.getString(
 @Composable
 fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
-    val res = LocalResources.current
-    return remember(res) {
+    return remember {
         val graph = (context.applicationContext as SpeedApp).graph
         val prefs = context.applicationContext.getSharedPreferences("setup", Context.MODE_PRIVATE)
         SetupDeps(
-            AndroidSetupEnv(context.applicationContext, graph.connectionMonitor),
+            AndroidSetupEnv(context.applicationContext, graph.connectionKeeper),
             graph.connectionMonitor.state,
             PairingService.url,
-            graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(res, f.reason) } },
             holdsPairing = { prefs.getBoolean("paired", false) }, // kept by AppGraph
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
@@ -145,7 +149,35 @@ fun rememberSetupDeps(): SetupDeps {
                 }
             },
             legacy = graph.settings.values.map { it.legacyAdb },
-            setLegacy = { on -> graph.settings.update { it.copy(legacyAdb = on) } },
+            setLegacy = { on ->
+                var changed = false
+                // Toggling the debugging mode invalidates the key check, so the next check starts from Unknown.
+                graph.settings.update {
+                    if (on != it.legacyAdb) {
+                        changed = true
+                        it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null, legacyKeyCheckBoot = null)
+                    } else {
+                        it
+                    }
+                }
+                // Refresh the status through the new port (LibAdb drops a link through the other one); quiet, so it can't race Setup's own prompt.
+                if (changed) graph.appScope.launch { graph.connectionKeeper.reconnect() }
+            },
+        )
+    }
+}
+
+@Composable
+fun rememberKeyHelpDeps(): KeyHelpDeps {
+    val context = LocalContext.current
+    return remember(context) {
+        val graph = (context.applicationContext as SpeedApp).graph
+        KeyHelpDeps(
+            check = graph.settings.values.map { it.legacyKeyCheck },
+            busy = graph.connectionKeeper.keyHelpBusy,
+            allowAgain = { graph.appScope.launch { graph.connectionKeeper.reallow() } },
+            openDeveloperOptions = { openDeveloperOptions(context.applicationContext) },
+            lastAllow = graph.connectionKeeper.lastAllow,
         )
     }
 }

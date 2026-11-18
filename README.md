@@ -188,8 +188,8 @@ If setup gets stuck, these are the usual causes.
 | The phone can't open the pairing page | Keep the phone on the same Wi-Fi as the TV. If the QR code will not scan, type the short address shown on the TV into the phone's browser. |
 | The TV asks to allow debugging | Choose Always allow from this computer, then OK. If you turned off Keep this TV trusting the app in Settings, Android can ask again after a while. |
 | Wireless debugging is off | It can switch off after a network change. With Keep Wireless debugging on (the default), the app turns it back on as soon as you open it, after the TV restarts, or when an optimization or weekly check loses its connection. If you turned that setting off, turn Wireless debugging on again in Developer options and the app reconnects by itself. |
-| The TV forgot this app | Open the app and choose Fix connection. |
-| The TV asks to allow debugging after every restart (ADB debugging) | Some TVs forget Always allow when they fully restart. Choose Allow again and the app carries on. Standby from the remote doesn't cause this. |
+| The TV forgot this app | Open the app and choose Fix connection. If this happened after every restart on Android 11 or 12, update the app: up to 1.1.0 it made a new key each time it started. |
+| The TV asks to allow debugging again after a restart (ADB debugging) | Update the app. Up to 1.1.0, on Android 11 and 12, the app made a new key each time it started, so after a full restart the TV saw a new device. After updating, allow it once more with Always allow ticked. If Home then shows a line about Always allow, How to fix next to it shows the steps. After a restart the app never shows the TV's prompt by itself; if Home says Disconnected, press Fix connection. See [Why the TV asks again](#why-the-tv-asks-again-after-a-restart). |
 
 Inside the app, Help lists the same fixes, and Settings > Export diagnostics makes a file you can attach to an issue.
 
@@ -205,7 +205,7 @@ It connects through Wireless debugging in Developer options. Some TVs don't have
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
 | Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
-| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging; after a full restart the TV asks to allow debugging again (user report, see the [device matrix](docs/device-matrix.md)) |
+| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging. Up to 1.1.0 the TV asked to allow debugging again after every full restart; the likely cause is fixed in the next version (user report, see the [device matrix](docs/device-matrix.md) and [Why the TV asks again](#why-the-tv-asks-again-after-a-restart)) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -219,13 +219,13 @@ If you try it on a real TV or streaming box, please fill in the [Device report f
 It can make the apps you pick start or run more smoothly. It does not touch system apps or the TV's software, and some apps show no difference.
 
 **What exactly does it change on the TV?**
-For each app you pick, it asks the app to install the usage profile it ships with (a broadcast to the app's own profile installer, if it has one) and then runs `cmd package compile -m speed-profile -f` on that app. It uses `-m speed` instead when you choose Smoother mode or Full compile, or when the app still has no usage profile 2 days after an install or update. Reset runs `cmd package compile -r install -f`, which puts the app back on the TV's own compile choice. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging (or ADB debugging) back on when it finds it off, and it stops Android from forgetting that you allowed debugging. To change those settings it grants itself Android's `WRITE_SECURE_SETTINGS` permission. It also reads some state without changing it: whether the screen is on, what is playing, which app is in front, and that app's frame counters. Nothing else.
+For each app you pick, it asks the app to install the usage profile it ships with (a broadcast to the app's own profile installer, if it has one) and then runs `cmd package compile -m speed-profile -f` on that app. It uses `-m speed` instead when you choose Smoother mode or Full compile, or when the app still has no usage profile 2 days after an install or update. Reset runs `cmd package compile -r install -f`, which puts the app back on the TV's own compile choice. Through the same connection it changes two settings so it keeps working on its own: it turns Wireless debugging (or ADB debugging) back on when it finds it off, and it stops Android from forgetting that you allowed debugging. To change those settings it grants itself Android's `WRITE_SECURE_SETTINGS` permission. It also reads some state without changing it: whether the screen is on, what is playing, which app is in front, and that app's frame counters. In ADB debugging mode it also checks whether the TV saved Always allow: it connects a second time without asking and reads `dumpsys adb`. Nothing else.
 
 **Why does it need Developer options?**
 Only the debugging connection can ask Android to compile another app. Speed Compile connects to Wireless debugging, or ADB debugging, on the TV itself. The two settings above are on by default:
 
 - Keep Wireless debugging on: each time the app reconnects (after a restart, when you open the app, or when an optimization or weekly check loses its connection), it turns Wireless debugging back on if it is off, even if you switched it off yourself. In ADB debugging mode the setting is called Keep ADB debugging on and does the same for ADB debugging.
-- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again. Some TVs in ADB debugging mode still ask after a full restart (see Setup help).
+- Keep this TV trusting the app: Android normally forgets that you allowed debugging after a while. This stops it from forgetting, so the TV doesn't ask again. In ADB debugging mode some TVs don't save Always allow at all; the app tells you when that happens (see Setup help).
 
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
@@ -274,6 +274,14 @@ README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitT
 `tools/demo.sh` records the README clips and writes their GIFs and posters into `docs/media`, and the MP4s outside the repo. See the script for how to attach the MP4s to a release.
 
 </details>
+
+### Why the TV asks again after a restart
+
+Up to 1.1.0, on Android 11 and 12, Speed Compile made a new ADB key each time it started. It keeps its key in its own storage, but Android 11 and 12 hand the saved key back without some optional parts (the RSA CRT values, which signing doesn't need), and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after a full restart, when the app starts again, the TV asked to allow debugging again, and with Wireless debugging the app had to be paired again. Standby keeps the app running, so it kept its key. The Android 11 and 12 emulators show this; Android 13 and 14 don't. The next version rebuilds the full key from the saved file, so the key stays the same. If the file can't be read at all, the app keeps it as adb.key.bad and logs that before it makes a new key.
+
+The TV also has to save the key when you choose Always allow. Android 11 and 12 save it by adding a line to a file and only note a failed write in their log. On the Android 12 TV emulator that write failed until Revoke USB debugging authorizations made Android write a fresh file. So right after you allow the app, it checks whether the TV saved it, and Home tells you if it didn't.
+
+A TV could also drop a saved key when it restarts. Then Home says the TV stopped accepting the app, and Fix connection lets you allow it again. If it drops the key again at the next restart, Home says this TV forgets the app at every full restart, so you know to choose Fix connection after each one. Allow again on the How to fix page asks the TV through a second connection, so an optimization that is running carries on.
 
 ## Planned
 
