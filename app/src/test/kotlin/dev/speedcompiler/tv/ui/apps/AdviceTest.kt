@@ -82,6 +82,13 @@ class AdviceTest : ComposeTestBase() {
         assertEquals(Advice.TrySmoother, advice(listOf(FrameStat("a.app", "f", "speed-profile", 4000, 1520, "later", 198, 0, 1310))))
     }
 
+    @Test fun rowsFromBeforeCausesWereStoredDoNotMakeAnAppDrawingBound() {
+        // A schema-4 row after migration: many slow frames, no causes, no duration. The new rows put 44% of slow frames on the UI thread.
+        val old = FrameStat("a.app", "f", "speed-profile", 20_000, 4_000, "later")
+        val new = caused("speed-profile", 4000, 20, ui = 352, draw = 448)
+        assertEquals(Advice.MostlySmooth(20), advice(listOf(old, new)))
+    }
+
     @Test fun measuringUntilTheCurrentFilterHasEnoughFrames() {
         assertEquals(Advice.Measuring, advice(listOf(stat("speed-profile", 2999, 90))))
         assertEquals(Advice.Measuring, advice())

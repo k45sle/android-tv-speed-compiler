@@ -38,7 +38,9 @@ private fun slowPercent(stats: List<FrameStat>, filter: String): Double? {
 
 /** True when the stutter of [filter] is mostly not the UI thread and the app was not busy compiling at startup. */
 private fun drawingBound(stats: List<FrameStat>, filter: String): Boolean {
-    val rows = stats.filter { it.filter == filter }
+    // Only rows the sampler wrote with cause counts: rows from before schema 5 have slow frames but no causes and no duration,
+    // and would make every app look drawing-bound.
+    val rows = stats.filter { it.filter == filter && it.durationMs > 0 }
     val janky = rows.sumOf { it.janky }
     // No cause counts at all (a TV that does not print them) says nothing about where the stutter is.
     if (rows.sumOf { it.slowUi + it.slowBitmap + it.slowDraw } == 0L) return false
