@@ -104,6 +104,7 @@ class SchedulingTest {
         g.scheduler = WorkScheduler(ctx, g)
         g.screenOn = { false } // the TV's screen is off unless a test says otherwise
         freeBytes = { 10L shl 30 }
+        runBlocking { (ctx as SpeedApp).startupRequeue?.join() } // it takes the compile lock at app start
     }
 
     /** The compile lock is one per process: a worker still letting go of it would make the next test's refresh skip its run. */
