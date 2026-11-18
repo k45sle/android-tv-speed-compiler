@@ -24,8 +24,12 @@ const val WINDOW_LATER = "later"
  * filter, 13% of its slow frames were "Slow UI thread" against 86% "Slow issue draw commands", and compile filters moved its
  * slow-frame share by under 3 points. Nuvio's slow frames were 44% UI thread.
  */
-/** Share of wall time the JIT thread spends on the CPU, from which a start window counts as "still compiling at startup" (measured: 8 s of 60 s uncompiled, under 0.5 s compiled). */
-const val JIT_BUSY_SHARE = 0.03
+/**
+ * Share of wall time the JIT thread spends on the CPU, from which a start window counts as "still compiling at startup".
+ * Measured in the first 60 s: Nuvio 13% uncompiled, 0.2-0.7% compiled; Nuvio Arc compiled from its shipped profile only 2.8%,
+ * 0.1% after a recompile with the profile its own use had grown. 1% separates the shipped-profile case from compiled apps.
+ */
+const val JIT_BUSY_SHARE = 0.01
 /** Janky frames a filter needs before the split of their causes is trusted. */
 const val MIN_CAUSE_FRAMES = 100L
 /** Below this share of UI-thread causes among janky frames the stutter is in drawing (AIOStreams 0.13, Nuvio 0.44). */
