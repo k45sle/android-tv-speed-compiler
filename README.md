@@ -130,7 +130,7 @@ These numbers come from one TV. Other TVs and apps will differ.
 
 - Watches the apps you pick and queues a compile when one of them updates. In Apps you can pick several at once.
 - Gets most apps ready right after an update by loading the usage profile they ship with, then refreshes the compile over the next week as you use them (see [Does it help?](#does-it-help) for apps that ship none).
-- Runs jobs only when the TV is idle, when nothing is playing, or during hours you set, so it doesn't slow down what you're watching. It starts a waiting job as soon as the screen turns off or the screensaver starts.
+- Runs jobs only when the TV is idle, when nothing is playing, or during hours you set, so it doesn't slow down what you're watching. After a watched app updates, it is compiled within about a minute even while the TV is on, unless something is playing, so it is ready when you open it. It starts a waiting job as soon as the screen turns off or the screensaver starts.
 - Measures how smoothly each app runs while you use it, and says so on App detail. If an app is still choppy, Smoother mode compiles it fully, and Back to normal mode undoes that if it didn't help.
 - Checks once a week, and right after a system update, that each watched app is still compiled, and compiles it again if not.
 - Reset puts an app back the way the TV had it.
@@ -230,7 +230,7 @@ Only the debugging connection can ask Android to compile another app. Speed Comp
 You can turn either one off in the app's Settings, but things get less convenient. With Keep Wireless debugging on off, optimizing stops each time Wireless debugging goes off, until you turn it back on in Developer options. With Keep this TV trusting the app off, the TV may ask you to allow debugging again, and nothing gets optimized until you do.
 
 **Does a system update undo it?**
-It can. A system update may throw away compiled code. When the TV starts up after an update, Speed Compile sees the new system version and checks every watched app right away, and queues any that are no longer at `speed-profile` or `speed`. The weekly check catches anything that slips through. App updates are a separate case: Speed Compile looks for them every 30 minutes and after each restart, and queues an updated app as soon as it finds one. The system update case hasn't been checked on a real TV yet.
+It can. A system update may throw away compiled code. When the TV starts up after an update, Speed Compile sees the new system version and checks every watched app right away, and queues any that are no longer at `speed-profile` or `speed`. The weekly check catches anything that slips through. App updates are a separate case: Speed Compile hears about them within seconds and queues an updated app right away; the check every 30 minutes and after each restart is the fallback. The system update case hasn't been checked on a real TV yet.
 
 **Does it work on Ethernet?**
 Unknown so far for Wireless debugging. It is built around Wi-Fi, so some TVs may not turn it on over Ethernet. If you try it on Ethernet, say so under What went wrong? in the Device report form.

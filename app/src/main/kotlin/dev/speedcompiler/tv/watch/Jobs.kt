@@ -44,6 +44,7 @@ private const val VERIFY_WORK = "verify"
 private const val RETRY_WORK = "retry"
 private const val OPEN_GATES_WORK = "open-gates"
 private const val OPEN_GATES_SETTLE_SECONDS = 5L
+private const val UPDATE_SETTLE_SECONDS = 5L // lets a batch of installs land in one pass
 private const val KEY_BUILD = "build_fingerprint"
 private const val KEY_PACKAGE = "package"
 private const val RETRY_DELAY_HOURS = 6L
@@ -79,6 +80,14 @@ fun enqueueDetectNow(context: Context) {
         .enqueueUniqueWork("$DETECT_WORK-once", ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<DetectWorker>().build())
 }
 
+/** A package was installed or updated: detect in a few seconds, so a watched app is queued right away. */
+fun enqueueDetectForUpdate(context: Context, packageName: String) {
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        "detect-update:$packageName", ExistingWorkPolicy.APPEND_OR_REPLACE, // never REPLACE: it would cancel a running detect
+        OneTimeWorkRequestBuilder<DetectWorker>().setInitialDelay(UPDATE_SETTLE_SECONDS, TimeUnit.SECONDS).build(),
+    )
+}
+
 /**
  * Screen off or screensaver start: check the gates in a few seconds. The delay lets dumpsys power report the new
  * wakefulness; going through WorkManager keeps the process alive until the check ran.
@@ -109,7 +118,7 @@ suspend fun runDetect(g: AppGraph) {
     val watched = g.database.watchedApps()
     ChangeDetector(g.packageSystem, g.database.syncState()) { watched.list().filter { it.autoOptimize } }
         .detect { changed -> // the stored position advances only after these are persisted
-            changed.filter { it in installed }.forEach { g.scheduler.enqueue(it, QueueSource.AUTO) }
+            changed.filter { it in installed }.forEach { g.scheduler.enqueue(it, QueueSource.UPDATE) }
         }
 }
 
@@ -176,7 +185,7 @@ suspend fun restartOpenedGates(g: AppGraph, installed: Set<String> = g.packageSy
     for (item in g.database.queue().activeNow()) {
         // A row waiting for the app's first launch has its own hourly try; restarting it here would compile every 30 min.
         if (item.packageName in installed && item.state == QueueState.WAITING_GATE && item.failureReason != NO_PROFILE_YET &&
-            g.gate.status(ignorePause = item.source == QueueSource.MANUAL) == GateStatus.Open
+            g.gate.status(ignorePause = item.source == QueueSource.MANUAL, ignoreIdle = item.source == QueueSource.UPDATE) == GateStatus.Open
         ) {
             g.scheduler.enqueue(item.packageName, item.source)
         }
@@ -366,7 +375,7 @@ class OptimizeWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         if (!item.runNow) {
             // Checked after taking the lock: the window may have closed while this job waited its turn.
-            val gate = g.gate.status(ignorePause = item.source == QueueSource.MANUAL)
+            val gate = g.gate.status(ignorePause = item.source == QueueSource.MANUAL, ignoreIdle = item.source == QueueSource.UPDATE)
             if (gate != GateStatus.Open) {
                 dao.update(item.copy(state = QueueState.WAITING_GATE, failureReason = gate::class.simpleName))
                 return Result.retry() // never re-enqueue under the same name: that would cancel this worker

@@ -113,7 +113,11 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         if (existing != null && (existing.state == QueueState.RUNNING || existing.runNow)) return
         // The row says RUNNING only once the worker holds runLock; REPLACE on a started worker could cancel its compile.
         if (existing != null && work.getWorkInfosForUniqueWorkFlow(workName(packageName)).first().any { it.state == WorkInfo.State.RUNNING }) return
-        schedule(existing ?: insert(packageName, source, runNow = false), debounce = existing?.state != QueueState.WAITING_GATE)
+        // An update promotes a waiting AUTO row, so it skips the idle wait and the debounce too. MANUAL rows stay as they are.
+        val row = if (existing != null && source == QueueSource.UPDATE && existing.source == QueueSource.AUTO) {
+            existing.copy(source = QueueSource.UPDATE).also { queueDao.update(it) }
+        } else existing
+        schedule(row ?: insert(packageName, source, runNow = false), debounce = existing?.state != QueueState.WAITING_GATE)
     }
 
     override suspend fun optimizeNow(packageName: String) = lock.withLock { doOptimizeNow(packageName) }
@@ -162,7 +166,7 @@ class WorkScheduler(private val context: Context, private val graph: AppGraph) :
         if (item.runNow) request.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST) // not held by low storage: runs or fails with a reason
         else {
             request.setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
-            if (debounce) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
+            if (debounce && item.source != QueueSource.UPDATE) request.setInitialDelay(DEBOUNCE_MINUTES, TimeUnit.MINUTES)
         }
         work.enqueueUniqueWork(workName(item.packageName), ExistingWorkPolicy.REPLACE, request.build())
     }

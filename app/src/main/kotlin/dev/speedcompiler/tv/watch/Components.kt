@@ -37,6 +37,13 @@ class WakeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_IDLE_CHECK -> enqueueOpenGatesCheck(context)
+            ACTION_PACKAGE_UPDATED -> intent.getStringExtra(EXTRA_PACKAGE)?.let { pkg ->
+                val app = context.applicationContext as SpeedApp
+                val done = goAsync()
+                app.graph.appScope.launch {
+                    try { if (app.graph.database.watchedApps().get(pkg)?.autoOptimize == true) enqueueDetectForUpdate(context, pkg) } finally { done.finish() }
+                }
+            }
             ACTION_SAMPLE -> {
                 val app = context.applicationContext as SpeedApp
                 val done = goAsync()
@@ -48,17 +55,28 @@ class WakeReceiver : BroadcastReceiver() {
 
 const val ACTION_IDLE_CHECK = "dev.speedcompiler.tv.action.IDLE_CHECK"
 const val ACTION_SAMPLE = "dev.speedcompiler.tv.action.SAMPLE"
+const val ACTION_PACKAGE_UPDATED = "dev.speedcompiler.tv.action.PACKAGE_UPDATED"
+const val EXTRA_PACKAGE = "package"
 
 private fun wakeIntent(context: Context, action: String) = Intent(action).setClass(context, WakeReceiver::class.java)
+
+/** An install or update of any app (the system sends ADDED, with EXTRA_REPLACING, for both); registered at runtime by [WatchService], since the manifest cannot declare it. Forwards the package name. */
+class PackageUpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pkg = intent.data?.schemeSpecificPart ?: return
+        context.sendBroadcast(wakeIntent(context, ACTION_PACKAGE_UPDATED).putExtra(EXTRA_PACKAGE, pkg))
+    }
+}
 
 /**
  * Keeps a small process (":watch", no UI, no GPU memory) uncached. Android holds ACTION_SCREEN_OFF back from a cached app until
  * it is active again, and freezes it 10 s after it goes cached (as on the test TV). A foreground service is the one supported way
  * to stay uncached, but it also keeps a process's GPU memory (~64 MB on the test TV) forever, so it runs apart from the UI and
- * only forwards screen-off and a once-a-minute sampling tick (screen on only) to [WakeReceiver].
+ * only forwards screen-off, package installs and a once-a-minute sampling tick (screen on only) to [WakeReceiver].
  */
 class WatchService : Service() {
     private val screenOff = ScreenOffReceiver()
+    private val packageUpdate = PackageUpdateReceiver()
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -73,6 +91,7 @@ class WatchService : Service() {
         super.onCreate()
         // System-only broadcasts, so no export flag is needed.
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_DREAMING_STARTED) })
+        registerReceiver(packageUpdate, IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") })
         handler.postDelayed(tick, 60_000)
     }
 
@@ -90,6 +109,7 @@ class WatchService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(tick)
         unregisterReceiver(screenOff)
+        unregisterReceiver(packageUpdate)
         super.onDestroy()
     }
 

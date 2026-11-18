@@ -183,7 +183,7 @@ fun AppDetailContent(
             val ok = it.state == QueueState.DONE
             ScoreRow(
                 agoText(res, it.finishedAt ?: it.enqueuedAt, now),
-                res.getString(if (it.source == QueueSource.AUTO) R.string.detail_run_automatic else R.string.detail_run_manual),
+                res.getString(if (it.source != QueueSource.MANUAL) R.string.detail_run_automatic else R.string.detail_run_manual),
                 res.getString(if (ok) R.string.home_optimized else R.string.home_failed),
                 if (ok) Tone.Ok else Tone.Error,
             )

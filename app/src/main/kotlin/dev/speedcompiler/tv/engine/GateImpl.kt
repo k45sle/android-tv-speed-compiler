@@ -30,7 +30,7 @@ class GateImpl(
     private val configs: GateConfigProvider,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) : Gate {
-    override suspend fun status(ignorePause: Boolean): GateStatus {
+    override suspend fun status(ignorePause: Boolean, ignoreIdle: Boolean): GateStatus {
         val config = configs.config()
         val now = Instant.ofEpochMilli(clock.nowMillis()).atZone(zone)
         val decision = decide(
@@ -45,7 +45,7 @@ class GateImpl(
             GateDecision.Run -> GateStatus.Open
             is GateDecision.Wait -> when (val reason = decision.reason) {
                 WaitReason.Playback -> GateStatus.WaitingForPlayback
-                WaitReason.NotIdle -> GateStatus.WaitingForIdle
+                WaitReason.NotIdle -> if (ignoreIdle) GateStatus.Open else GateStatus.WaitingForIdle
                 WaitReason.Paused -> GateStatus.Paused
                 is WaitReason.OutsideWindow -> GateStatus.OpensAt(reason.opensAt)
             }

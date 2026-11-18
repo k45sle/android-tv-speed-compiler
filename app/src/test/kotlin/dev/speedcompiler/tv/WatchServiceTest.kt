@@ -11,8 +11,13 @@ import androidx.test.core.app.ApplicationProvider
 import android.os.Looper
 import android.os.PowerManager
 import dev.speedcompiler.tv.watch.ACTION_IDLE_CHECK
+import dev.speedcompiler.tv.watch.ACTION_PACKAGE_UPDATED
 import dev.speedcompiler.tv.watch.ACTION_SAMPLE
+import dev.speedcompiler.tv.watch.EXTRA_PACKAGE
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
 import dev.speedcompiler.tv.watch.WakeReceiver
+import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WatchService
 import java.time.Duration
 import kotlinx.coroutines.CompletableDeferred
@@ -72,6 +77,47 @@ class WatchServiceTest {
         shadowOf(ctx.getSystemService(PowerManager::class.java)).turnScreenOn(false)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
         assertEquals(2, app.broadcastIntents.count { it.action == ACTION_SAMPLE }) // no ticks with the screen off
+        watch.destroy()
+    }
+
+    private fun detectWork() = WorkManager.getInstance(ctx).getWorkInfosForUniqueWork("detect-update:com.example.app").get()
+
+    /** A real ADDED broadcast reaches [WakeReceiver] as PACKAGE_UPDATED; returns once the receiver ran. */
+    private fun installBroadcast(watched: Boolean) = runBlocking {
+        val app = shadowOf(ctx as android.app.Application)
+        WorkManagerTestInitHelper.initializeTestWorkManager(ctx)
+        if (watched) (ctx as SpeedApp).graph.database.watchedApps().upsert(WatchedApp("com.example.app", "1"))
+        val watch = Robolectric.buildService(WatchService::class.java).create()
+        ctx.sendBroadcast(Intent(Intent.ACTION_PACKAGE_ADDED, android.net.Uri.parse("package:com.example.app")))
+        shadowOf(Looper.getMainLooper()).idle()
+        val fwd = app.broadcastIntents.single { it.action == ACTION_PACKAGE_UPDATED }
+        assertEquals(WakeReceiver::class.java.name, fwd.component!!.className)
+        assertEquals("com.example.app", fwd.getStringExtra(EXTRA_PACKAGE))
+        val wake = WakeReceiver().also { ctx.registerReceiver(it, IntentFilter(ACTION_PACKAGE_UPDATED), Context.RECEIVER_NOT_EXPORTED) }
+        ctx.sendBroadcast(Intent(ACTION_PACKAGE_UPDATED).setClass(ctx, WakeReceiver::class.java).putExtra(EXTRA_PACKAGE, "com.example.app"))
+        shadowOf(Looper.getMainLooper()).idle()
+        withTimeout(2_000) { while (watched && detectWork().isEmpty()) delay(10) }
+        delay(300) // an unwatched app must stay without work, so give a wrong enqueue time to show
+        ctx.unregisterReceiver(wake)
+        watch.destroy()
+    }
+
+    @Test fun anInstallOfAWatchedAppQueuesADetect() {
+        installBroadcast(watched = true)
+        assertEquals(1, detectWork().size)
+    }
+
+    @Test fun anInstallOfAnUnwatchedAppQueuesNothing() {
+        installBroadcast(watched = false)
+        assertTrue(detectWork().isEmpty())
+    }
+
+    @Test fun aReplacedBroadcastAloneDoesNothing() {
+        val app = shadowOf(ctx as android.app.Application)
+        val watch = Robolectric.buildService(WatchService::class.java).create()
+        ctx.sendBroadcast(Intent(Intent.ACTION_PACKAGE_REPLACED, android.net.Uri.parse("package:com.example.app")))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(app.broadcastIntents.none { it.action == ACTION_PACKAGE_UPDATED })
         watch.destroy()
     }
 
