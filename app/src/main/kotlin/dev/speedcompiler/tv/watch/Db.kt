@@ -40,6 +40,9 @@ data class FrameStat(
     @ColumnInfo(defaultValue = "0") val slowUi: Long = 0,
     @ColumnInfo(defaultValue = "0") val slowBitmap: Long = 0,
     @ColumnInfo(defaultValue = "0") val slowDraw: Long = 0,
+    /** CPU time of the app's JIT thread and the wall time of the readings, in this window. */
+    @ColumnInfo(defaultValue = "0") val jitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
 )
 
 /**
@@ -69,6 +72,16 @@ data class FrameSession(
     @ColumnInfo(defaultValue = "0") val laterSlowUi: Long = 0,
     @ColumnInfo(defaultValue = "0") val laterSlowBitmap: Long = 0,
     @ColumnInfo(defaultValue = "0") val laterSlowDraw: Long = 0,
+    val lastJitMs: Long? = null,
+    @ColumnInfo(defaultValue = "0") val startJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterDurationMs: Long = 0,
+    /** The session's whole start window so far, kept apart from the pending counts, which are released and cleared. */
+    @ColumnInfo(defaultValue = "0") val sessionJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val sessionDurationMs: Long = 0,
+    /** True from a fresh session's first reading until its start window has been judged. */
+    @ColumnInfo(defaultValue = "0") val startOpen: Boolean = false,
 )
 
 @Entity(tableName = "event")

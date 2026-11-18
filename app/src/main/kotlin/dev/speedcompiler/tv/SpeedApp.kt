@@ -9,6 +9,9 @@ import dev.speedcompiler.tv.watch.FrameSampler
 import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.enqueueReconnect
 import dev.speedcompiler.tv.watch.requeueStaleRunning
+import dev.speedcompiler.tv.watch.runWantedRecompiles
+import dev.speedcompiler.tv.watch.wantRecompile
+import dev.speedcompiler.tv.engine.OptimizeHow
 import dev.speedcompiler.tv.watch.schedulePeriodicJobs
 import dev.speedcompiler.tv.watch.startWatchService
 import kotlinx.coroutines.CancellationException
@@ -28,6 +31,10 @@ class SpeedApp : Application() {
         FrameSampler(
             graph.adbShell, { graph.optimizer.verify(it) }, { graph.packageSystem.fingerprint(it) }, { graph.database },
             { power.isInteractive && !compileRunning() && graph.connectionMonitor.state.first() == ConnectionState.Connected },
+            { graph.settings.values.first().optimizeHow == OptimizeHow.Full },
+            { pkg, fingerprint -> wantRecompile(graph, pkg, fingerprint) },
+            // A compile outlasts the sampler's time cap, so it runs in its own coroutine.
+            { front -> graph.appScope.launch { tryOrNull { runWantedRecompiles(graph, front) } } },
         )
     }
     private val sampling = Mutex()

@@ -90,21 +90,21 @@ Janky frames (legacy): 51 (83.61%)
         val t = SessionTracker()
         assertEquals(emptyMap<String, Counts>(), t.add(g(300, 30, 20_000, ui = 20, bmp = 1, draw = 25)))
         val out = t.add(g(700, 40, 80_000, ui = 25, bmp = 1, draw = 30))
-        assertEquals(mapOf(WINDOW_START to Counts(700, 40, 25, 1, 30)), out)
-        assertEquals(mapOf(WINDOW_LATER to Counts(100, 5, 0, 0, 0)), t.add(g(800, 45, 140_000, ui = 25, bmp = 1, draw = 30)))
+        assertEquals(mapOf(WINDOW_START to Counts(700, 40, 25, 1, 30, 0, 80_000)), out)
+        assertEquals(mapOf(WINDOW_LATER to Counts(100, 5, 0, 0, 0, 0, 60_000)), t.add(g(800, 45, 140_000, ui = 25, bmp = 1, draw = 30)))
     }
 
     @Test fun anOldProcessIsABaseline() {
         val t = SessionTracker()
         assertEquals(emptyMap<String, Counts>(), t.add(g(5_000, 100, START_WINDOW_MS + 1)))
-        assertEquals(mapOf(WINDOW_LATER to Counts(700, 80)), t.add(g(5_700, 180, 200_000)))
+        assertEquals(mapOf(WINDOW_LATER to Counts(700, 80, durationMs = 139_999)), t.add(g(5_700, 180, 200_000)))
     }
 
     @Test fun anIntervalBelongsToStartWhenThePreviousReadingWasYoung() {
         val t = SessionTracker()
         t.add(g(100, 0, START_WINDOW_MS)) // exactly the limit still counts as fresh
         t.add(g(200, 0, START_WINDOW_MS - 1_000)) // previous age was the limit: later
-        assertEquals(Counts(100, 0), t.pendingStart)
+        assertEquals(Counts(100, 0, durationMs = 60_000), t.pendingStart)
         assertEquals(Counts(100, 0), t.pendingLater)
     }
 
@@ -113,7 +113,7 @@ Janky frames (legacy): 51 (83.61%)
         assertEquals(emptyMap<String, Counts>(), u.add(g(400, 4, 59_000)))
         assertEquals(emptyMap<String, Counts>(), u.add(g(500, 5, 119_000))) // start interval, 100 more
         assertEquals(emptyMap<String, Counts>(), u.add(g(550, 6, 179_000))) // previous age 119 s: later
-        assertEquals(mapOf(WINDOW_START to Counts(500, 5), WINDOW_LATER to Counts(500, 3)), u.add(g(1_000, 8, 239_000)))
+        assertEquals(mapOf(WINDOW_START to Counts(500, 5, durationMs = 119_000), WINDOW_LATER to Counts(500, 3, durationMs = 120_000)), u.add(g(1_000, 8, 239_000)))
     }
 
     @Test fun aSessionSurvivesARoundTrip() = runBlocking {
@@ -202,6 +202,94 @@ Janky frames (legacy): 51 (83.61%)
         f.db.close()
     }
 
+    // A real 52-field /proc/<pid>/task/<tid>/stat line, comm with spaces; utime (field 14) 420 and stime (field 15) 80.
+    private val jitStat = "4321 (Jit thread pool) S 812 812 0 0 -1 1077936192 1500 0 3 0 420 80 0 0 20 0 41 0 5123 14500000000 90000 " +
+        "18446744073709551615 1 1 0 0 0 0 4612 0 1073775864 0 0 0 17 2 0 0 0 0 0 0 0 0 0 0 0 0 0"
+
+    @Test fun parseJitTicksSumsUtimePlusStimeOfJitThreadsOnly() {
+        assertEquals(52, jitStat.split(' ').size - 2) // the comm adds two spaces
+        assertEquals(500L, parseJitTicks(jitStat))
+        val other = jitStat.replace("4321", "4322").replace("420 80", "7 3")
+        assertEquals(510L, parseJitTicks("$jitStat\n$other\n"))
+        // Other threads, and names that only contain the name, do not count.
+        assertEquals(500L, parseJitTicks(jitStat + "\n" + jitStat.replace("(Jit thread pool)", "(Jit thread pool2)") + "\n" + jitStat.replace("(Jit thread pool)", "(RenderThread)")))
+        assertNull(parseJitTicks(jitStat.replace("(Jit thread pool)", "(RenderThread)")))
+        assertNull(parseJitTicks(""))
+        assertNull(parseJitTicks("4321 (Jit thread pool) S 1 2"))
+    }
+
+    @Test fun jitCountsOnlyWhenItsPidIsTheGfxinfoPid() {
+        assertEquals(5_000L, jitMsFor("\n10\n$jitStat\n", 10))
+        assertNull(jitMsFor("\n11\n$jitStat\n", 10))
+        assertNull(jitMsFor("\n", 10)) // pidof found nothing
+        assertNull(jitMsFor("\n10\n$jitStat\n", null))
+    }
+
+    private fun gfxJit(pid: Int, total: Long, janky: Long, age: Long?, ticks: Long): String {
+        val head = if (age == null) "** Graphics info for pid $pid [a.app] **\nTotal frames rendered: $total\nJanky frames: $janky (1.00%)\n"
+        else gfxFull(pid, total, janky, age)
+        return head + "--jit--\n$pid\n" + jitStat.replace("420 80", "$ticks 0") + "\n"
+    }
+
+    @Test fun jitAndDurationAreStoredPerWindow() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.counters = gfxJit(10, 400, 40, 20_000, 200); f.sampler.tick() // fresh: 2000 ms over 20 s
+        f.counters = gfxJit(10, 800, 60, 80_000, 800); f.sampler.tick() // 6000 ms over 60 s, gate passed
+        f.counters = gfxJit(10, 1_000, 70, 140_000, 810); f.sampler.tick() // later: 100 ms over 60 s
+        assertEquals(
+            setOf(
+                FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", jitMs = 8_000, durationMs = 80_000),
+                FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", jitMs = 100, durationMs = 60_000),
+            ),
+            f.stats().toSet(),
+        )
+        f.db.close()
+    }
+
+    @Test fun trackerLeavesJitAndDurationAtZeroWhenUnknown() {
+        val t = SessionTracker()
+        t.add(GfxStats(1, 700, 0, 0, 0, 0, null)) // old process, unknown age: a baseline
+        assertEquals(mapOf(WINDOW_LATER to Counts(700, 0)), t.add(GfxStats(1, 1_400, 0, 0, 0, 0, null, jitMs = 500)))
+    }
+
+    private class Wanted { val calls = mutableListOf<Pair<String, String>>(); val fronts = mutableListOf<String>() }
+
+    /** Readings at ages 20 s, 80 s (start), 140 s (the start window has ended). [ticks] is the JIT thread's cumulative CPU at each. */
+    private suspend fun runStart(
+        ticks: List<Long>, ages: List<Long?> = listOf(20_000, 80_000, 140_000), filter: String = "speed-profile", watched: WatchedApp = WatchedApp("a.app", "fp1"),
+        full: Boolean = false,
+    ): Wanted {
+        val f = Fixture()
+        f.filter = filter
+        f.db.watchedApps().upsert(watched)
+        val w = Wanted()
+        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { full }, { p, fp -> w.calls += p to fp }, { w.fronts += it })
+        for (i in ticks.indices) {
+            f.counters = gfxJit(10, 400L * (i + 1), 10, ages[i], ticks[i])
+            sampler.tick()
+        }
+        f.db.close()
+        return w
+    }
+
+    @Test fun anOptimizedAppThatStillCompilesAtStartWantsARecompileWhenItsStartWindowEnds() = runBlocking {
+        assertEquals(emptyList<Pair<String, String>>(), runStart(listOf(200, 800)).calls) // the window has not ended yet
+        val w = runStart(listOf(200, 800, 810))
+        assertEquals(listOf("a.app" to "fp1"), w.calls)
+        assertEquals(listOf("a.app", "a.app", "a.app"), w.fronts)
+    }
+
+    @Test fun noRecompileWhenJitIsQuietTheWindowIsShortOrTheAppDoesNotQualify() = runBlocking {
+        assertEquals(0, runStart(listOf(1, 2, 3)).calls.size) // 20 ms of 80 s
+        assertEquals(0, runStart(listOf(200, 800, 810), ages = listOf(5_000, null, 70_000)).calls.size) // only 5 s known
+        assertEquals(0, runStart(listOf(200, 800, 810), filter = "speed").calls.size)
+        assertEquals(0, runStart(listOf(200, 800, 810), watched = WatchedApp("a.app", "fp1", useSpeed = true)).calls.size)
+        assertEquals(0, runStart(listOf(200, 800, 810), full = true).calls.size)
+        // Not fresh: the first reading is an old process, so the start window was not seen.
+        assertEquals(0, runStart(listOf(200, 800, 810), ages = listOf(100_000, 160_000, 220_000)).calls.size)
+    }
+
     @Test fun skipsUnwatchedAutoOffAndNotReady() = runBlocking {
         val f = Fixture()
         f.sample(1_000, 0); f.sample(3_000, 0)
@@ -225,7 +313,10 @@ Janky frames (legacy): 51 (83.61%)
         f.counters = gfxFull(10, 800, 60, 90_000, ui = 40); f.sampler.tick() // start interval, gate passed
         f.counters = gfxFull(10, 1_000, 70, 150_000, ui = 45); f.sampler.tick() // later
         assertEquals(
-            setOf(FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", 40), FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", 5)),
+            setOf(
+                FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", 40, durationMs = 90_000),
+                FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", 5, durationMs = 60_000),
+            ),
             f.stats().toSet(),
         )
         // Same pid, smaller counters and young age: gfxinfo was reset, so this is a baseline, not a fresh start.

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 5,
-    "identityHash": "6bef839d04090e1417ff9c4852560c0b",
+    "identityHash": "a3caa9989c58cec4f42551a935a709a7",
     "entities": [
       {
         "tableName": "watched_app",
@@ -181,7 +181,7 @@
       },
       {
         "tableName": "frame_stat",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `window` TEXT NOT NULL DEFAULT 'later', `slowUi` INTEGER NOT NULL DEFAULT 0, `slowBitmap` INTEGER NOT NULL DEFAULT 0, `slowDraw` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`, `fingerprint`, `filter`, `window`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `window` TEXT NOT NULL DEFAULT 'later', `slowUi` INTEGER NOT NULL DEFAULT 0, `slowBitmap` INTEGER NOT NULL DEFAULT 0, `slowDraw` INTEGER NOT NULL DEFAULT 0, `jitMs` INTEGER NOT NULL DEFAULT 0, `durationMs` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`, `fingerprint`, `filter`, `window`))",
         "fields": [
           {
             "fieldPath": "packageName",
@@ -240,6 +240,20 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
+          },
+          {
+            "fieldPath": "jitMs",
+            "columnName": "jitMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -254,7 +268,7 @@
       },
       {
         "tableName": "frame_session",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `filter` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `lastTotal` INTEGER NOT NULL, `lastJanky` INTEGER NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `released` INTEGER NOT NULL, `pid` INTEGER, `lastAgeMs` INTEGER, `lastSlowUi` INTEGER NOT NULL DEFAULT 0, `lastSlowBitmap` INTEGER NOT NULL DEFAULT 0, `lastSlowDraw` INTEGER NOT NULL DEFAULT 0, `startFrames` INTEGER NOT NULL DEFAULT 0, `startJanky` INTEGER NOT NULL DEFAULT 0, `startSlowUi` INTEGER NOT NULL DEFAULT 0, `startSlowBitmap` INTEGER NOT NULL DEFAULT 0, `startSlowDraw` INTEGER NOT NULL DEFAULT 0, `laterSlowUi` INTEGER NOT NULL DEFAULT 0, `laterSlowBitmap` INTEGER NOT NULL DEFAULT 0, `laterSlowDraw` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `filter` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `lastTotal` INTEGER NOT NULL, `lastJanky` INTEGER NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `released` INTEGER NOT NULL, `pid` INTEGER, `lastAgeMs` INTEGER, `lastSlowUi` INTEGER NOT NULL DEFAULT 0, `lastSlowBitmap` INTEGER NOT NULL DEFAULT 0, `lastSlowDraw` INTEGER NOT NULL DEFAULT 0, `startFrames` INTEGER NOT NULL DEFAULT 0, `startJanky` INTEGER NOT NULL DEFAULT 0, `startSlowUi` INTEGER NOT NULL DEFAULT 0, `startSlowBitmap` INTEGER NOT NULL DEFAULT 0, `startSlowDraw` INTEGER NOT NULL DEFAULT 0, `laterSlowUi` INTEGER NOT NULL DEFAULT 0, `laterSlowBitmap` INTEGER NOT NULL DEFAULT 0, `laterSlowDraw` INTEGER NOT NULL DEFAULT 0, `lastJitMs` INTEGER, `startJitMs` INTEGER NOT NULL DEFAULT 0, `startDurationMs` INTEGER NOT NULL DEFAULT 0, `laterJitMs` INTEGER NOT NULL DEFAULT 0, `laterDurationMs` INTEGER NOT NULL DEFAULT 0, `sessionJitMs` INTEGER NOT NULL DEFAULT 0, `sessionDurationMs` INTEGER NOT NULL DEFAULT 0, `startOpen` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))",
         "fields": [
           {
             "fieldPath": "packageName",
@@ -390,6 +404,60 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
+          },
+          {
+            "fieldPath": "lastJitMs",
+            "columnName": "lastJitMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "startJitMs",
+            "columnName": "startJitMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "startDurationMs",
+            "columnName": "startDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "laterJitMs",
+            "columnName": "laterJitMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "laterDurationMs",
+            "columnName": "laterDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "sessionJitMs",
+            "columnName": "sessionJitMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "sessionDurationMs",
+            "columnName": "sessionDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "startOpen",
+            "columnName": "startOpen",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -402,7 +470,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6bef839d04090e1417ff9c4852560c0b')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a3caa9989c58cec4f42551a935a709a7')"
     ]
   }
 }

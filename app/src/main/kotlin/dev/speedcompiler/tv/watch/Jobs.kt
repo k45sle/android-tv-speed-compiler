@@ -173,6 +173,59 @@ private suspend fun refreshProfiles(g: AppGraph, installed: Set<String>) {
     }
 }
 
+private const val RECOMPILE_PREFIX = "recompile:"
+
+/** Whether to record a wanted recompile, given the stored `fingerprint|wantedAt|doneAt` (doneAt 0 while it waits) or null. */
+internal fun recompileWanted(record: String?, fingerprint: String, now: Long): Boolean {
+    val p = record?.split('|') ?: return true
+    if (p.size < 3 || p[0] != fingerprint) return true
+    val done = p[2].toLongOrNull() ?: return true
+    return done > 0 && now - done >= RECOMPILE_EVERY_MILLIS
+}
+
+/** Remembers that [packageName] spent its start window compiling code although optimized. It runs later, see [runWantedRecompiles]. */
+suspend fun wantRecompile(g: AppGraph, packageName: String, fingerprint: String) {
+    val sync = g.database.syncState()
+    if (recompileWanted(sync.get(RECOMPILE_PREFIX + packageName), fingerprint, g.clock.nowMillis())) {
+        sync.put(SyncState(RECOMPILE_PREFIX + packageName, "$fingerprint|${g.clock.nowMillis()}|0"))
+    }
+}
+
+/**
+ * Runs the wanted recompiles with the same call as the after-use refresh (its Event, "Asked the TV to refresh this app's compiled code.",
+ * shows in Activity). Never for [front], the app in use; the gate must be open (idle not required, since the app is not in front).
+ */
+suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
+    val sync = g.database.syncState()
+    fun waiting(r: SyncState) = r.value.split('|').getOrNull(2) == "0"
+    if (sync.withPrefix(RECOMPILE_PREFIX).none { waiting(it) && it.key != RECOMPILE_PREFIX + front }) return
+    if (g.gate.status(ignoreIdle = true) != GateStatus.Open || !runLock.tryLock()) return
+    try {
+        if (g.settings.values.first().optimizeHow == OptimizeHow.Full) return
+        for (key in sync.withPrefix(RECOMPILE_PREFIX).map { it.key }) {
+            val pkg = key.removePrefix(RECOMPILE_PREFIX)
+            if (pkg == front) continue
+            val p = sync.get(key).orEmpty().split('|')
+            if (p.getOrNull(2) != "0") continue
+            val watched = g.database.watchedApps().get(pkg)
+            if (g.packageSystem.fingerprint(pkg) != p[0] || watched?.autoOptimize != true || watched.useSpeed) {
+                sync.put(SyncState(key, ""))
+                continue
+            }
+            sync.put(SyncState(key, "${p[0]}|${p[1]}|${g.clock.nowMillis()}")) // before the call, so a failure is not retried at once
+            try {
+                g.optimizer.refresh(pkg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("runWantedRecompiles", "recompile failed: ${e.javaClass.simpleName}")
+            }
+        }
+    } finally {
+        runLock.unlock()
+    }
+}
+
 /** Stops the after-use refreshes, as after a Reset. */
 suspend fun dropRefresh(g: AppGraph, packageName: String) = g.database.syncState().put(SyncState(REFRESH_PREFIX + packageName, ""))
 
@@ -191,6 +244,7 @@ suspend fun restartOpenedGates(g: AppGraph, installed: Set<String> = g.packageSy
         }
     }
     refreshProfiles(g, installed)
+    runWantedRecompiles(g)
 }
 
 /** Queues every auto-optimized app the TV no longer reports at `speed` or `speed-profile`. */
