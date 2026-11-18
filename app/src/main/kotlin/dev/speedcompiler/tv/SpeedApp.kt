@@ -34,7 +34,7 @@ class SpeedApp : Application() {
             { graph.settings.values.first().optimizeHow == OptimizeHow.Full },
             { pkg, fingerprint -> wantRecompile(graph, pkg, fingerprint) },
             // A compile outlasts the sampler's time cap, so it runs in its own coroutine.
-            { front -> graph.appScope.launch { tryOrNull { runWantedRecompiles(graph, front) } } },
+            { graph.appScope.launch { tryOrNull { runWantedRecompiles(graph) } } },
         )
     }
     private val sampling = Mutex()

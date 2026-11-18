@@ -366,7 +366,7 @@ Janky frames (legacy): 51 (83.61%)
         f.db.close()
     }
 
-    private class Wanted { val calls = mutableListOf<Pair<String, String>>(); val fronts = mutableListOf<String>() }
+    private class Wanted { val calls = mutableListOf<Pair<String, String>>(); var ticks = 0 }
 
     /** Readings at ages 20 s, 80 s (start), 140 s (the start window has ended). [ticks] is the JIT thread's cumulative CPU at each. */
     private suspend fun runStart(
@@ -377,7 +377,7 @@ Janky frames (legacy): 51 (83.61%)
         f.filter = filter
         f.db.watchedApps().upsert(watched)
         val w = Wanted()
-        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { full }, { p, fp -> w.calls += p to fp }, { w.fronts += it })
+        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { full }, { p, fp -> w.calls += p to fp }, { w.ticks++ })
         for (i in ticks.indices) {
             f.counters = gfxJit(10, 400L * (i + 1), 10, ages[i], ticks[i])
             sampler.tick()
@@ -390,7 +390,7 @@ Janky frames (legacy): 51 (83.61%)
         assertEquals(emptyList<Pair<String, String>>(), runStart(listOf(200, 800)).calls) // the window has not ended yet
         val w = runStart(listOf(200, 800, 810))
         assertEquals(listOf("a.app" to "fp1"), w.calls)
-        assertEquals(listOf("a.app", "a.app", "a.app"), w.fronts)
+        assertEquals(3, w.ticks) // every tick gives the wanted recompiles a chance; they read the front app themselves
     }
 
     @Test fun noRecompileWhenJitIsQuietTheWindowIsShortOrTheAppDoesNotQualify() = runBlocking {

@@ -269,8 +269,8 @@ class FrameSampler(
     private val compilesFull: suspend () -> Boolean = { false },
     /** Called with (package, fingerprint) when an optimized app spent its start window compiling code anyway. */
     private val wantRecompile: suspend (String, String) -> Unit = { _, _ -> },
-    /** Called with the package in front at every tick, so work that must not touch it can start. */
-    private val onFront: suspend (String) -> Unit = {},
+    /** Called at every tick the sampler runs, so waiting work (the wanted recompiles) gets a chance; it reads the front app itself. */
+    private val onTick: suspend () -> Unit = {},
 ) {
     private class Session(val filter: String, val fingerprint: String, val tracker: SessionTracker = SessionTracker())
 
@@ -279,8 +279,8 @@ class FrameSampler(
     suspend fun tick() {
         try {
             if (!ready()) return
+            onTick()
             val front = topResumedPackage(shell.run(TOP_RESUMED_COMMAND).output.lines()) ?: return
-            onFront(front)
             val database = db()
             val watched = database.watchedApps().get(front)
             if (watched?.autoOptimize != true || !isValidPackageId(front)) return

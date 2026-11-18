@@ -195,26 +195,16 @@ suspend fun wantRecompile(g: AppGraph, packageName: String, fingerprint: String)
 
 /**
  * Runs the wanted recompiles with the same call as the after-use refresh (its Event, "Asked the TV to refresh this app's compiled code.",
- * shows in Activity). Never for the app in use: [front], or when null and the screen is on, the app the TV reports in front (nothing is recompiled if that can't be read); the gate must be open (idle not required, since the app is not in front).
+ * shows in Activity). Never for the app in use: right before each refresh the app in front is read from the TV, the only source
+ * for it (a caller's earlier reading may be stale, since one refresh is a long compile); if the screen is on and that read fails,
+ * that app waits. The gate must be open (idle not required, since the app is not in front).
  */
-suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
+suspend fun runWantedRecompiles(g: AppGraph) {
     val sync = g.database.syncState()
-    fun waiting(r: SyncState) = r.value.split('|').getOrNull(2) == "0"
-    if (sync.withPrefix(RECOMPILE_PREFIX).none { waiting(it) && it.key != RECOMPILE_PREFIX + front }) return
+    if (sync.withPrefix(RECOMPILE_PREFIX).none { it.value.split('|').getOrNull(2) == "0" }) return
     if (g.gate.status(ignoreIdle = true) != GateStatus.Open || !runLock.tryLock()) return
     try {
         if (g.settings.values.first().optimizeHow == OptimizeHow.Full) return
-        // The front app is read again before every refresh: a refresh is a long compile and the user may open the next app meanwhile.
-        // With the screen on and nobody given, ask the TV; if that fails, skip this app. Screen off: nobody is using an app.
-        suspend fun inFront(): Pair<Boolean, String?> = front?.let { true to it } ?: if (g.screenOn()) {
-            try {
-                topResumedPackage(g.adbShell.run(TOP_RESUMED_COMMAND).output.lines())?.let { true to it } ?: (false to null)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                false to null
-            }
-        } else true to null
         for (key in sync.withPrefix(RECOMPILE_PREFIX).map { it.key }) {
             val pkg = key.removePrefix(RECOMPILE_PREFIX)
             val p = sync.get(key).orEmpty().split('|')
@@ -224,8 +214,7 @@ suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
                 sync.put(SyncState(key, ""))
                 continue
             }
-            val (known, now) = inFront()
-            if (!known || pkg == now) continue
+            if (!notInFront(g, pkg)) continue
             sync.put(SyncState(key, "${p[0]}|${p[1]}|${g.clock.nowMillis()}")) // before the call, so a failure is not retried at once
             try {
                 g.optimizer.refresh(pkg)
@@ -238,6 +227,19 @@ suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
     } finally {
         runLock.unlock()
     }
+}
+
+/** True only when the TV says now that [pkg] is not in front: the screen is off, or the app in front could be read and is another one. */
+private suspend fun notInFront(g: AppGraph, pkg: String): Boolean {
+    if (!g.screenOn()) return true
+    val front = try {
+        topResumedPackage(g.adbShell.run(TOP_RESUMED_COMMAND).output.lines())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+    return front != null && front != pkg
 }
 
 /** Stops the after-use refreshes, as after a Reset. */
