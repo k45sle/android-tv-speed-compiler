@@ -6,6 +6,7 @@ Speed Compile prepares the code of the apps you pick ahead of time. This is call
 
 ## Unreleased
 
+- A watched app is now compiled within about a minute of its update, even while the TV is on, unless something is playing, automatic optimizing is paused, or you set hours that are closed. Before, it waited for the TV to be idle, so the first evening with a new version ran uncompiled.
 - Android 11 and 12: the app no longer makes a new ADB key each time it starts. Android 11 and 12 hand the saved key back without some optional parts, and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after every full restart it asked to allow debugging again in ADB debugging mode, and with Wireless debugging the app had to be paired again. This matches the Sony Bravia KD-43X81J report. After you update, the TV may ask one last time.
 - ADB debugging mode: right after you allow the app, it checks whether the TV saved Always allow. If it didn't, Home says so on a line of its own, next to How to fix, and still shows whether the app is connected. How to fix explains what to do: usually Revoke USB debugging authorizations in Developer options, then Allow again, which asks the TV without stopping an optimization that is running.
 - ADB debugging mode: if the TV saved Always allow but drops it at a full restart, Home says so. If that happens again after you allow the app once more, Home says this TV forgets the app at every full restart, and Fix connection brings it back after each one.

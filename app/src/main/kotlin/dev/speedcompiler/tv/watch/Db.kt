@@ -62,7 +62,7 @@ data class SyncState(
     val value: String,
 )
 
-enum class QueueSource { AUTO, MANUAL }
+enum class QueueSource { AUTO, MANUAL, UPDATE }
 
 enum class QueueState { QUEUED, WAITING_GATE, RUNNING, DONE, FAILED, SKIPPED }
 

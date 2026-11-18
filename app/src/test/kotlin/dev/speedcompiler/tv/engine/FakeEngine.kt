@@ -21,7 +21,11 @@ class FakeOptimizer(var result: OptimizeResult = OptimizeResult(true)) : Optimiz
 }
 
 class FakeGate(var status: GateStatus = GateStatus.Open) : Gate {
-    override suspend fun status(ignorePause: Boolean) = if (ignorePause && status == GateStatus.Paused) GateStatus.Open else status
+    override suspend fun status(ignorePause: Boolean, ignoreIdle: Boolean) = when {
+        ignorePause && status == GateStatus.Paused -> GateStatus.Open
+        ignoreIdle && status == GateStatus.WaitingForIdle -> GateStatus.Open
+        else -> status
+    }
 }
 
 class FakeClock(var now: Long = 0L) : Clock {

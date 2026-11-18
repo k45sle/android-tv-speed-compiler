@@ -37,6 +37,22 @@ class GateImplTest {
     }
 
     @Test
+    fun ignoreIdleOpensOnlyTheIdleWait() = runBlocking {
+        val clock = FakeClock(millisAt("2026-01-01T12:00:00Z"))
+        val signals = Signals(wake = Wakefulness.Awake)
+        val g = gate(clock, signals, GateMode.Idle)
+        assertEquals(GateStatus.WaitingForIdle, g.status())
+        assertEquals(GateStatus.Open, g.status(ignoreIdle = true))
+        signals.music = true
+        assertEquals(GateStatus.WaitingForPlayback, g.status(ignoreIdle = true))
+        assertEquals(GateStatus.Paused, gate(clock, Signals(wake = Wakefulness.Awake), GateMode.Idle, paused = true).status(ignoreIdle = true))
+        assertEquals(
+            GateStatus.OpensAt(Instant.parse("2026-01-01T22:00:00Z")),
+            gate(clock, Signals(wake = Wakefulness.Awake), GateMode.Window).status(ignoreIdle = true),
+        )
+    }
+
+    @Test
     fun unknownScreenStateNeverBlocksIdleMode() = runBlocking {
         val g = gate(FakeClock(millisAt("2026-01-01T12:00:00Z")), Signals(wake = null), GateMode.Idle)
         assertEquals(GateStatus.Open, g.status())

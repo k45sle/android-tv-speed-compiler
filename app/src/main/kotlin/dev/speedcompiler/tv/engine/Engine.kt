@@ -41,8 +41,11 @@ sealed interface GateStatus {
 
 /** Decides whether optimizing is allowed right now (window, pause switch, device state). */
 interface Gate {
-    /** [ignorePause]: for jobs the user queued by hand, which wait for the window and device state but not the pause switch. */
-    suspend fun status(ignorePause: Boolean = false): GateStatus
+    /**
+     * [ignorePause]: for jobs the user queued by hand, which wait for the window and device state but not the pause switch.
+     * [ignoreIdle]: for update jobs, which run while the screen is on but still wait for playback, the pause switch and set hours.
+     */
+    suspend fun status(ignorePause: Boolean = false, ignoreIdle: Boolean = false): GateStatus
 }
 
 interface Clock {

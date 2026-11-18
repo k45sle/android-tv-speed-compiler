@@ -57,7 +57,7 @@ fun etaFor(
             ConnectionState.Connected -> Eta.Checking
         }
         GateStatus.Open -> Eta.InQueue(position, wait)
-        GateStatus.WaitingForIdle -> Eta.WaitingForIdle
+        GateStatus.WaitingForIdle -> if (item.source == QueueSource.UPDATE) Eta.InQueue(position, wait) else Eta.WaitingForIdle // update jobs skip the idle wait
         GateStatus.WaitingForPlayback -> Eta.WaitingForPlayback
         GateStatus.Paused -> Eta.Paused
         is GateStatus.OpensAt -> Eta.StartsAt(gate.at.plusMillis(wait))

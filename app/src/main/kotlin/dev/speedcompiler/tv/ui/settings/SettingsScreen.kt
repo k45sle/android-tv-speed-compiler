@@ -132,7 +132,7 @@ fun SettingsScreen(go: (String) -> Unit, back: () -> Unit, deps: SettingsDeps = 
                 ) { on -> set { if (on) it.copy(mode = Mode.Auto, paused = false) else it.copy(paused = true) } }
                 val gates = GateMode.entries
                 OperatorRow(
-                    runJobs, hint(runJobs, gateLabel(v.gateMode)), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
+                    runJobs, hint(runJobs, gateLabel(v.gateMode)), sublabel = stringResource(R.string.settings_run_jobs_subtitle), onClick = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
                     onLeft = { set { it.copy(gateMode = gates.cycle(it.gateMode, -1)) } },
                     onRight = { set { it.copy(gateMode = gates.cycle(it.gateMode, 1)) } },
                 ) { Selector(gateLabel(v.gateMode), it) }

@@ -248,6 +248,7 @@
     <string name="settings_how_subtitle">Full compile makes an app ready right after an update, but uses about twice the storage and starts slightly slower</string>
     <string name="settings_how_auto">Automatic (recommended)</string>
     <string name="settings_how_full">Full compile</string>
+    <string name="settings_run_jobs_subtitle">Updated apps don\'t wait for the TV to be idle</string>
     <string name="settings_run_jobs">Run jobs</string>
     <string name="settings_gate_idle">When the TV is idle</string>
     <string name="settings_gate_nothing_playing">When nothing is playing</string>

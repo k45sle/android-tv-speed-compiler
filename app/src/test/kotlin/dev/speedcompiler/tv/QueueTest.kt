@@ -52,6 +52,14 @@ class QueueTest {
     }
 
     @Test
+    fun updateJobsSkipTheIdleWait() {
+        val update = item().copy(source = QueueSource.UPDATE)
+        assertEquals(Eta.InQueue(1, 120_000), etaFor(update, GateStatus.WaitingForIdle, 1))
+        assertEquals(Eta.WaitingForIdle, etaFor(item(), GateStatus.WaitingForIdle, 1))
+        assertEquals(Eta.WaitingForPlayback, etaFor(update, GateStatus.WaitingForPlayback, 1))
+    }
+
+    @Test
     fun setHoursGiveAStartTimeOffsetByJobsAhead() {
         assertEquals(Eta.StartsAt(opensAt.at), etaFor(item(), opensAt, 0))
         assertEquals(Eta.StartsAt(opensAt.at.plusSeconds(240)), etaFor(item(), opensAt, 2))

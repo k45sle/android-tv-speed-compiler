@@ -153,7 +153,43 @@ class SchedulingTest {
         g.database.watchedApps().upsert(WatchedApp("b", "1"))
         runDetect(g)
         assertEquals(listOf("a"), g.database.queue().activeNow().map { it.packageName })
-        assertEquals(QueueSource.AUTO, g.database.queue().get(1)!!.source)
+        assertEquals(QueueSource.UPDATE, g.database.queue().get(1)!!.source)
+    }
+
+    @Test fun anUpdateRowCompilesWhileTheScreenIsOn() = runBlocking {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a", QueueSource.UPDATE)
+        assertEquals(0L, infos("a").single().initialDelayMillis) // no debounce
+        driver.setAllConstraintsMet(infos("a").single().id)
+        await("done") { state(1) == QueueState.DONE }
+        assertEquals(listOf("a"), optimizer.optimized)
+    }
+
+    @Test fun anAutoRowStillWaitsForIdleAndKeepsTheDebounce() = runBlocking {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        assertEquals(5 * 60_000L, infos("a").single().initialDelayMillis)
+        skipDelay("a")
+        await("waiting") { state(1) == QueueState.WAITING_GATE }
+        assertTrue(optimizer.optimized.isEmpty())
+    }
+
+    @Test fun anUpdatePromotesAWaitingAutoRow() = runBlocking {
+        gate.status = GateStatus.WaitingForIdle
+        g.scheduler.enqueue("a", QueueSource.AUTO)
+        g.scheduler.enqueue("a", QueueSource.UPDATE)
+        assertEquals(QueueSource.UPDATE, g.database.queue().get(1)!!.source)
+        assertEquals(1, g.database.queue().activeNow().size)
+        assertEquals(0L, infos("a").last { !it.state.isFinished }.initialDelayMillis)
+    }
+
+    @Test fun anUpdateRowWaitsWhileSomethingPlays() = runBlocking {
+        gate.status = GateStatus.WaitingForPlayback
+        g.scheduler.enqueue("a", QueueSource.UPDATE)
+        driver.setAllConstraintsMet(infos("a").single().id)
+        await("waiting") { state(1) == QueueState.WAITING_GATE }
+        assertEquals("WaitingForPlayback", g.database.queue().get(1)!!.failureReason)
+        assertTrue(optimizer.optimized.isEmpty())
     }
 
     @Test fun aWaitRetriesAfterTheBackoff() = runBlocking {
