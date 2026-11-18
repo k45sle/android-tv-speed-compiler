@@ -1,0 +1,1 @@
+A watched app is compiled within about a minute of its update, even while the TV is on (not while something plays). Android 11 and 12: the app keeps its ADB key, so the TV stops asking to allow debugging after every restart. ADB debugging mode: Home says if the TV did not save Always allow, and background reconnects no longer show the prompt.

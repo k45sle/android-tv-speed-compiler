@@ -205,7 +205,7 @@ It connects through Wireless debugging in Developer options. Some TVs don't have
 | --- | --- | --- |
 | Android TV emulator | 14 (API 34) | Yes |
 | Box R 4K Plus (Amlogic S905X4) | 14 | Yes, see the [device matrix](docs/device-matrix.md) |
-| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging. Up to 1.1.0 the TV asked to allow debugging again after every full restart; the likely cause is fixed in the next version (user report, see the [device matrix](docs/device-matrix.md) and [Why the TV asks again](#why-the-tv-asks-again-after-a-restart)) |
+| Sony Bravia KD-43X81J | 12 | Yes, with ADB debugging. Up to 1.1.0 the TV asked to allow debugging again after every full restart; the likely cause is fixed in 1.1.1 (user report, see the [device matrix](docs/device-matrix.md) and [Why the TV asks again](#why-the-tv-asks-again-after-a-restart)) |
 | Fire TV | Fire OS 8 | Untested |
 
 If you try it on a real TV or streaming box, please fill in the [Device report form](https://github.com/k45sle/android-tv-speed-compiler/issues/new?template=device-report.yml), whether it worked or not.
@@ -277,7 +277,7 @@ README_SHOTS_DIR=$PWD/docs/media ./gradlew cleanTestDebugUnitTest testDebugUnitT
 
 ### Why the TV asks again after a restart
 
-Up to 1.1.0, on Android 11 and 12, Speed Compile made a new ADB key each time it started. It keeps its key in its own storage, but Android 11 and 12 hand the saved key back without some optional parts (the RSA CRT values, which signing doesn't need), and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after a full restart, when the app starts again, the TV asked to allow debugging again, and with Wireless debugging the app had to be paired again. Standby keeps the app running, so it kept its key. The Android 11 and 12 emulators show this; Android 13 and 14 don't. The next version rebuilds the full key from the saved file, so the key stays the same. If the file can't be read at all, the app keeps it as adb.key.bad and logs that before it makes a new key.
+Up to 1.1.0, on Android 11 and 12, Speed Compile made a new ADB key each time it started. It keeps its key in its own storage, but Android 11 and 12 hand the saved key back without some optional parts (the RSA CRT values, which signing doesn't need), and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after a full restart, when the app starts again, the TV asked to allow debugging again, and with Wireless debugging the app had to be paired again. Standby keeps the app running, so it kept its key. The Android 11 and 12 emulators show this; Android 13 and 14 don't. Since 1.1.1 the app rebuilds the full key from the saved file, so the key stays the same. If the file can't be read at all, the app keeps it as adb.key.bad and logs that before it makes a new key.
 
 The TV also has to save the key when you choose Always allow. Android 11 and 12 save it by adding a line to a file and only note a failed write in their log. On the Android 12 TV emulator that write failed until Revoke USB debugging authorizations made Android write a fresh file. So right after you allow the app, it checks whether the TV saved it, and Home tells you if it didn't.
 

@@ -4,7 +4,7 @@ What changed in each version of Speed Compile, in plain words. Newest first.
 
 Speed Compile prepares the code of the apps you pick ahead of time. This is called compiling, and it can make an app open and scroll more smoothly.
 
-## Unreleased
+## 1.1.1 (18 November 2026)
 
 - A watched app is now compiled within about a minute of its update, even while the TV is on, unless something is playing, automatic optimizing is paused, or you set hours that are closed. Before, it waited for the TV to be idle, so the first evening with a new version ran uncompiled.
 - Android 11 and 12: the app no longer makes a new ADB key each time it starts. Android 11 and 12 hand the saved key back without some optional parts, and the app took that as a broken key and made a new one. To the TV a new key is a new device, so after every full restart it asked to allow debugging again in ADB debugging mode, and with Wireless debugging the app had to be paired again. This matches the Sony Bravia KD-43X81J report. After you update, the TV may ask one last time.
