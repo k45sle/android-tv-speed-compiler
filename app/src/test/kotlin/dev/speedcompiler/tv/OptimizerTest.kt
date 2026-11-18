@@ -14,6 +14,7 @@ import dev.speedcompiler.tv.engine.resetCommand
 import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.EventDao
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -276,6 +277,34 @@ class OptimizerTest {
         assertTrue(bad.detail.startsWith("Didn't reset"))
         assertFalse(impl(shell, Events()).reset("a b").ok)
         assertEquals(1, shell.compiles)
+    }
+
+    @Test fun isBusyHoldsWhileAnyCommandForTheAppRunsEvenWhenTheyOverlap() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        lateinit var o: OptimizerImpl
+        val seen = mutableListOf<Pair<Boolean, Boolean>>()
+        val shell = object : AdbShell {
+            override suspend fun run(command: String): ShellResult {
+                if (command.startsWith("cmd package compile")) {
+                    seen += o.isBusy("com.a") to o.isBusy("com.c")
+                    if (command.endsWith(" -f com.a") && "-r install" !in command) gate.await() // the worker's compile hangs
+                }
+                return ShellResult(0, "Success\n__rc=0\n")
+            }
+        }
+        o = impl(shell, Events())
+        val compile = launch { o.optimize("com.a", "speed") }
+        testScheduler.runCurrent()
+        o.reset("com.a") // a reset from App detail during the compile, same app
+        o.reset("com.c")
+        assertTrue(o.isBusy("com.a")) // the compile still runs
+        assertFalse(o.isBusy("com.c"))
+        gate.complete(Unit)
+        compile.join()
+        assertFalse(o.isBusy("com.a"))
+        assertEquals(listOf(true to false, true to false, true to true), seen)
+        o.refresh("com.b")
+        assertFalse(o.isBusy("com.b"))
     }
 
     @Test fun resetTimesOutAsAFailure() = runTest {

@@ -153,9 +153,37 @@ fun ActivityContent(
                 },
             )
         }
+        // Events outside any queue row (refresh, reset, unchecked) get their own rows, newest first among the jobs.
+        val standalone = events.filter { it.kind in StandaloneKinds }
+        val rows = (history.map { HistoryRow.Job(it) } + standalone.map { HistoryRow.Note(it) }).sortedByDescending { it.time }
         item { PixelText(stringResource(R.string.activity_history), Modifier.padding(top = Space.x2).focusFx(1f, RowRadius), sc.accent, 36.sp) }
-        if (history.isEmpty()) item { Text(stringResource(R.string.activity_nothing_run), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        items(history, key = { "h${it.id}" }) { h ->
+        if (history.isEmpty() && standalone.isEmpty()) item { Text(stringResource(R.string.activity_nothing_run), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        items(rows, key = { if (it is HistoryRow.Job) "h${it.item.id}" else "e${(it as HistoryRow.Note).event.id}" }) { row ->
+        if (row is HistoryRow.Note) {
+            val e = row.event
+            val l = look(e.packageName.orEmpty())
+            val time = clockText(e.timeMillis, zone)
+            val text = storedText(res, e.message)
+            val title = if (e.packageName != null) l.label else text // as on Home: a bad id has no app to name
+            val (wordRes, tone) = eventStatus(e)
+            val word = stringResource(wordRes)
+            Row(
+                Modifier.fillMaxWidth().semantics { contentDescription = listOf(title, word, time, text).distinct().joinToString(", ") }
+                    .focusFx(1.02f, RowRadius)
+                    .padding(horizontal = Space.x2, vertical = Space.x1),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.x2),
+            ) {
+                PixelText(time, Modifier.width(140.dp), sc.accent)
+                Icon(l)
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    if (title != text) Text(text, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                }
+                PixelText(word.upper(), color = toneColor(tone))
+            }
+        } else {
+        val h = (row as HistoryRow.Job).item
             val l = look(h.packageName)
             val reason = h.failureReason?.takeIf { h.state == QueueState.FAILED || h.state == QueueState.SKIPPED }?.let { storedText(res, it) }
             val time = clockText(h.finishedAt ?: h.enqueuedAt, zone)
@@ -198,8 +226,16 @@ fun ActivityContent(
             }
         }
         }
+        }
       }
     }
+}
+
+private val StandaloneKinds = setOf("refresh", "verify_unknown", "reset_done", "reset_failed")
+
+private sealed class HistoryRow(val time: Long) {
+    class Job(val item: QueueItem) : HistoryRow(item.finishedAt ?: item.enqueuedAt)
+    class Note(val event: Event) : HistoryRow(event.timeMillis)
 }
 
 @Composable

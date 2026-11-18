@@ -32,11 +32,25 @@ class OptimizerImpl(
     private var dumpGeneration = 0
 
 
+    // Counts per app: a reset from App detail can run during a worker's compile, even of the same app.
+    private val busy = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    override fun isBusy(packageName: String) = busy.containsKey(packageName)
+
+    private inline fun <T> busy(pkg: String, block: () -> T): T {
+        busy.merge(pkg, 1, Int::plus)
+        try {
+            return block()
+        } finally {
+            busy.computeIfPresent(pkg) { _, n -> if (n > 1) n - 1 else null }
+        }
+    }
+
     override suspend fun optimize(packageName: String, filter: String): OptimizeResult {
         if (!isValidPackageId(packageName)) {
             return finish(null, false, DID_NOT_FINISH + INVALID_APP_TAIL, "optimize_failed")
         }
-        return compile(packageName, filter)
+        return busy(packageName) { compile(packageName, filter) }
     }
 
     /** The compiler filter the TV reports for [packageName], or null if it does not report one. */
@@ -61,7 +75,7 @@ class OptimizerImpl(
     override suspend fun reset(packageName: String): OptimizeResult {
         if (!isValidPackageId(packageName)) return finish(null, false, DID_NOT_RESET + INVALID_APP_TAIL, "reset_failed")
         val res = try {
-            withTimeout(timeoutMillis) { shell.run(resetCommand(packageName)) }
+            busy(packageName) { withTimeout(timeoutMillis) { shell.run(resetCommand(packageName)) } }
         } catch (e: Exception) {
             return adbFailed(packageName, e, DID_NOT_RESET, DID_NOT_RESET + TOOK_TOO_LONG_RESET_TAIL, "reset_failed")
         } finally {
@@ -90,7 +104,7 @@ class OptimizerImpl(
     override suspend fun refresh(packageName: String, message: String) {
         if (!isValidPackageId(packageName)) return
         try {
-            withTimeout(timeoutMillis) { shell.run(compileCommand(packageName, force = false)) }
+            busy(packageName) { withTimeout(timeoutMillis) { shell.run(compileCommand(packageName, force = false)) } }
         } catch (e: CancellationException) {
             if (e !is TimeoutCancellationException) throw e
         } catch (e: Exception) {

@@ -7,7 +7,6 @@ import androidx.annotation.VisibleForTesting
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.tryOrNull
 import dev.speedcompiler.tv.watch.FrameSampler
-import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.enqueueReconnect
 import dev.speedcompiler.tv.watch.requeueStaleRunning
 import dev.speedcompiler.tv.watch.runWantedRecompiles
@@ -27,16 +26,17 @@ const val SAMPLE_TIMEOUT_MS = 20_000L
 class SpeedApp : Application() {
     val graph by lazy { AppGraph(this) }
 
-    // Off with the screen (isInteractive), while a compile holds the ADB link, and while not connected.
+    // Off with the screen (isInteractive) and while not connected. On during compiles, except for the app being compiled.
     private val sampler by lazy {
         val power = getSystemService(PowerManager::class.java)
         FrameSampler(
             graph.adbShell, { graph.optimizer.verify(it) }, { graph.packageSystem.fingerprint(it) }, { graph.database },
-            { power.isInteractive && !compileRunning() && graph.connectionMonitor.state.first() == ConnectionState.Connected },
+            { power.isInteractive && graph.connectionMonitor.state.first() == ConnectionState.Connected },
             { graph.settings.values.first().optimizeHow == OptimizeHow.Full },
             { pkg, fingerprint -> wantRecompile(graph, pkg, fingerprint) },
             // A compile outlasts the sampler's time cap, so it runs in its own coroutine.
             { graph.appScope.launch { tryOrNull { runWantedRecompiles(graph) } } },
+            { graph.optimizer.isBusy(it) },
         )
     }
     private val sampling = Mutex()

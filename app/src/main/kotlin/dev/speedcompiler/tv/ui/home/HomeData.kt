@@ -39,6 +39,7 @@ import dev.speedcompiler.tv.theme.Tone
 import dev.speedcompiler.tv.ui.Routes
 import dev.speedcompiler.tv.watch.DEFAULT_AVG_DURATION_MILLIS
 import dev.speedcompiler.tv.watch.Eta
+import dev.speedcompiler.tv.watch.Event
 import dev.speedcompiler.tv.watch.QueueEntry
 import dev.speedcompiler.tv.watch.QueueItem
 import dev.speedcompiler.tv.watch.QueueState
@@ -161,6 +162,18 @@ fun fixText(res: Resources, fix: Fix): String = res.getString(
         Fix.Retry -> R.string.home_fix_retry
     },
 )
+
+/** The short status word and tone for a stored event; shared by Home and Activity. */
+fun eventStatus(e: Event): Pair<Int, Tone> = when {
+    "fail" in e.kind -> R.string.home_failed to Tone.Error
+    e.kind == "optimize_unverified" -> R.string.home_compiled to Tone.Warn // as on the app card; before "verified", which it contains
+    "verified" in e.kind -> R.string.home_optimized to Tone.Ok
+    e.kind == "refresh" -> if (e.message == RECOMPILED_AT_START) R.string.home_recompiled to Tone.Ok else R.string.home_refreshed to Tone.Ok
+    e.kind == "reset_done" -> R.string.home_reset to Tone.Neutral
+    e.kind == "optimize_no_profile" -> R.string.home_waiting to Tone.Info
+    e.kind == "verify_unknown" -> R.string.home_unchecked to Tone.Warn
+    else -> R.string.home_note to Tone.Neutral
+}
 
 /** What happened to an app's latest job (B-22). */
 enum class JobResult(@StringRes val label: Int, val tone: Tone) {

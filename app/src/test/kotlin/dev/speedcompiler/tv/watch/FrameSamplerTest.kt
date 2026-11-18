@@ -138,7 +138,8 @@ Janky frames (legacy): 51 (83.61%)
         }
         var filter = "speed-profile"
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), AppDatabase::class.java).allowMainThreadQueries().build()
-        val sampler = FrameSampler(shell, { filter }, { "fp1" }, { db }, { ready })
+        var busyWith: String? = null
+        val sampler = FrameSampler(shell, { filter }, { "fp1" }, { db }, { ready }, isBusy = { it == busyWith })
         suspend fun sample(total: Long, janky: Long) { counters = gfx(total, janky); sampler.tick() }
         suspend fun stats() = db.frameStats().all().first()
     }
@@ -412,6 +413,18 @@ Janky frames (legacy): 51 (83.61%)
         f.ready = false
         f.sample(1_000, 0); f.sample(3_000, 0)
         assertTrue(f.stats().isEmpty())
+        f.db.close()
+    }
+
+    @Test fun samplesDuringAnotherAppsCompileButNotTheAppBeingCompiled() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.busyWith = "a.app" // its filter changes under the running process
+        f.sample(1_000, 0); f.sample(3_000, 0)
+        assertTrue(f.stats().isEmpty())
+        f.busyWith = "b.app" // another app's compile: measured as usual
+        f.sample(3_500, 10); f.sample(4_500, 20)
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed-profile", 1_000, 10)), f.stats())
         f.db.close()
     }
 

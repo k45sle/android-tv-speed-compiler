@@ -125,6 +125,45 @@ class HomeActivityTest : ComposeTestBase() {
     }
 
     @Test
+    fun recentActivityNamesRefreshEventsInsteadOfNote() {
+        val refresh = Event(2, 6_000, "b.beta", "refresh", dev.speedcompiler.tv.engine.REFRESHED)
+        val recompiled = Event(3, 7_000, "a.alpha", "refresh", dev.speedcompiler.tv.engine.RECOMPILED_AT_START)
+        show { HomeContent(HomeState(ConnectionState.Connected, true, watched, queue, listOf(recompiled, refresh), look), {}, now, utc) }
+        rule.onNodeWithText("Recompiled", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Refreshed", ignoreCase = true).assertIsDisplayed()
+        rule.onAllNodesWithText("Note", ignoreCase = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun activityHistoryListsStandaloneEventsNewestFirst() {
+        val refresh = Event(5, 300_000, "b.beta", "refresh", dev.speedcompiler.tv.engine.REFRESHED)
+        val older = QueueItem(1, "a.alpha", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 120_000, finishedAt = 180_000)
+        val newer = QueueItem(2, "a.alpha", QueueSource.AUTO, QueueState.DONE, 1_000, startedAt = 360_000, finishedAt = 540_000)
+        show { ActivityContent(emptyList(), listOf(newer, older), listOf(refresh), look, {}, {}, now, utc) }
+        val desc = "Beta, Refreshed, ${clockText(300_000, utc)}, ${dev.speedcompiler.tv.engine.REFRESHED.let { storedText(res, it) }}"
+        rule.onNodeWithContentDescription(desc).assertIsDisplayed()
+        rule.onNodeWithText(storedText(res, dev.speedcompiler.tv.engine.REFRESHED)).assertIsDisplayed()
+        val top = { d: String -> rule.onNodeWithContentDescription(d, substring = true).getBoundsInRoot().top }
+        val tNewer = top(clockText(540_000, utc))
+        val tRefresh = top(clockText(300_000, utc))
+        val tOlder = top(clockText(180_000, utc))
+        assertTrue(tNewer < tRefresh && tRefresh < tOlder)
+        rule.onNodeWithText("Nothing has run", substring = true, ignoreCase = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun activityNamesUncheckedResetAndABadIdByTheirText() {
+        val unchecked = Event(6, 120_000, "b.beta", "verify_unknown", dev.speedcompiler.tv.engine.VERIFY_UNKNOWN)
+        val reset = Event(7, 180_000, "a.alpha", "reset_done", dev.speedcompiler.tv.engine.RESET_DONE)
+        val bad = Event(8, 240_000, null, "reset_failed", dev.speedcompiler.tv.engine.DID_NOT_RESET + dev.speedcompiler.tv.engine.INVALID_APP_TAIL)
+        show { ActivityContent(emptyList(), emptyList(), listOf(bad, reset, unchecked), look, {}, {}, now, utc) }
+        rule.onNodeWithContentDescription("Beta, Unchecked, ${clockText(120_000, utc)}, ${storedText(res, unchecked.message)}").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Alpha, Reset, ${clockText(180_000, utc)}, ${storedText(res, reset.message)}").assertIsDisplayed()
+        // No app to name: the text is the title, said once.
+        rule.onNodeWithContentDescription("${storedText(res, bad.message)}, Failed, ${clockText(240_000, utc)}").assertIsDisplayed()
+    }
+
+    @Test
     fun homeBeforeSetupSaysSoAndOffersSetup() {
         var went: String? = null
         show { HomeContent(HomeState(ConnectionState.Connecting, true, emptyList(), emptyList(), emptyList(), look, setupDone = false), { went = it }, now, utc) }

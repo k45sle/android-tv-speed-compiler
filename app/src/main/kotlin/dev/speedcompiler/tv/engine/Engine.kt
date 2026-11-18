@@ -28,6 +28,9 @@ interface Optimizer {
 
     /** Puts [packageName] back to the TV's own compile state. */
     suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, RESET_UNSUPPORTED)
+
+    /** Whether a compile, refresh or reset of [packageName] runs right now. */
+    fun isBusy(packageName: String): Boolean = false
 }
 
 /** Why the gate is open or closed. Only [OpensAt] carries a clock time, taken from the user's set hours. */

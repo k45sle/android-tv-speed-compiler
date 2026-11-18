@@ -257,7 +257,9 @@ class SessionTracker(
 /**
  * Called about once a minute while the screen is on. Reads how smoothly the front app, if watched with auto-optimize on,
  * has been drawing, and adds it to [FrameStat] under the app's current compiler filter and version.
- * [ready] says whether it is fine to use the ADB link now (screen on, connected, no compile running).
+ * [ready] says whether it is fine to use the ADB link now (screen on, connected). It also samples while a compile runs:
+ * on the TV a compile of other apps did not raise an app's slow frames or JIT share in its first minute (JIT read a little lower).
+ * Only the app being compiled is skipped, since its compiler filter changes under the running process.
  */
 class FrameSampler(
     private val shell: AdbShell,
@@ -271,6 +273,8 @@ class FrameSampler(
     private val wantRecompile: suspend (String, String) -> Unit = { _, _ -> },
     /** Called at every tick the sampler runs, so waiting work (the wanted recompiles) gets a chance; it reads the front app itself. */
     private val onTick: suspend () -> Unit = {},
+    /** Whether this app is being compiled right now. */
+    private val isBusy: (String) -> Boolean = { false },
 ) {
     private class Session(val filter: String, val fingerprint: String, val tracker: SessionTracker = SessionTracker())
 
@@ -281,6 +285,7 @@ class FrameSampler(
             if (!ready()) return
             onTick()
             val front = topResumedPackage(shell.run(TOP_RESUMED_COMMAND).output.lines()) ?: return
+            if (isBusy(front)) return
             val database = db()
             val watched = database.watchedApps().get(front)
             if (watched?.autoOptimize != true || !isValidPackageId(front)) return

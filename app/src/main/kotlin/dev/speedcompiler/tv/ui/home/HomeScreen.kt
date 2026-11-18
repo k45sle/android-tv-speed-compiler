@@ -159,11 +159,8 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                 if (s.events.isNotEmpty()) ScoreTable(
                     stringResource(R.string.home_recent_activity),
                     s.events.take(2).map { e ->
-                        val (word, tone) = when {
-                            "fail" in e.kind -> stringResource(R.string.home_failed) to Tone.Error
-                            "verified" in e.kind -> stringResource(R.string.home_optimized) to Tone.Ok
-                            else -> stringResource(R.string.home_note) to Tone.Neutral
-                        }
+                        val (wordRes, tone) = eventStatus(e)
+                        val word = stringResource(wordRes)
                         ScoreRow(clockText(e.timeMillis, zone), e.packageName?.let { s.look(it).label } ?: storedText(LocalResources.current, e.message), word, tone)
                     },
                     Modifier.weight(1f),

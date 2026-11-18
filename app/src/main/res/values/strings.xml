@@ -56,6 +56,10 @@
     <string name="home_recent_activity">Recent activity</string>
     <string name="home_not_optimized">Not optimized yet</string>
     <string name="home_note">Note</string>
+    <string name="home_recompiled">Recompiled</string>
+    <string name="home_refreshed">Refreshed</string>
+    <string name="home_reset">Reset</string>
+    <string name="home_unchecked">Unchecked</string>
     <string name="nav_apps">Apps</string>
     <string name="nav_activity">Activity</string>
     <string name="nav_settings">Settings</string>
