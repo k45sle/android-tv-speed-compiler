@@ -2,11 +2,7 @@ package dev.speedcompiler.tv.ui.apps
 
 import dev.speedcompiler.tv.watch.DRAW_BOUND_UI_SHARE
 import dev.speedcompiler.tv.watch.FrameStat
-import dev.speedcompiler.tv.watch.JIT_BUSY_SHARE
 import dev.speedcompiler.tv.watch.MIN_CAUSE_FRAMES
-import dev.speedcompiler.tv.watch.WINDOW_START
-import dev.speedcompiler.tv.watch.RECOMPILE_MIN_START_MS
-import dev.speedcompiler.tv.watch.jitShare
 
 /** Filters need this many frames before their share of slow frames is trusted. */
 const val MIN_FILTER_FRAMES = 3000
@@ -36,7 +32,12 @@ private fun slowPercent(stats: List<FrameStat>, filter: String): Double? {
     return if (frames < MIN_FILTER_FRAMES) null else 100.0 * rows.sumOf { it.janky } / frames
 }
 
-/** True when the stutter of [filter] is mostly not the UI thread and the app was not busy compiling at startup. */
+/**
+ * True when the stutter of [filter] is mostly not on the UI thread, where the app's code runs (interpreted code included).
+ * JIT time at startup is not part of this: on the test TV, Nuvio Arc spent 3% of its first minute in JIT with 6% of its slow
+ * frames on the UI thread, and recompiling it took JIT to 0.1% with the same share of slow frames. The JIT work has its own
+ * action (the recompile in watch/Jobs.kt), not a different answer to where the stutter is.
+ */
 private fun drawingBound(stats: List<FrameStat>, filter: String): Boolean {
     // Only rows the sampler wrote with cause counts: rows from before schema 5 have slow frames but no causes and no duration,
     // and would make every app look drawing-bound.
@@ -44,12 +45,7 @@ private fun drawingBound(stats: List<FrameStat>, filter: String): Boolean {
     val janky = rows.sumOf { it.janky }
     // No cause counts at all (a TV that does not print them) says nothing about where the stutter is.
     if (rows.sumOf { it.slowUi + it.slowBitmap + it.slowDraw } == 0L) return false
-    if (janky < MIN_CAUSE_FRAMES || rows.sumOf { it.slowUi }.toDouble() / janky >= DRAW_BOUND_UI_SHARE) return false
-    val start = rows.filter { it.window == WINDOW_START }
-    // Without enough measured start time the JIT load is unknown, which is not the same as none.
-    if (start.sumOf { it.jitDurationMs } < RECOMPILE_MIN_START_MS) return false
-    val share = jitShare(start.sumOf { it.jitMs }, start.sumOf { it.jitDurationMs }) ?: return false
-    return share < JIT_BUSY_SHARE
+    return janky >= MIN_CAUSE_FRAMES && rows.sumOf { it.slowUi }.toDouble() / janky < DRAW_BOUND_UI_SHARE
 }
 
 fun adviceFor(debugBuild: Boolean, waitingForProfile: Boolean, compiled: Boolean, stats: List<FrameStat>, smootherOn: Boolean): Advice? {

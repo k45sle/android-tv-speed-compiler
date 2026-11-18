@@ -61,25 +61,24 @@ class AdviceTest : ComposeTestBase() {
         assertEquals(Advice.Smooth, advice(listOf(caused("speed-profile", 4000, 10, 10, 100))))
     }
 
-    @Test fun notDrawingBoundForUiHeavyJitBusyFewOrUnexplainedStutter() {
+    @Test fun notDrawingBoundForUiHeavyFewOrUnexplainedStutter() {
         // Nuvio-like: 44% UI thread.
         assertEquals(Advice.TrySmoother, advice(listOf(caused("verify", 4000, 60, 1000, 1200), caused("speed-profile", 4000, 32, 563, 700))))
-        // JIT busy in the start window: 3 s of 60 s.
-        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 38, 100, 1300, jitMs = 3_000))))
+        // Exactly 25% on the UI thread is not drawing-bound.
+        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 40, 400, 1200))))
         // Under 3000 frames.
         assertEquals(Advice.Measuring, advice(listOf(caused("speed-profile", 2999, 38, 10, 1300))))
         // No cause counts at all: unknown, not drawing.
         assertEquals(Advice.TrySmoother, advice(listOf(stat("speed-profile", 4000, 38))))
     }
 
-    @Test fun notDrawingBoundWhenTheJitWasNeverMeasuredAtAFreshStart() {
-        // Same stutter as AIOStreams, but the JIT thread was not read (unreadable /proc, or no fresh start seen): unknown is not "no JIT".
-        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 0))))
-        // Under 30 s of measured start time: too little evidence.
-        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 29_999))))
-        assertEquals(Advice.DrawingBound(38), advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 30_000))))
-        // No start row at all.
-        assertEquals(Advice.TrySmoother, advice(listOf(FrameStat("a.app", "f", "speed-profile", 4000, 1520, "later", 198, 0, 1310))))
+    @Test fun startupJitDoesNotChangeWhereTheStutterIs() {
+        // Nuvio Arc on the test TV, compiled from its shipped profile: 63% slow, 6% of them on the UI thread, 98% slow draw commands,
+        // 1.9 s of JIT in its first minute (3%). Its own recompile handles the JIT; the stutter is in drawing either way.
+        assertEquals(Advice.DrawingBound(63), advice(listOf(caused("speed-profile", 6000, 63, 222, 3700, jitMs = 1_940))))
+        // JIT never measured, or later frames only: the causes alone decide.
+        assertEquals(Advice.DrawingBound(38), advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 0))))
+        assertEquals(Advice.DrawingBound(38), advice(listOf(FrameStat("a.app", "f", "speed-profile", 4000, 1520, "later", 198, 0, 1310, 0, 120_000, 0))))
     }
 
     @Test fun rowsFromBeforeCausesWereStoredDoNotMakeAnAppDrawingBound() {

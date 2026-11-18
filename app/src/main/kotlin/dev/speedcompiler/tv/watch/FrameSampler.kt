@@ -32,7 +32,7 @@ const val WINDOW_LATER = "later"
 const val JIT_BUSY_SHARE = 0.01
 /** Janky frames a filter needs before the split of their causes is trusted. */
 const val MIN_CAUSE_FRAMES = 100L
-/** Below this share of UI-thread causes among janky frames the stutter is in drawing (AIOStreams 0.13, Nuvio 0.44). */
+/** Below this share of UI-thread causes among janky frames the stutter is in drawing (AIOStreams 0.03-0.13, Nuvio Arc 0.06, Nuvio 0.44). */
 const val DRAW_BOUND_UI_SHARE = 0.25
 /** A start window shorter than this says too little about JIT time to trigger a recompile. */
 const val RECOMPILE_MIN_START_MS = 30_000L
