@@ -82,6 +82,8 @@ data class FrameSession(
     @ColumnInfo(defaultValue = "0") val sessionDurationMs: Long = 0,
     /** True from a fresh session's first reading until its start window has been judged. */
     @ColumnInfo(defaultValue = "0") val startOpen: Boolean = false,
+    /** True when the session's first reading was inside the start window, so its start window was seen from the beginning. */
+    @ColumnInfo(defaultValue = "0") val beganFresh: Boolean = false,
 )
 
 @Entity(tableName = "event")

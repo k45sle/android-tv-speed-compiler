@@ -4,6 +4,8 @@ import dev.speedcompiler.tv.engine.NOT_INSTALLED
 import dev.speedcompiler.tv.engine.DEBUG_BUILD
 import dev.speedcompiler.tv.engine.NO_PROFILE_YET
 import dev.speedcompiler.tv.engine.OptimizeHow
+import dev.speedcompiler.tv.engine.TOP_RESUMED_COMMAND
+import dev.speedcompiler.tv.engine.topResumedPackage
 import dev.speedcompiler.tv.engine.VERIFY_UNKNOWN
 import dev.speedcompiler.tv.engine.unexpectedError
 import android.content.Context
@@ -193,7 +195,7 @@ suspend fun wantRecompile(g: AppGraph, packageName: String, fingerprint: String)
 
 /**
  * Runs the wanted recompiles with the same call as the after-use refresh (its Event, "Asked the TV to refresh this app's compiled code.",
- * shows in Activity). Never for [front], the app in use; the gate must be open (idle not required, since the app is not in front).
+ * shows in Activity). Never for the app in use: [front], or when null and the screen is on, the app the TV reports in front (nothing is recompiled if that can't be read); the gate must be open (idle not required, since the app is not in front).
  */
 suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
     val sync = g.database.syncState()
@@ -202,9 +204,19 @@ suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
     if (g.gate.status(ignoreIdle = true) != GateStatus.Open || !runLock.tryLock()) return
     try {
         if (g.settings.values.first().optimizeHow == OptimizeHow.Full) return
+        // No front given: with the screen on, ask the TV who is in front; if that fails, wait for the next time. Screen off: nobody is using an app.
+        val inFront = front ?: if (g.screenOn()) {
+            try {
+                topResumedPackage(g.adbShell.run(TOP_RESUMED_COMMAND).output.lines()) ?: return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return
+            }
+        } else null
         for (key in sync.withPrefix(RECOMPILE_PREFIX).map { it.key }) {
             val pkg = key.removePrefix(RECOMPILE_PREFIX)
-            if (pkg == front) continue
+            if (pkg == inFront) continue
             val p = sync.get(key).orEmpty().split('|')
             if (p.getOrNull(2) != "0") continue
             val watched = g.database.watchedApps().get(pkg)

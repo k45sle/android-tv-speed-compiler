@@ -102,6 +102,7 @@ class SchedulingTest {
         g.optimizer = optimizer
         g.gate = gate
         g.scheduler = WorkScheduler(ctx, g)
+        g.screenOn = { false } // the TV's screen is off unless a test says otherwise
         freeBytes = { 10L shl 30 }
     }
 
@@ -672,6 +673,32 @@ class SchedulingTest {
         dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
         runWantedRecompiles(g) // screen-off path, nothing in front
         assertEquals(listOf("a", "a"), optimizer.refreshed)
+    }
+
+    private fun frontShell(pkg: String?, fail: Boolean = false) = object : dev.speedcompiler.tv.adb.AdbShell {
+        override suspend fun run(command: String): dev.speedcompiler.tv.adb.ShellResult {
+            if (fail) throw java.io.IOException("link down")
+            return dev.speedcompiler.tv.adb.ShellResult(0, if (pkg == null) "" else "  topResumedActivity=ActivityRecord{1a2b u0 $pkg/.Main t5}")
+        }
+    }
+
+    @Test fun withTheScreenOnARecompileWithoutAGivenFrontResolvesTheFrontAndNeverTouchesIt() = runBlocking {
+        val fp = system.apps.getValue("a")
+        g.database.watchedApps().upsert(WatchedApp("a", fp))
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        g.screenOn = { true }
+        g.adbShell = frontShell("a")
+        restartOpenedGates(g) // as the 30 minute detect does
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell(null) // front unknown: wait
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell("a", fail = true)
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell("b")
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
     }
 
     @Test fun aWantedRecompileRunsFromRestartOpenedGatesAndNewVersionsMayRunAgain() = runBlocking {

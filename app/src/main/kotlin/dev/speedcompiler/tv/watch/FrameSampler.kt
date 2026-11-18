@@ -12,6 +12,8 @@ const val MIN_SESSION_FRAMES = 600
 
 /** Reading intervals that start while the app's counters are younger than this belong to the "start" window. */
 const val START_WINDOW_MS = 60_000L
+/** One reading tick, with a little extra: a reading this much past the start window still ends it, one later than that does not belong to it. */
+const val START_SLACK_MS = 75_000L
 const val WINDOW_START = "start"
 const val WINDOW_LATER = "later"
 
@@ -126,7 +128,8 @@ data class Counts(
  * counts from zero into "start". Otherwise the first reading is only a baseline, since the counters hold frames from before we looked.
  * [add] returns what to store per window, nothing while the session is under [MIN_SESSION_FRAMES]
  * (the frames seen so far are released in one go when it passes).
- * A reading interval belongs to "start" when the previous reading was younger than [START_WINDOW_MS], else to "later".
+ * A reading interval belongs to "start" only in a session that began fresh, when the previous reading was younger than
+ * [START_WINDOW_MS] and this one is at most [START_WINDOW_MS] + [START_SLACK_MS] old (a long gap is "later"), else to "later".
  */
 class SessionTracker(
     val pid: Int? = null,
@@ -144,6 +147,8 @@ class SessionTracker(
     sessionJitMs: Long = 0L,
     sessionDurationMs: Long = 0L,
     startOpen: Boolean = false,
+    /** True when the first reading was fresh; only such a session has a start window. */
+    beganFresh: Boolean = false,
     /** False after someone reset gfxinfo in a live process: its counters are young but the frames before were not seen. */
     private val canBeFresh: Boolean = true,
 ) {
@@ -172,6 +177,8 @@ class SessionTracker(
     var sessionDurationMs = sessionDurationMs
         private set
     var startOpen = startOpen
+        private set
+    var beganFresh = beganFresh
         private set
 
     /** True after the [add] that crossed from the start window to the later one, for a session that began fresh. */
@@ -204,8 +211,13 @@ class SessionTracker(
             fresh -> Counts(g.total, g.janky, g.slowUi, g.slowBitmap, g.slowDraw, jitDelta, duration)
             else -> Counts()
         }
-        val window = if (fresh || lastAgeMs.let { it != null && it < START_WINDOW_MS }) WINDOW_START else WINDOW_LATER
-        if (!seen) startOpen = fresh
+        if (!seen) {
+            beganFresh = fresh
+            startOpen = fresh
+        }
+        val prevAge = lastAgeMs
+        val inStart = fresh || (seen && beganFresh && prevAge != null && prevAge < START_WINDOW_MS && g.ageMs != null && g.ageMs <= START_WINDOW_MS + START_SLACK_MS)
+        val window = if (inStart) WINDOW_START else WINDOW_LATER
         startJustEnded = seen && startOpen && window == WINDOW_LATER
         if (startJustEnded) startOpen = false
         if (window == WINDOW_START) {
@@ -272,7 +284,7 @@ class FrameSampler(
                         it.pid, it.lastTotal, it.lastJanky, it.lastSlowUi, it.lastSlowBitmap, it.lastSlowDraw, it.lastAgeMs,
                         Counts(it.startFrames, it.startJanky, it.startSlowUi, it.startSlowBitmap, it.startSlowDraw, it.startJitMs, it.startDurationMs),
                         Counts(it.frames, it.janky, it.laterSlowUi, it.laterSlowBitmap, it.laterSlowDraw, it.laterJitMs, it.laterDurationMs), it.released,
-                        it.lastJitMs, it.sessionJitMs, it.sessionDurationMs, it.startOpen,
+                        it.lastJitMs, it.sessionJitMs, it.sessionDurationMs, it.startOpen, it.beganFresh,
                     ),
                 )
             }
@@ -312,7 +324,7 @@ class FrameSampler(
                         t.pendingStart.frames, t.pendingStart.janky, t.pendingStart.slowUi, t.pendingStart.slowBitmap, t.pendingStart.slowDraw,
                         t.pendingLater.slowUi, t.pendingLater.slowBitmap, t.pendingLater.slowDraw,
                         t.lastJitMs, t.pendingStart.jitMs, t.pendingStart.durationMs, t.pendingLater.jitMs, t.pendingLater.durationMs,
-                        t.sessionJitMs, t.sessionDurationMs, t.startOpen,
+                        t.sessionJitMs, t.sessionDurationMs, t.startOpen, t.beganFresh,
                     ),
                 )
             }

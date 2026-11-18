@@ -10,6 +10,7 @@ import dev.speedcompiler.tv.engine.TOP_RESUMED_COMMAND
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -253,6 +254,63 @@ Janky frames (legacy): 51 (83.61%)
         assertEquals(mapOf(WINDOW_LATER to Counts(700, 0)), t.add(GfxStats(1, 1_400, 0, 0, 0, 0, null, jitMs = 500)))
     }
 
+    @Test fun aLongGapAfterAYoungReadingIsLaterNotStart() {
+        val t = SessionTracker()
+        t.add(g(400, 4, 30_000))
+        // Two hours later: the interval is not part of the start window, and ends it.
+        val out = t.add(g(900, 9, 7_200_000)) // 900 frames: released
+        assertEquals(
+            mapOf(WINDOW_START to Counts(400, 4, durationMs = 30_000), WINDOW_LATER to Counts(500, 5, durationMs = 7_170_000)), out,
+        )
+        assertEquals(30_000L, t.sessionDurationMs)
+        assertTrue(t.startJustEnded)
+        // Just inside one tick of slack still counts.
+        val u = SessionTracker()
+        u.add(g(100, 0, 30_000))
+        u.add(g(200, 0, START_WINDOW_MS + START_SLACK_MS))
+        assertEquals(START_WINDOW_MS + START_SLACK_MS, u.sessionDurationMs)
+        assertEquals(Counts(200, 0, durationMs = START_WINDOW_MS + START_SLACK_MS), u.pendingStart)
+        assertFalse(u.startJustEnded)
+    }
+
+    @Test fun aGapDoesNotDiluteTheJitShareThatTriggersARecompile() = runBlocking {
+        // 4 s of JIT in the first 40 s (10%), then a reading two hours later with little more.
+        val w = runStart(listOf(400, 450), ages = listOf(40_000, 7_200_000))
+        assertEquals(listOf("a.app" to "fp1"), w.calls)
+    }
+
+    @Test fun aSessionAfterAGfxinfoResetNeverHasAStartWindow() = runBlocking {
+        val t = SessionTracker(canBeFresh = false)
+        t.add(g(50, 1, 5_000)) // young counters, but the frames before were not seen
+        t.add(g(450, 2, 65_000))
+        assertEquals(Counts(), t.pendingStart)
+        assertEquals(Counts(400, 1, durationMs = 60_000), t.pendingLater)
+        assertFalse(t.beganFresh)
+        assertFalse(t.startOpen)
+        assertEquals(0L, t.sessionDurationMs)
+        // Through the sampler: a reset in a live process leaves no start rows and no recompile.
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        val calls = mutableListOf<String>()
+        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { false }, { p, _ -> calls += p })
+        f.counters = gfxJit(10, 1_000, 10, 300_000, 5_000); sampler.tick()
+        f.counters = gfxJit(10, 50, 1, 10_000, 5_100); sampler.tick() // reset
+        assertFalse(f.db.frameStats().session("a.app")!!.beganFresh)
+        f.counters = gfxJit(10, 700, 5, 40_000, 5_600); sampler.tick()
+        f.counters = gfxJit(10, 1_400, 9, 100_000, 5_700); sampler.tick()
+        assertTrue(f.stats().none { it.window == "start" })
+        assertEquals(emptyList<String>(), calls)
+        f.db.close()
+    }
+
+    @Test fun aFreshSessionStoresThatItBeganFresh() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.counters = gfxFull(10, 400, 40, 30_000); f.sampler.tick()
+        assertTrue(f.db.frameStats().session("a.app")!!.beganFresh)
+        f.db.close()
+    }
+
     private class Wanted { val calls = mutableListOf<Pair<String, String>>(); val fronts = mutableListOf<String>() }
 
     /** Readings at ages 20 s, 80 s (start), 140 s (the start window has ended). [ticks] is the JIT thread's cumulative CPU at each. */
@@ -345,10 +403,14 @@ Janky frames (legacy): 51 (83.61%)
             it.version = 4
         }
         val db = Room.databaseBuilder(ctx, AppDatabase::class.java, "migrate4.db").allowMainThreadQueries().build()
-        assertEquals(listOf(FrameStat("a.app", "fp1", "speed", 900, 90, "later", 0, 0, 0)), db.frameStats().all().first())
-        val s = db.frameStats().session("a.app")!!
-        assertEquals(300L to 3L, s.frames to s.janky)
-        assertNull(s.pid)
+        // Old rows are post-start frames: window "later", and the new cause, JIT and duration columns are zero.
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed", 900, 90, "later", 0, 0, 0, 0, 0)), db.frameStats().all().first())
+        // The pending frames and janky counts of the old session are kept as later; everything new is empty.
+        assertEquals(
+            FrameSession("a.app", "speed", "fp1", 5, 1, 300, 3, false, pid = null, lastAgeMs = null, lastJitMs = null),
+            db.frameStats().session("a.app"),
+        )
+        assertFalse(db.frameStats().session("a.app")!!.beganFresh)
         db.frameStats().put(FrameStat("a.app", "fp1", "speed", 10, 1, "start"))
         assertEquals(2, db.frameStats().all().first().size)
         db.close()
