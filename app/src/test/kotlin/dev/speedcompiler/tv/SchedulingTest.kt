@@ -106,7 +106,11 @@ class SchedulingTest {
         freeBytes = { 10L shl 30 }
     }
 
-    @After fun tearDown() = g.database.close()
+    /** The compile lock is one per process: a worker still letting go of it would make the next test's refresh skip its run. */
+    @After fun tearDown() = runBlocking {
+        await("compile lock released") { !compileRunning() }
+        g.database.close()
+    }
 
     private fun infos(pkg: String) = wm.getWorkInfosForUniqueWork(workName(pkg)).get()
 
