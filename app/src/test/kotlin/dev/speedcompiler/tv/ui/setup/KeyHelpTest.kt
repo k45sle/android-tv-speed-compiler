@@ -17,9 +17,10 @@ import org.junit.Test
 class KeyHelpTest : ComposeTestBase() {
     private val check = MutableStateFlow(KeyCheck.Unknown)
     private val busy = MutableStateFlow(false)
+    private val lastAllow = MutableStateFlow<Boolean?>(null)
     private var allowances = 0
     private var opened = 0
-    private val deps = KeyHelpDeps(check, busy, { allowances++ }, { opened++ })
+    private val deps = KeyHelpDeps(check, busy, { allowances++ }, { opened++ }, lastAllow)
 
     private fun show() {
         rule.setContent { SpeedTheme { KeyHelpScreen(onBack = {}, deps = deps) } }
@@ -76,10 +77,39 @@ class KeyHelpTest : ComposeTestBase() {
     }
 
     @Test
+    fun savedAgainExplainsTheNextRestart() {
+        check.value = KeyCheck.SavedAgain
+        show()
+        rule.onNodeWithText("Saved again", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("Open Developer options", ignoreCase = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun forgetsAtRestartSaysWhatToDo() {
+        check.value = KeyCheck.ForgetsAtRestart
+        show()
+        rule.onNodeWithText("after each full restart, open Speed Compile and choose Fix connection", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("Open Developer options", ignoreCase = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun notLetInShowsALine() {
+        lastAllow.value = false
+        show()
+        rule.onNodeWithText("The TV didn't let Speed Compile in", substring = true).assertIsDisplayed()
+        busy.value = true
+        rule.waitForIdle()
+        rule.onNodeWithText("The TV didn't let Speed Compile in", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun notSavedFitsTheScreen() = assertFits(KeyCheck.NotSaved, "Still not saved?")
 
     @Test
     fun forgottenFitsTheScreen() = assertFits(KeyCheck.Forgotten, "Forgotten again")
+
+    @Test
+    fun forgetsAtRestartFitsTheScreen() = assertFits(KeyCheck.ForgetsAtRestart, "Standby doesn't need this")
 
     /** With too much text the page runs out of room and the last paragraph is cut off: its text overflows its box. */
     private fun assertFits(state: KeyCheck, lastParagraph: String) {

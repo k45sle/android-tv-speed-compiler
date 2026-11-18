@@ -305,6 +305,13 @@ private val runLock = Mutex()
 
 /** True while a compile or refresh holds the lock; the frame sampler stays off the ADB link then. */
 internal fun compileRunning() = runLock.isLocked
+
+/**
+ * A row says RUNNING only while a worker holds [runLock], so with the lock held any RUNNING row was left by a process
+ * that died mid-compile: put it back to QUEUED, so Home stops showing it as running (WorkManager reruns its job). Called
+ * once at app start.
+ */
+internal suspend fun requeueStaleRunning(g: AppGraph) = runLock.withLock { g.database.queue().requeueAllRunning() }
 @VisibleForTesting internal val runNowWaiting = AtomicInteger(0)
 
 /** Runs one queue item: waits for the gate unless the user said "now", then compiles. One compile at a time. */

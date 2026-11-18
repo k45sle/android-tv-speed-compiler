@@ -11,6 +11,7 @@ import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.KeyChecker
 import dev.speedcompiler.tv.adb.LibAdb
 import dev.speedcompiler.tv.adb.Pairing
+import dev.speedcompiler.tv.adb.tryOrNull
 import dev.speedcompiler.tv.engine.AndroidPackageSystem
 import dev.speedcompiler.tv.engine.Clock
 import dev.speedcompiler.tv.engine.DataStoreSettings
@@ -56,6 +57,8 @@ class AppGraph(context: Context) {
         app.packageName,
         appScope,
         checkKey = keyChecker::check,
+        askSeparately = libAdb::askSeparately,
+        linkOpen = { libAdb.isConnected },
         disconnect = { libAdb.disconnect() },
         keyId = { libAdb.publicKeyId },
     )
@@ -74,7 +77,7 @@ class AppGraph(context: Context) {
     /** The TV keeps the trust, so this flag (read by Setup) is the only local trace that we hold a pairing. */
     init {
         val prefs = app.getSharedPreferences("setup", Context.MODE_PRIVATE)
-        appScope.launch { runCatching { connectionKeeper.forgetStaleKeyCheck() } } // best effort; must not crash
+        appScope.launch { tryOrNull { connectionKeeper.forgetStaleKeyCheck() } } // best effort; must not crash
         appScope.launch {
             connectionMonitor.state.collect {
                 if (it == ConnectionState.Connected) {

@@ -15,10 +15,9 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.speedcompiler.tv.SpeedApp
-import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.Fix
 import dev.speedcompiler.tv.adb.KeeperStatus
-import kotlinx.coroutines.CancellationException
+import dev.speedcompiler.tv.adb.tryOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -43,9 +42,8 @@ fun enqueueReconnect(context: Context) {
  * With [retryNotAllowed] (the legacy port, only just after a restart) a refused key is retried too: these tries never
  * show the TV's prompt, and right after boot the TV may refuse a key it accepts a few seconds later. It is left off
  * later, and when the check knows the TV won't keep the key, so those runs stop at once and Home offers Fix connection.
- * Calls [onGaveUp] with the last status only when every try was refused ([Fix.AllowPrompt]) and no try connected
- * or stopped early, never on an early stop. A run where the port was closed for some tries, or timed out,
- * says nothing about the key.
+ * Calls [onGaveUp] with the last status when the run ends on a refusal ([Fix.AllowPrompt]) and every try of it was
+ * refused: after the last retry, or at once when refusals aren't retried (for example more than 10 minutes after boot).
  * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).
  */
 suspend fun reconnectWithRetry(
@@ -67,7 +65,12 @@ suspend fun reconnectWithRetry(
         last = s
         if (s == KeeperStatus.Connected) return
         if (s !is KeeperStatus.Failed || s.fix != Fix.AllowPrompt) allRefused = false
-        if (s is KeeperStatus.Failed && (s.fix == Fix.QuickRepair || (s.fix == Fix.AllowPrompt && !retryNotAllowed))) return
+        if (s is KeeperStatus.Failed && s.fix == Fix.QuickRepair) return
+        if (s is KeeperStatus.Failed && s.fix == Fix.AllowPrompt && !retryNotAllowed) {
+            // Not retried, so this refusal is final, like the last one of a retry run.
+            if (allRefused) onGaveUp(s)
+            return
+        }
         if (i < backoff.size) pause(backoff[i])
     }
     if (allRefused) onGaveUp(last)
@@ -96,40 +99,14 @@ class ReconnectWorker(context: Context, params: WorkerParameters) : CoroutineWor
             reconnect = graph.connectionKeeper::reconnect,
             pause = { ms -> graph.connectionKeeper.connectingWhile { delay(ms) } },
             // the TV may refuse a trusted key for a few seconds after boot; later, a refusal is final and Home should offer Fix connection at once
-            retryNotAllowed = s.legacyAdb && android.os.SystemClock.elapsedRealtime() < AFTER_BOOT_MS && !keyKnownRefused(graph.connectionKeeper),
-            onGaveUp = { last -> quietRetriesFailed(graph.connectionKeeper, last) },
+            retryNotAllowed = s.legacyAdb && android.os.SystemClock.elapsedRealtime() < AFTER_BOOT_MS && tryOrNull { graph.connectionKeeper.keyKnownRefused() } != true,
+            onGaveUp = { last -> tryOrNull { graph.connectionKeeper.quietlyRefused(last) } },
         )
         return Result.success()
     }
 
     /** Needed for expedited work below API 31. */
     override suspend fun getForegroundInfo() = foregroundInfo(applicationContext, 2, "reconnect", applicationContext.getString(dev.speedcompiler.tv.R.string.notif_reconnecting))
-}
-
-/**
- * [ConnectionKeeper.keyKnownRefused] with a settings or key-load error counting as "not known", so it never fails the
- * worker before the tries; cancelling still cancels.
- */
-private suspend fun keyKnownRefused(keeper: ConnectionKeeper): Boolean = try {
-    keeper.keyKnownRefused()
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    false
-}
-
-/**
- * [ConnectionKeeper.quietRetriesFailed] after the tries, with a settings or key-load error ignored: the status already
- * carries the failure, and the worker must not fail on bookkeeping. Cancelling still cancels.
- */
-private suspend fun quietRetriesFailed(keeper: ConnectionKeeper, last: KeeperStatus) {
-    try {
-        keeper.quietRetriesFailed(last)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        // ignored: a bookkeeping error must not fail the worker
-    }
 }
 
 /** Notification for expedited work below API 31. */

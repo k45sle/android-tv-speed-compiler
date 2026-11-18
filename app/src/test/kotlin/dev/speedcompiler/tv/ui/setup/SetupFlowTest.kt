@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import com.github.takahirom.roborazzi.captureRoboImage
+import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.FakeConnectionMonitor
 import dev.speedcompiler.tv.theme.SpeedTheme
@@ -233,7 +234,10 @@ class SetupFlowTest : ComposeTestBase() {
         monitor.flow.value = ConnectionState.Disconnected
         env.hook = {
             if (it == "openDeveloperOptions") env.wireless = true
-            if (it == "reconnect") monitor.flow.value = ConnectionState.Connected
+            if (it == "connect") {
+                monitor.flow.value = ConnectionState.Connected
+                env.answer.complete(null)
+            }
         }
         show { ReconnectScreen({ backs++ }, deps) }
         see("Reconnect"); shot("reconnect")
@@ -241,14 +245,14 @@ class SetupFlowTest : ComposeTestBase() {
         tick()
         assertEquals(1, backs)
         assertTrue("$presses key presses", presses <= 4)
-        assertEquals(listOf("openDeveloperOptions", "reconnect"), env.calls)
+        assertEquals(listOf("openDeveloperOptions", "connect"), env.calls)
     }
 
     @Test
     fun reconnectSkipsTheButtonWhenWirelessDebuggingIsAlreadyOn() {
         monitor.flow.value = ConnectionState.Disconnected
         env.wireless = true
-        env.hook = { if (it == "reconnect") monitor.flow.value = ConnectionState.Connected }
+        env.hook = { if (it == "connect") env.answer.complete(null) }
         show { ReconnectScreen({ backs++ }, deps) }
         tick()
         assertEquals(1, backs)
@@ -342,10 +346,10 @@ class SetupFlowTest : ComposeTestBase() {
         rule.onNodeWithText("Allow this app.").assertDoesNotExist()
     }
 
-    private fun allowStep(reason: MutableStateFlow<String?>) {
+    private fun allowStep() {
         env.developerOptions = true; env.wireless = true
         monitor.flow.value = ConnectionState.Disconnected
-        val d = SetupDeps(env, monitor.state, url, reason)
+        val d = SetupDeps(env, monitor.state, url)
         show { SetupScreen({ backs++ }, deps = d) }
         enter()
         see("Allow this app.")
@@ -353,29 +357,32 @@ class SetupFlowTest : ComposeTestBase() {
 
     @Test
     fun b16_allowStepShowsDeniedAndRetries() {
-        val reason = MutableStateFlow<String?>("The TV did not allow this app.")
-        allowStep(reason)
-        monitor.flow.value = ConnectionState.Connecting; tick()
-        monitor.flow.value = ConnectionState.Disconnected; tick()
+        allowStep()
+        env.answer.complete(AdbFailure.NotAuthorized())
+        tick()
         rule.onAllNodesWithText("The TV did not allow this app.").assertCountEquals(1); shot("5_allow_denied")
+        assertEquals(1, env.calls.count { it == "connect" })
         enter() // Retry, focused
-        assertTrue("reconnect" in env.calls)
+        tick()
+        assertEquals(2, env.calls.count { it == "connect" })
         rule.onNodeWithText("Retry").assertDoesNotExist()
     }
 
     @Test
     fun b16_allowStepShowsTimeoutAndRetries() {
-        allowStep(MutableStateFlow(null))
-        tick(46_000)
-        see("No answer from the TV yet."); shot("5_allow_timeout")
+        allowStep()
+        env.answer.complete(AdbFailure.Timeout())
+        tick()
+        see("The TV did not answer in time."); shot("5_allow_timeout")
         enter() // Retry
-        rule.onNodeWithText("No answer from the TV yet.").assertDoesNotExist()
+        tick()
+        rule.onNodeWithText("The TV did not answer in time.").assertDoesNotExist()
     }
 
     @Test
     fun b02_reconnectTimesOutWithReasonPairAgainAndHelp() {
         monitor.flow.value = ConnectionState.Disconnected
-        val d = SetupDeps(env, monitor.state, url, MutableStateFlow("Wireless debugging is off."))
+        val d = SetupDeps(env, monitor.state, url)
         show { ReconnectScreen({ backs++ }, d) }
         see("Open Developer options")
         tick(31_000)
@@ -383,6 +390,17 @@ class SetupFlowTest : ComposeTestBase() {
         assertEquals(0, backs)
         press(Key.DirectionRight); enter() // Pair again
         see("Use your phone.")
+    }
+
+    @Test
+    fun reconnectShowsItsOwnFailure() {
+        monitor.flow.value = ConnectionState.Disconnected
+        env.wireless = true
+        show { ReconnectScreen({ backs++ }, deps) }
+        env.answer.complete(AdbFailure.NotAuthorized())
+        tick()
+        see("The TV did not allow this app."); see("Try again")
+        assertEquals(0, backs)
     }
 
     @Test
@@ -424,9 +442,9 @@ class SetupFlowTest : ComposeTestBase() {
 
     @Test
     fun b16_allowStepTreatsConnectingThenUnpairedAsDenied() {
-        allowStep(MutableStateFlow("The TV does not trust this app yet."))
-        monitor.flow.value = ConnectionState.Connecting; tick()
-        monitor.flow.value = ConnectionState.Unpaired; tick()
+        allowStep()
+        env.answer.complete(AdbFailure.NotPaired())
+        tick()
         see("The TV does not trust this app yet."); see("Retry")
     }
 
@@ -442,11 +460,8 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     private val legacy = MutableStateFlow(false)
-    private fun legacyDeps(
-        reason: MutableStateFlow<String?> = MutableStateFlow(null),
-        prompt: MutableStateFlow<ConnectionState>? = null,
-    ) =
-        SetupDeps(env, monitor.state, url, reason, holdsPairing = { false }, onFinish = { sel, now -> finished = sel to now }, legacy = legacy, setLegacy = { legacy.value = it }, promptConnection = prompt)
+    private fun legacyDeps() =
+        SetupDeps(env, monitor.state, url, holdsPairing = { false }, onFinish = { sel, now -> finished = sel to now }, legacy = legacy, setLegacy = { legacy.value = it })
 
     private fun click(text: String) { rule.onNodeWithText(text, ignoreCase = true).performClick(); rule.waitForIdle() }
 
@@ -463,7 +478,7 @@ class SetupFlowTest : ComposeTestBase() {
         see("ADB debugging is on, but this TV doesn't accept the connection on port 5555. Speed Compile needs Wireless debugging on this TV."); shot("3_adb_port_closed")
         env.portOpen = true; tick()
         see("Allow this app.")
-        assertTrue("reconnect" in env.calls)
+        assertTrue("connect" in env.calls)
         assertTrue("startPairing" !in env.calls)
         monitor.flow.value = ConnectionState.Connected; tick()
         see("Pick apps to optimize.")
@@ -493,29 +508,37 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     @Test
-    fun legacyQuietRefusalDoesNotShowADenial() {
-        // A background try could not show the TV's prompt: its refusal must not deny the step whose own prompted try
-        // is still coming, so Connecting followed by Connecting shows no problem.
-        val prompt = MutableStateFlow(ConnectionState.Unpaired)
+    fun legacyBackgroundFailureDoesNotDenyTheStep() {
+        // A background try failing says nothing about the step's own prompted try, which is still pending.
         env.developerOptions = true; legacy.value = true; env.portOpen = true
-        show { SetupScreen({ backs++ }, deps = legacyDeps(MutableStateFlow("The TV did not allow this app."), prompt)) }
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
         enter()
         see("Allow this app.")
-        prompt.value = ConnectionState.Connecting; tick()
-        prompt.value = ConnectionState.Connecting; tick()
+        monitor.flow.value = ConnectionState.Connecting; tick()
+        monitor.flow.value = ConnectionState.Disconnected; tick()
         rule.onNodeWithText("The TV did not allow this app.").assertDoesNotExist()
+        rule.onNodeWithText("Retry").assertDoesNotExist()
+        see("Connecting")
+    }
+
+    @Test
+    fun legacyAllowStepWaitsForThePrompt() {
+        env.developerOptions = true; legacy.value = true; env.portOpen = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
+        enter()
+        see("Allow this app.")
+        tick(59_000)
         rule.onNodeWithText("Retry").assertDoesNotExist()
     }
 
     @Test
     fun legacyPromptedRefusalShowsTheNotAllowedReason() {
-        val prompt = MutableStateFlow(ConnectionState.Unpaired)
         env.developerOptions = true; legacy.value = true; env.portOpen = true
-        show { SetupScreen({ backs++ }, deps = legacyDeps(MutableStateFlow("The TV did not allow this app."), prompt)) }
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
         enter()
         see("Allow this app.")
-        prompt.value = ConnectionState.Connecting; tick()
-        prompt.value = ConnectionState.Disconnected; tick()
+        env.answer.complete(AdbFailure.NotAuthorized())
+        tick()
         see("The TV did not allow this app."); see("Retry")
     }
 
@@ -528,9 +551,9 @@ class SetupFlowTest : ComposeTestBase() {
         tick(31_000)
         see("ADB debugging is off, or the TV doesn't accept the connection on port 5555."); shot("reconnect_adb_timeout")
         rule.onNodeWithText("Pair again").assertDoesNotExist()
-        assertTrue("reconnect" !in env.calls)
+        assertTrue("connect" !in env.calls)
         env.portOpen = true; tick()
-        assertTrue("reconnect" in env.calls)
+        assertTrue("connect" in env.calls)
         monitor.flow.value = ConnectionState.Connected; tick()
         assertEquals(1, backs)
     }

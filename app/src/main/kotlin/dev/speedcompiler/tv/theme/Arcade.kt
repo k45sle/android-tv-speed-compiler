@@ -185,11 +185,16 @@ fun Marquee(
                 )
             }.padding(horizontal = 28.dp),
         ) {
-            Column(Modifier.align(Alignment.CenterStart)) {
-                PixelText(title, color = c.accent, size = if (compact) 52.sp else 56.sp)
-                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    PixelText(title, color = c.accent, size = if (compact) 52.sp else 56.sp)
+                    if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                if (trailing != null) {
+                    Spacer(Modifier.width(16.dp))
+                    trailing()
+                }
             }
-            if (trailing != null) Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
         }
     }
 }

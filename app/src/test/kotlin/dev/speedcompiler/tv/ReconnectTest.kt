@@ -125,6 +125,22 @@ class ReconnectTest {
         assertEquals(1, log.count { it == "connect" })
     }
 
+    @Test fun refusalWithoutRetriesIsFinal() = runTest {
+        // Not retried (for example well after boot), so the first refusal ends the run and says the key was dropped.
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, NOT_ALLOWED, onGaveUp = { gaveUp += it })
+        assertEquals(1, log.count { it == "connect" })
+        assertEquals(listOf(NOT_ALLOWED), gaveUp)
+    }
+
+    @Test fun noGaveUpWhenAnEarlierTryTimedOut() = runTest {
+        // A timeout says nothing about the key, so the closing refusal is not read as "the TV dropped it".
+        val gaveUp = mutableListOf<KeeperStatus>()
+        run(true, TIMEOUT, NOT_ALLOWED, onGaveUp = { gaveUp += it })
+        assertEquals(2, log.count { it == "connect" })
+        assertEquals(emptyList<KeeperStatus>(), gaveUp)
+    }
+
     @Test fun legacyRetriesARefusedKey() = runTest {
         run(true, NOT_ALLOWED, NOT_ALLOWED, KeeperStatus.Connected, retryNotAllowed = true)
         assertEquals(3, log.count { it == "connect" })

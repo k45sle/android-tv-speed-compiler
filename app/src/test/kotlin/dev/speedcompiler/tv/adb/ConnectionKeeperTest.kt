@@ -48,13 +48,19 @@ class ConnectionKeeperTest {
         settings: Settings = FakeSettings(),
         scope: CoroutineScope = CoroutineScope(UnconfinedTestDispatcher()),
         checkKey: (suspend () -> KeyCheck)? = null,
+        askSeparately: suspend () -> Boolean? = { null },
+        linkOpen: () -> Boolean = { false },
         disconnect: suspend () -> Unit = {},
         keyId: () -> String? = { null },
         connect: suspend (Boolean) -> Boolean = { true },
     ) =
         ConnectionKeeper(
             connect, shell, settings, "dev.test", scope,
-            checkKey = checkKey, disconnect = disconnect, keyId = keyId,
+            checkKey = checkKey,
+            askSeparately = askSeparately,
+            linkOpen = linkOpen,
+            disconnect = disconnect,
+            keyId = keyId,
         )
 
     @Test
@@ -73,7 +79,7 @@ class ConnectionKeeperTest {
         assertEquals(0, checks) // the drop happened before the key check could start
         assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
         assertEquals(null, settings.values.first().legacyKeyCheckKey)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
     }
 
     @Test
@@ -160,6 +166,13 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun fixForLegacyDebuggingOff() {
+        // The legacy port is opened by the plain ADB switch, not Wireless debugging.
+        assertEquals(Fix.TurnOnAdbDebugging, fixFor(AdbFailure.DebuggingOff(null, legacy = true)))
+        assertEquals(Fix.TurnOnWirelessDebugging, fixFor(AdbFailure.DebuggingOff()))
+    }
+
+    @Test
     fun droppedLinkDuringShellMovesStatusToFailed() = runTest {
         val k = keeper(object : AdbShell {
             override suspend fun run(command: String): ShellResult = throw AdbFailure.Timeout()
@@ -194,13 +207,43 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun connectNowAndWaitReturnsItsOwnTry() = runTest(UnconfinedTestDispatcher()) {
+        val k = keeper(
+            FakeAdbShell(),
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            connect = { throw AdbFailure.NotAuthorized() },
+        )
+        val result = k.connectNowAndWait()
+        // The prompted try's refusal is final, so Home can offer Fix connection.
+        assertEquals(Fix.AllowPrompt, (result as KeeperStatus.Failed).fix)
+        assertEquals(k.status.value, result)
+    }
+
+    @Test
+    fun connectNowAndWaitJoinsTheRunningTry() = runTest(UnconfinedTestDispatcher()) {
+        var calls = 0
+        val gate = CompletableDeferred<Unit>()
+        val k = keeper(
+            FakeAdbShell(),
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            connect = { calls++; gate.await(); true },
+        )
+        k.connectNow() // the TV's prompt is up
+        assertEquals(1, calls)
+        val waiter = launch { assertEquals(KeeperStatus.Connected, k.connectNowAndWait()) }
+        gate.complete(Unit)
+        waiter.join()
+        assertEquals(1, calls) // no second try, so no second prompt
+    }
+
+    @Test
     fun legacyConnectStoresTheKeyCheck() = runTest(UnconfinedTestDispatcher()) {
         val shell = FakeAdbShell()
         val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
         val k = keeper(shell, settings, checkKey = { KeyCheck.NotSaved })
         k.reconnect(prompt = true)
         assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
         assertEquals(listOf(GRANT), shell.commands)
     }
 
@@ -212,7 +255,14 @@ class ConnectionKeeperTest {
         k.reconnect()
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
         assertEquals(0, checks)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
+    }
+
+    @Test
+    fun quietHandshakeClearsForgetsAtRestart() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.ForgetsAtRestart, key = "k1")
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown }, keyId = { "k1" }).reconnect()
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
     }
 
     @Test
@@ -228,11 +278,10 @@ class ConnectionKeeperTest {
         )
         k.reconnect(prompt = true) // its key check starts and never finishes
         assertEquals(1, checks)
-        assertEquals(true, k.keyChecking.value)
+        assertEquals(true, k.keyHelpBusy.first())
         k.reconnect() // a quiet fresh handshake already proves the key is trusted
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
         assertEquals(1, checks) // no second check
-        assertEquals(false, k.keyChecking.value)
         assertEquals(false, k.keyHelpBusy.first())
         // The cancelled check never ran its storeKeyCheck, so Saved stays.
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
@@ -246,7 +295,7 @@ class ConnectionKeeperTest {
         k.reconnect(prompt = true)
         assertEquals(0, checks)
         assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
     }
 
     @Test
@@ -266,7 +315,14 @@ class ConnectionKeeperTest {
         val k = keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown })
         k.reconnect(prompt = true)
         assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
+    }
+
+    @Test
+    fun promptedSavedAfterForgottenIsSavedAgain() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Forgotten, key = "k1")
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Saved }, keyId = { "k1" }).reconnect(prompt = true)
+        assertEquals(KeyCheck.SavedAgain, settings.values.first().legacyKeyCheck)
     }
 
     @Test
@@ -276,7 +332,7 @@ class ConnectionKeeperTest {
         val k = keeper(FakeAdbShell(), settings, checkKey = { checks++; KeyCheck.Saved })
         k.reconnect(prompt = true)
         assertEquals(0, checks)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
     }
 
     @Test
@@ -288,7 +344,7 @@ class ConnectionKeeperTest {
         val k = keeper(FakeAdbShell(), settings, checkKey = check, connect = { throw AdbFailure.NotAuthorized() })
         val refused = k.reconnect()
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
-        k.quietRetriesFailed(refused)
+        k.quietlyRefused(refused)
         assertEquals(KeyCheck.Forgotten, settings.values.first().legacyKeyCheck)
 
         // The prompt was allowed, so the refusal alone says nothing about a restart.
@@ -300,14 +356,38 @@ class ConnectionKeeperTest {
         // Nothing saved: a quiet refusal cannot mean forgotten.
         val notSaved = FakeSettings(legacy = true, check = KeyCheck.NotSaved)
         val notSavedKeeper = keeper(FakeAdbShell(), notSaved, checkKey = check, connect = { throw AdbFailure.NotAuthorized() })
-        notSavedKeeper.quietRetriesFailed(notSavedKeeper.reconnect())
+        notSavedKeeper.quietlyRefused(notSavedKeeper.reconnect())
         assertEquals(KeyCheck.NotSaved, notSaved.values.first().legacyKeyCheck)
 
         // Only a refusal counts; a timeout keeps the value.
         val timeout = FakeSettings(legacy = true, check = KeyCheck.Saved)
         val timeoutKeeper = keeper(FakeAdbShell(), timeout, checkKey = check, connect = { throw AdbFailure.Timeout() })
-        timeoutKeeper.quietRetriesFailed(timeoutKeeper.reconnect())
+        timeoutKeeper.quietlyRefused(timeoutKeeper.reconnect())
         assertEquals(KeyCheck.Saved, timeout.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun quietRefusalAfterSavedAgainForgetsAtRestart() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1")
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            checkKey = { KeyCheck.Unknown },
+            keyId = { "k1" },
+            connect = { throw AdbFailure.NotAuthorized() },
+        )
+        k.quietlyRefused(k.reconnect())
+        assertEquals(KeyCheck.ForgetsAtRestart, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun quietRefusalIgnoredOnceConnected() = runTest(UnconfinedTestDispatcher()) {
+        // Someone allowed the app meanwhile: the run's refusals say nothing any more.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "k1")
+        val k = keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown }, keyId = { "k1" })
+        k.reconnect()
+        k.quietlyRefused(KeeperStatus.Failed(AdbFailure.NotAuthorized(), Fix.AllowPrompt))
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
     }
 
     @Test
@@ -342,8 +422,10 @@ class ConnectionKeeperTest {
             keyId = { "B" },
             connect = { throw AdbFailure.NotAuthorized() },
         )
-        k.quietRetriesFailed(k.reconnect())
-        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        k.quietlyRefused(k.reconnect())
+        // The result was found for another key, so this key has none: not Forgotten.
+        assertEquals(KeyCheck.Unknown, settings.values.first().legacyKeyCheck)
+        assertEquals("B", settings.values.first().legacyKeyCheckKey)
     }
 
     @Test
@@ -356,7 +438,7 @@ class ConnectionKeeperTest {
             keyId = { "A" },
             connect = { throw AdbFailure.NotAuthorized() },
         )
-        k.quietRetriesFailed(k.reconnect())
+        k.quietlyRefused(k.reconnect())
         assertEquals(KeyCheck.Saved, saved.values.first().legacyKeyCheck)
         assertEquals("A", saved.values.first().legacyKeyCheckKey)
 
@@ -393,7 +475,7 @@ class ConnectionKeeperTest {
         val k = keeper(FakeAdbShell(), settings, scope = scope, checkKey = { KeyCheck.NotSaved })
         k.reconnect(prompt = true)
         assertEquals(KeyCheck.Unknown, inner.values.first().legacyKeyCheck)
-        assertEquals(false, k.keyChecking.value)
+        assertEquals(false, k.keyHelpBusy.first())
         assertEquals(emptyList<Throwable>(), escaped)
     }
 
@@ -422,6 +504,21 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun forgetsAtRestartIsKnownRefused() = runTest(UnconfinedTestDispatcher()) {
+        // The TV drops the key at every restart: a quiet refusal is expected there too.
+        val same = FakeSettings(legacy = true, check = KeyCheck.ForgetsAtRestart, key = "A")
+        assertEquals(true, keeper(FakeAdbShell(), same, keyId = { "A" }).keyKnownRefused())
+
+        val other = FakeSettings(legacy = true, check = KeyCheck.ForgetsAtRestart, key = "A")
+        assertEquals(false, keeper(FakeAdbShell(), other, keyId = { "B" }).keyKnownRefused())
+
+        for (check in listOf(KeyCheck.SavedAgain, KeyCheck.Forgotten)) {
+            val s = FakeSettings(legacy = true, check = check, key = "A")
+            assertEquals(false, keeper(FakeAdbShell(), s, keyId = { "A" }).keyKnownRefused())
+        }
+    }
+
+    @Test
     fun cancelledBeforeStartClearsBusy() = runTest {
         val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
         var calls = 0
@@ -433,30 +530,9 @@ class ConnectionKeeperTest {
             connect = { calls++; if (calls > 1) throw AdbFailure.NotAuthorized() else true },
         )
         k.reconnect(prompt = true) // its key check job is queued, not started (StandardTestDispatcher)
-        assertEquals(true, k.keyChecking.value)
         k.reallow() // cancels the queued job before it ever runs, then its own connect fails
         advanceUntilIdle()
-        assertEquals(false, k.keyChecking.value)
         assertEquals(false, k.keyHelpBusy.first())
-    }
-    @Test
-    fun quietFailureIsMarkedQuiet() = runTest(UnconfinedTestDispatcher()) {
-        val k = keeper(
-            FakeAdbShell(),
-            connect = { throw AdbFailure.NotAuthorized() },
-        )
-        // A background try never showed the TV's Allow prompt, so its refusal may not be final.
-        val quiet = k.reconnect()
-        assertEquals(Fix.AllowPrompt, (quiet as KeeperStatus.Failed).fix)
-        assertEquals(true, quiet.quiet)
-        assertEquals(KeeperStatus.Failed(quiet.reason, Fix.AllowPrompt, quiet = true), k.status.value)
-        assertEquals(ConnectionState.Disconnected, k.state.first())
-
-        // The prompted try did show it, so its refusal is final.
-        val prompted = k.reconnect(prompt = true)
-        assertEquals(Fix.AllowPrompt, (prompted as KeeperStatus.Failed).fix)
-        assertEquals(false, prompted.quiet)
-        assertEquals(KeeperStatus.Failed(prompted.reason, Fix.AllowPrompt), k.status.value)
     }
 
     @Test
@@ -471,12 +547,13 @@ class ConnectionKeeperTest {
         gate.complete(Unit)
         pause.join()
 
-        // A reallow is, while its connect waits.
+        // An Allow again is, while the TV's prompt waits on the second connection.
         val reallowGate = CompletableDeferred<Unit>()
         val k = keeper(
             FakeAdbShell(),
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            connect = { reallowGate.await(); true },
+            askSeparately = { reallowGate.await(); false },
+            linkOpen = { true },
         )
         val job = launch { k.reallow() }
         assertEquals(true, k.keyHelpBusy.first())
@@ -486,28 +563,122 @@ class ConnectionKeeperTest {
     }
 
     @Test
-    fun reallowWaitsForTheLock() = runTest(UnconfinedTestDispatcher()) {
+    fun reallowWithOpenLinkAsksSeparatelyAndKeepsTheLink() = runTest(UnconfinedTestDispatcher()) {
+        // A running compile carries on: no disconnect, no reconnect, just a second connection asking the TV.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        var disconnects = 0
+        val prompts = mutableListOf<Boolean>()
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            checkKey = { KeyCheck.NotSaved },
+            askSeparately = { true },
+            linkOpen = { true },
+            disconnect = { disconnects++ },
+            keyId = { "k1" },
+            connect = { prompts += it; false },
+        )
+        assertEquals(true, k.reallow())
+        assertEquals(0, disconnects)
+        assertEquals(emptyList<Boolean>(), prompts)
+        assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+        assertEquals(true, k.lastAllow.value)
+    }
+
+    @Test
+    fun reallowRefusedRunsNoCheck() = runTest(UnconfinedTestDispatcher()) {
+        // The person didn't allow it, so a check would only say what the prompt already did.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Saved, key = "k1")
+        var checks = 0
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            checkKey = { checks++; KeyCheck.Unknown },
+            askSeparately = { false },
+            linkOpen = { true },
+            keyId = { "k1" },
+        )
+        assertEquals(false, k.reallow())
+        assertEquals(0, checks)
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+        assertEquals(false, k.lastAllow.value)
+    }
+
+    @Test
+    fun reallowWithLinkDownConnectsWithPromptAndChecksOnce() = runTest(UnconfinedTestDispatcher()) {
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        val prompts = mutableListOf<Boolean>()
         val gate = CompletableDeferred<Unit>()
-        val events = mutableListOf<String>()
-        var calls = 0
+        var checks = 0
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            checkKey = { checks++; gate.await(); KeyCheck.Saved },
+            linkOpen = { false },
+            keyId = { "k1" },
+            connect = { prompts += it; true },
+        )
+        val job = launch { assertEquals(true, k.reallow()) }
+        gate.complete(Unit)
+        job.join()
+        assertEquals(listOf(true), prompts) // the prompted connect, like Fix connection
+        assertEquals(1, checks) // the reallow joins the handshake's own check
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun reallowWithoutHandshakeStillChecks() = runTest(UnconfinedTestDispatcher()) {
+        // The link was already open (maybe from an Allow once), so the handshake proves nothing: check anyway.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
+        var checks = 0
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            checkKey = { checks++; KeyCheck.NotSaved },
+            linkOpen = { false },
+            keyId = { "k1" },
+            connect = { false },
+        )
+        assertEquals(true, k.reallow())
+        assertEquals(1, checks)
+        assertEquals(KeyCheck.NotSaved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun secondReallowWhileOneRunsIsIgnored() = runTest(UnconfinedTestDispatcher()) {
+        val gate = CompletableDeferred<Boolean>()
+        var asks = 0
         val k = keeper(
             FakeAdbShell(),
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            connect = { prompt ->
-                events += "connect:$prompt"
-                if (calls++ == 0) gate.await()
-                true
-            },
-            disconnect = { events += "disconnect" },
+            askSeparately = { asks++; gate.await() },
+            linkOpen = { true },
         )
-        val quiet = launch { k.reconnect() } // holds the lock while the gate is shut
-        assertEquals(listOf("connect:false"), events)
-        val re = launch { k.reallow() }
-        assertEquals(listOf("connect:false"), events) // no disconnect while the quiet connect is mid-handshake
-        gate.complete(Unit)
-        quiet.join()
-        re.join()
-        assertEquals(listOf("connect:false", "disconnect", "connect:true"), events)
+        val first = launch { assertEquals(true, k.reallow()) }
+        assertEquals(1, asks)
+        assertEquals(false, k.reallow()) // one prompt at a time
+        gate.complete(true)
+        first.join()
+        assertEquals(1, asks)
+        assertEquals(true, k.lastAllow.value)
+    }
+
+    @Test
+    fun modeChangedDropsTheLinkAndReconnectsQuietly() = runTest(UnconfinedTestDispatcher()) {
+        val prompts = mutableListOf<Boolean>()
+        var disconnects = 0
+        val k = keeper(
+            FakeAdbShell(),
+            connect = { prompts += it; true },
+            disconnect = { disconnects++ },
+        )
+        k.modeChanged()
+        assertEquals(1, disconnects)
+        assertEquals(listOf(false), prompts) // the other port, without a prompt
     }
 
     @Test
@@ -515,36 +686,19 @@ class ConnectionKeeperTest {
         val settings = FakeSettings(legacy = true, check = KeyCheck.Unknown)
         val never = CompletableDeferred<Unit>()
         var checks = 0
-        val k = keeper(FakeAdbShell(), settings, checkKey = {
-            if (checks++ == 0) { never.await(); KeyCheck.Unknown } else KeyCheck.Saved
-        })
+        val k = keeper(
+            FakeAdbShell(),
+            settings,
+            checkKey = { if (checks++ == 0) { never.await(); KeyCheck.Unknown } else KeyCheck.Saved },
+            askSeparately = { true },
+            linkOpen = { true },
+        )
         k.reconnect(prompt = true)
         assertEquals(1, checks)
-        assertEquals(true, k.keyChecking.value)
+        assertEquals(true, k.keyHelpBusy.first())
         k.reallow()
         assertEquals(2, checks)
         assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
-        assertEquals(false, k.keyChecking.value)
-    }
-
-    @Test
-    fun reallowDisconnectsThenAsks() = runTest(UnconfinedTestDispatcher()) {
-        val events = mutableListOf<String>()
-        val k = keeper(
-            FakeAdbShell(),
-            connect = { events += "connect:$it"; true },
-            disconnect = { events += "disconnect" },
-        )
-        k.reallow()
-        assertEquals(listOf("disconnect", "connect:true"), events)
-
-        val failing = mutableListOf<String>()
-        val k2 = keeper(
-            FakeAdbShell(),
-            connect = { failing += "connect:$it"; true },
-            disconnect = { throw IOException("already gone") },
-        )
-        k2.reallow()
-        assertEquals(listOf("connect:true"), failing)
+        assertEquals(false, k.keyHelpBusy.first())
     }
 }

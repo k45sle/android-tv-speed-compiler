@@ -164,6 +164,9 @@ class HomeActivityTest : ComposeTestBase() {
             )
         }
         rule.onNodeWithText("The TV didn't save Always allow, so it will ask again after a restart.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Connected", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("1 waiting · next: Starts at 02:00 · 0 of 2").assertIsDisplayed()
+        rule.onRoot().captureRoboImage("build/outputs/roborazzi/home_key_note.png")
         rule.onNodeWithText("How to fix", ignoreCase = true).invokeClick()
         assertEquals(Routes.KeyHelp, went)
     }
@@ -199,7 +202,26 @@ class HomeActivityTest : ComposeTestBase() {
             HomeContent(HomeState(ConnectionState.Disconnected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.Forgotten), {}, now, utc)
         }
         rule.onNodeWithText("The TV stopped accepting the app, usually after a restart.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("Disconnected", ignoreCase = true).assertIsDisplayed()
         rule.onNodeWithText("Fix connection", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("How to fix", ignoreCase = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun homeForgetsAtRestartShowsItsLine() {
+        show {
+            HomeContent(HomeState(ConnectionState.Connected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.ForgetsAtRestart), {}, now, utc)
+        }
+        rule.onNodeWithText("This TV forgets the app at every full restart. After one, choose Fix connection.", ignoreCase = true).assertIsDisplayed()
+        rule.onNodeWithText("How to fix", ignoreCase = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun homeSavedAgainShowsNoLine() {
+        show {
+            HomeContent(HomeState(ConnectionState.Connected, true, watched, queue, events, look, legacy = true, keyCheck = KeyCheck.SavedAgain), {}, now, utc)
+        }
+        rule.onNodeWithText("This TV forgets the app at every full restart", substring = true, ignoreCase = true).assertDoesNotExist()
         rule.onNodeWithText("How to fix", ignoreCase = true).assertDoesNotExist()
     }
 

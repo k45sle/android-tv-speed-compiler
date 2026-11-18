@@ -1,6 +1,5 @@
 package dev.speedcompiler.tv.ui.setup
 
-import androidx.compose.ui.platform.LocalResources
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -11,20 +10,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import dev.speedcompiler.tv.R
 import dev.speedcompiler.tv.SpeedApp
-import dev.speedcompiler.tv.adb.ConnectionMonitor
 import dev.speedcompiler.tv.adb.AdbFailure
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.ConnectionKeeper
 import dev.speedcompiler.tv.adb.KeeperStatus
 import dev.speedcompiler.tv.adb.KeyCheck
 import dev.speedcompiler.tv.adb.LEGACY_HOST
 import dev.speedcompiler.tv.adb.LEGACY_PORT
-import dev.speedcompiler.tv.adb.toConnectionState
 import dev.speedcompiler.tv.ui.apps.AppInfo
 import dev.speedcompiler.tv.ui.apps.loadUserApps
 import dev.speedcompiler.tv.watch.PairingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -48,8 +45,11 @@ interface SetupEnv {
     fun openDeveloperOptions()
     fun startPairing()
     fun stopPairing()
-    /** Asks the connection layer to connect now (wireless debugging just came on). */
-    fun reconnect()
+    /**
+     * Asks the connection layer to connect now, allowing the TV's prompt, and waits for that try (or the prompted one
+     * already running): null once connected, otherwise why it failed.
+     */
+    suspend fun connect(): Throwable?
     /** Launchable apps, most recently updated first. */
     suspend fun recentApps(): List<SetupApp>
 }
@@ -58,8 +58,6 @@ class SetupDeps(
     val env: SetupEnv,
     val connection: Flow<ConnectionState>,
     val pairingUrl: Flow<String?>,
-    /** Why the last connect failed, in words for the user; null when it did not. */
-    val reason: Flow<String?> = flowOf(null),
     /** Whether this app already holds a pairing the TV trusts; a fresh install does not. */
     val holdsPairing: () -> Boolean = { true },
     /** Called when the user finishes: saves the picks and starts the run. */
@@ -67,11 +65,9 @@ class SetupDeps(
     /** Plain ADB on port 5555 instead of Wireless debugging, for TVs without it. */
     val legacy: Flow<Boolean> = flowOf(false),
     val setLegacy: suspend (Boolean) -> Unit = {},
-    /** The connection as Setup's Allow step should judge it: in ADB debugging mode a quiet background try's refusal still reads as Connecting, because the step's own prompted try is coming. */
-    val promptConnection: Flow<ConnectionState>? = null,
 )
 
-class AndroidSetupEnv(private val context: Context, private val monitor: ConnectionMonitor) : SetupEnv {
+class AndroidSetupEnv(private val context: Context, private val keeper: ConnectionKeeper) : SetupEnv {
     private fun global(name: String) = Settings.Global.getInt(context.contentResolver, name, 0) == 1
 
     override fun developerOptionsOn() = global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)
@@ -106,7 +102,7 @@ class AndroidSetupEnv(private val context: Context, private val monitor: Connect
         context.stopService(Intent(context, PairingService::class.java))
     }
 
-    override fun reconnect() = monitor.connectNow()
+    override suspend fun connect(): Throwable? = (keeper.connectNowAndWait() as? KeeperStatus.Failed)?.reason
 
     override suspend fun recentApps(): List<SetupApp> {
         val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
@@ -131,15 +127,13 @@ fun reasonText(res: Resources, e: Throwable): String = res.getString(
 @Composable
 fun rememberSetupDeps(): SetupDeps {
     val context = LocalContext.current
-    val res = LocalResources.current
-    return remember(res) {
+    return remember {
         val graph = (context.applicationContext as SpeedApp).graph
         val prefs = context.applicationContext.getSharedPreferences("setup", Context.MODE_PRIVATE)
         SetupDeps(
-            AndroidSetupEnv(context.applicationContext, graph.connectionMonitor),
+            AndroidSetupEnv(context.applicationContext, graph.connectionKeeper),
             graph.connectionMonitor.state,
             PairingService.url,
-            graph.connectionKeeper.status.map { (it as? KeeperStatus.Failed)?.let { f -> reasonText(res, f.reason) } },
             holdsPairing = { prefs.getBoolean("paired", false) }, // kept by AppGraph
             onFinish = { selected, optimizeNow ->
                 // watch already queues each app; "optimize now" turns that into a run-now job
@@ -150,15 +144,19 @@ fun rememberSetupDeps(): SetupDeps {
                 }
             },
             legacy = graph.settings.values.map { it.legacyAdb },
-            promptConnection = combine(graph.connectionKeeper.status, graph.settings.values.map { it.legacyAdb }) { s, legacy ->
-                if (legacy && s is KeeperStatus.Failed && s.quiet) ConnectionState.Connecting else s.toConnectionState()
-            },
             setLegacy = { on ->
+                var changed = false
                 // Toggling the debugging mode invalidates the key check, so the next check starts from Unknown.
                 graph.settings.update {
-                    if (on != it.legacyAdb) it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
-                    else it
+                    if (on != it.legacyAdb) {
+                        changed = true
+                        it.copy(legacyAdb = on, legacyKeyCheck = KeyCheck.Unknown, legacyKeyCheckKey = null)
+                    } else {
+                        it
+                    }
                 }
+                // The open link goes through the other port: drop it and connect through the new one, not tied to this screen.
+                if (changed) graph.appScope.launch { graph.connectionKeeper.modeChanged() }
             },
         )
     }
@@ -173,7 +171,8 @@ fun rememberKeyHelpDeps(): KeyHelpDeps {
             check = graph.settings.values.map { it.legacyKeyCheck },
             busy = graph.connectionKeeper.keyHelpBusy,
             allowAgain = { graph.appScope.launch { graph.connectionKeeper.reallow() } },
-            openDeveloperOptions = AndroidSetupEnv(context.applicationContext, graph.connectionMonitor)::openDeveloperOptions,
+            openDeveloperOptions = AndroidSetupEnv(context.applicationContext, graph.connectionKeeper)::openDeveloperOptions,
+            lastAllow = graph.connectionKeeper.lastAllow,
         )
     }
 }

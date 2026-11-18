@@ -29,6 +29,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.speedcompiler.tv.theme.Button
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.KeyCheck
@@ -115,15 +116,15 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
         KeyCheck.NotSaved -> R.string.home_key_not_saved
         KeyCheck.AllowedOnce -> R.string.home_key_allowed_once
         KeyCheck.Forgotten -> R.string.home_key_forgotten
+        KeyCheck.ForgetsAtRestart -> R.string.home_key_forgets_at_restart
         else -> null
     }
-    // The sign is short, so the long "forgot this app" sentence moves to the subtitle.
     val (title, subtitle) = when {
         !s.loaded -> "" to null
         !s.setupDone -> stringResource(R.string.home_not_set_up) to null
-        s.connection == ConnectionState.Disconnected -> stringResource(R.string.home_disconnected) to (keyLine?.let { stringResource(it) } ?: if (waiting == 0) stringResource(R.string.home_nothing_waiting) else pluralStringResource(R.plurals.home_waiting_count, waiting, waiting))
+        s.connection == ConnectionState.Disconnected -> stringResource(R.string.home_disconnected) to (if (waiting == 0) stringResource(R.string.home_nothing_waiting) else pluralStringResource(R.plurals.home_waiting_count, waiting, waiting))
         s.connection == ConnectionState.Unpaired -> stringResource(R.string.home_not_paired) to stringResource(R.string.home_forgot_subtitle)
-        else -> onOff to (keyLine?.let { stringResource(it) } ?: queueLine)
+        else -> onOff to queueLine
     }
     val action = if (!s.loaded) null else if (!s.setupDone) stringResource(R.string.home_set_up) else when (s.connection) {
         ConnectionState.Disconnected, ConnectionState.Unpaired -> stringResource(R.string.common_fix_connection)
@@ -136,15 +137,12 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
                     { go(if (!s.setupDone) Routes.Setup else fixRoute(if (s.connection == ConnectionState.Unpaired) Fix.QuickRepair else Fix.Retry)) },
                     Modifier.remembersFocus(mem, "status"),
                 ) { Text(action.upper()) }
-                else if (s.loaded && online && keyLine != null) Button(
-                    { go(Routes.KeyHelp) },
-                    Modifier.remembersFocus(mem, "status"),
-                ) { Text(stringResource(R.string.home_key_fix).upper()) }
                 else if (s.loaded && online) {
                     val connected = s.connection == ConnectionState.Connected
                     StatusChip(stringResource(if (connected) R.string.home_connected else R.string.home_connecting), if (connected) Tone.Ok else Tone.Info)
                 }
             })
+            if (keyLine != null) KeyNote(stringResource(keyLine), mem) { go(Routes.KeyHelp) }
             if (s.watched.isNotEmpty()) LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(Space.x2),
                 contentPadding = PaddingValues(start = Space.x1, top = Space.x1, end = Space.x1, bottom = Space.x1),
@@ -188,6 +186,16 @@ fun HomeContent(s: HomeState, go: (String) -> Unit, now: Instant = Instant.now()
 @Composable
 private fun RowScope.HomeButton(label: String, fill: Int, mem: FocusMemory, id: String, onClick: () -> Unit) =
     ArcadeButton(label, onClick, Modifier.weight(1f).remembersFocus(mem, id), fill = Color(fill), contentColor = Color(Cabinet.CREAM))
+
+/** ADB debugging mode: what the TV does with Always allow, as its own line under the sign, with the way to How to fix. */
+@Composable
+private fun KeyNote(text: String, mem: FocusMemory, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = Space.x1), horizontalArrangement = Arrangement.spacedBy(Space.x2), verticalAlignment = Alignment.CenterVertically) {
+        Lamp(toneColor(Tone.Warn))
+        Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Button(onClick, Modifier.remembersFocus(mem, "keyhelp")) { Text(stringResource(R.string.home_key_fix).upper()) }
+    }
+}
 
 /** Outlined chip with a lamp and a status word, for the sign's right side. */
 @Composable

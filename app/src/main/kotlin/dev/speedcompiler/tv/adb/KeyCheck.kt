@@ -1,6 +1,5 @@
 package dev.speedcompiler.tv.adb
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
@@ -18,8 +17,12 @@ enum class KeyCheck {
     AllowedOnce,
     /** Refused, and the TV lists the key as allowed but not in the file adbd trusts: it didn't save it. */
     NotSaved,
-    /** Was [Saved], then a quiet reconnect was refused: the TV dropped the key, for example at a restart. */
+    /** Was [Saved], then the TV refused every quiet reconnect of a run (usually at a restart): it dropped the key. */
     Forgotten,
+    /** Was [Forgotten], then the person allowed the app again and the TV saved it; the next restart tells whether it keeps it. */
+    SavedAgain,
+    /** The TV dropped a key it had saved again after an earlier drop: it forgets the app at every full restart. */
+    ForgetsAtRestart,
 }
 
 /** Where `dumpsys adb` lists a key: the file adbd trusts (user_keys) and the framework's own list (keystore). */
@@ -55,6 +58,25 @@ fun classifyRefused(places: KeyPlaces?): KeyCheck = when {
 }
 
 /**
+ * The result to keep when the check right after someone allowed the app found [found]; [stored] is the result kept for
+ * this key. The check can't see a restart, so it never clears what a restart showed: only a quiet handshake (stored as
+ * [KeyCheck.Saved] directly) does.
+ */
+fun afterPromptedCheck(stored: KeyCheck, found: KeyCheck): KeyCheck = when {
+    stored == KeyCheck.ForgetsAtRestart -> stored
+    (stored == KeyCheck.Forgotten || stored == KeyCheck.SavedAgain) && found == KeyCheck.Saved -> KeyCheck.SavedAgain
+    (stored == KeyCheck.Forgotten || stored == KeyCheck.SavedAgain) && found == KeyCheck.Unknown -> stored
+    else -> found
+}
+
+/** The result to keep after the TV refused the quiet reconnects of a run for this key; [stored] is the result kept. */
+fun afterQuietRefusal(stored: KeyCheck): KeyCheck = when (stored) {
+    KeyCheck.Saved -> KeyCheck.Forgotten
+    KeyCheck.SavedAgain, KeyCheck.ForgetsAtRestart -> KeyCheck.ForgetsAtRestart
+    else -> stored
+}
+
+/**
  * Right after someone allowed the app: will the TV let the same key back in without asking, as it must after a
  * restart? [trusted] makes a second, quiet connection (true = let in, false = refused, null = couldn't tell). The TV
  * saves the key just after it lets the first connection in, so each try waits its entry in [waits] first.
@@ -79,13 +101,7 @@ class KeyChecker(
         }
         // Nothing was refused (every try failed to answer, so all were null): there is nothing to explain.
         if (!refused) return KeyCheck.Unknown
-        val dump = try {
-            shell.run("dumpsys adb").output
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
+        val dump = tryOrNull { shell.run("dumpsys adb").output }
         return classifyRefused(dump?.let { parseDumpsysAdb(it, keyBase64()) })
     }
 }

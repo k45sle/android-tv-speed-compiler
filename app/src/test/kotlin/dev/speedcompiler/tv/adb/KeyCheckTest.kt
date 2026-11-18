@@ -113,4 +113,41 @@ class KeyCheckTest {
         val check = KeyChecker({ false }, ThrowingShell(), { K }, pause = {})
         assertEquals(KeyCheck.Unknown, check.check())
     }
+
+    @Test fun afterPromptedCheckKeepsWhatARestartShowed() {
+        for (found in KeyCheck.entries) {
+            assertEquals(KeyCheck.ForgetsAtRestart, afterPromptedCheck(KeyCheck.ForgetsAtRestart, found))
+        }
+        assertEquals(KeyCheck.SavedAgain, afterPromptedCheck(KeyCheck.Forgotten, KeyCheck.Saved))
+        assertEquals(KeyCheck.SavedAgain, afterPromptedCheck(KeyCheck.SavedAgain, KeyCheck.Saved))
+        assertEquals(KeyCheck.Forgotten, afterPromptedCheck(KeyCheck.Forgotten, KeyCheck.Unknown))
+        assertEquals(KeyCheck.SavedAgain, afterPromptedCheck(KeyCheck.SavedAgain, KeyCheck.Unknown))
+        assertEquals(KeyCheck.AllowedOnce, afterPromptedCheck(KeyCheck.Forgotten, KeyCheck.AllowedOnce))
+        assertEquals(KeyCheck.NotSaved, afterPromptedCheck(KeyCheck.Forgotten, KeyCheck.NotSaved))
+        assertEquals(KeyCheck.Unknown, afterPromptedCheck(KeyCheck.NotSaved, KeyCheck.Unknown))
+        assertEquals(KeyCheck.Saved, afterPromptedCheck(KeyCheck.Unknown, KeyCheck.Saved))
+        assertEquals(KeyCheck.NotSaved, afterPromptedCheck(KeyCheck.Saved, KeyCheck.NotSaved))
+    }
+
+    @Test fun afterQuietRefusalMovesSavedKeysOnly() {
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Saved))
+        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.SavedAgain))
+        assertEquals(KeyCheck.ForgetsAtRestart, afterQuietRefusal(KeyCheck.ForgetsAtRestart))
+        assertEquals(KeyCheck.Forgotten, afterQuietRefusal(KeyCheck.Forgotten))
+        assertEquals(KeyCheck.Unknown, afterQuietRefusal(KeyCheck.Unknown))
+        assertEquals(KeyCheck.AllowedOnce, afterQuietRefusal(KeyCheck.AllowedOnce))
+        assertEquals(KeyCheck.NotSaved, afterQuietRefusal(KeyCheck.NotSaved))
+    }
+
+    @Test fun tryOrNullRethrowsCancellation() {
+        assertNull(tryOrNull { throw IOException("no adb") })
+        assertEquals(5, tryOrNull { 5 })
+        var cancelled = false
+        try {
+            tryOrNull { throw kotlinx.coroutines.CancellationException("x") }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+    }
 }

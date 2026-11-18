@@ -6,6 +6,7 @@ import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbAuthenticationFailedException
 import io.github.muntashirakon.adb.AdbStream
+import io.github.muntashirakon.adb.adbPublicKeyBase64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -66,7 +67,10 @@ class LibAdb(
 
     private val manager = newManager()
 
-    /** A fresh connection manager over this app's key, for [connect] and the quiet [keyTrusted] probe. */
+    /** Whether the main link is open right now. */
+    val isConnected: Boolean get() = manager.isConnected
+
+    /** A fresh connection manager over this app's key, for [connect] and the side connections ([keyTrusted], [askSeparately]). */
     private fun newManager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
         override fun getPrivateKey() = keys.privateKey
         override fun getCertificate(): Certificate = keys.certificate
@@ -161,14 +165,28 @@ class LibAdb(
      * ADB debugging mode: dials [LEGACY_HOST]:[LEGACY_PORT] again with a second, quiet connection (the public key is
      * never sent, so the TV shows no prompt) to see whether the TV now trusts this app's key by itself, as it has to
      * after a restart. True = let in, false = refused, null = couldn't tell (port closed, timeout, other error).
+     * Always the legacy port, also when [direct] is set: only ADB debugging mode asks this.
      */
-    suspend fun keyTrusted(): Boolean? {
-        val probe = newManager().apply {
-            setThrowOnUnauthorised(true)
-            setTimeout(KEY_CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    suspend fun keyTrusted(): Boolean? = sideConnection(prompt = false, KEY_CHECK_TIMEOUT_MS)
+
+    /**
+     * ADB debugging mode, "Allow again": a second connection to [LEGACY_HOST]:[LEGACY_PORT] that sends the public key,
+     * so the TV shows its Allow prompt while the main link, and a compile running on it, carries on. Waits up to
+     * [legacyConnectTimeoutMillis]. True = let in (also at once when the TV already trusts the key), false = refused or
+     * no answer in time, null = couldn't tell (port closed, other error).
+     */
+    suspend fun askSeparately(): Boolean? = sideConnection(prompt = true, legacyConnectTimeoutMillis)
+
+    /** A throwaway second connection to the legacy port with this app's key, for [keyTrusted] and [askSeparately]. */
+    private suspend fun sideConnection(prompt: Boolean, timeoutMillis: Long): Boolean? {
+        val side = newManager().apply {
+            setThrowOnUnauthorised(!prompt)
+            setTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         }
         return try {
-            runInterruptible(Dispatchers.IO) { probe.connect(LEGACY_HOST, LEGACY_PORT) }.takeIf { it } // false = timed out
+            val ok = runInterruptible(Dispatchers.IO) { side.connect(LEGACY_HOST, LEGACY_PORT) }
+            // false = no handshake in time: unanswered when the prompt was allowed, otherwise nothing to go on
+            if (ok) true else if (prompt) false else null
         } catch (e: CancellationException) {
             throw e
         } catch (e: AdbAuthenticationFailedException) {
@@ -176,8 +194,8 @@ class LibAdb(
         } catch (e: Exception) {
             null
         } finally {
-            // disconnect, not close: libadb's close() also destroys getPrivateKey(), and the probe shares the app's key.
-            withContext(NonCancellable + Dispatchers.IO) { runCatching { probe.disconnect() } }
+            // disconnect, not close: libadb's close() also destroys getPrivateKey(), and the side connection shares the app's key.
+            withContext(NonCancellable + Dispatchers.IO) { runCatching { side.disconnect() } }
         }
     }
 

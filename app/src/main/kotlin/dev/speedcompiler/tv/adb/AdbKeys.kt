@@ -4,8 +4,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.math.BigInteger
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
@@ -19,7 +17,6 @@ import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.RSAPrivateCrtKeySpec
 import java.security.spec.RSAPublicKeySpec
-import java.util.Base64
 
 /** The app's ADB identity: an RSA key and self-signed certificate, generated once and kept in [dir]. */
 class AdbKeys(dir: File, log: (String) -> Unit = {}, decode: (ByteArray) -> PrivateKey = ::decodePkcs8) {
@@ -129,28 +126,6 @@ private class DerReader(private val bytes: ByteArray) {
         check(len <= bytes.size - pos) { "truncated DER" }
         return bytes.copyOfRange(pos, pos + len).also { pos += len }
     }
-}
-
-/** [key] in adb's own public key format (android_pubkey_encode: 524 little-endian bytes), base64 without line breaks, as the TV stores it. */
-fun adbPublicKeyBase64(key: RSAPublicKey): String {
-    val n = key.modulus
-    val r32 = BigInteger.ONE.shiftLeft(32)
-    val n0inv = r32.subtract(n.mod(r32).modInverse(r32))
-    val rr = BigInteger.ONE.shiftLeft(2048).modPow(BigInteger.valueOf(2), n)
-    val buf = ByteBuffer.allocate(4 + 4 + 256 + 256 + 4).order(ByteOrder.LITTLE_ENDIAN)
-    buf.putInt(64)
-    buf.putInt(n0inv.toInt())
-    buf.put(littleEndian(n, 256))
-    buf.put(littleEndian(rr, 256))
-    buf.putInt(key.publicExponent.toInt())
-    return Base64.getEncoder().encodeToString(buf.array())
-}
-
-private fun littleEndian(v: BigInteger, size: Int): ByteArray {
-    val be = v.toByteArray().let { if (it.size > size) it.copyOfRange(it.size - size, it.size) else it } // drops the sign byte
-    val out = ByteArray(size)
-    for (i in be.indices) out[i] = be[be.size - 1 - i]
-    return out
 }
 
 private fun parseCertificate(der: ByteArray) =

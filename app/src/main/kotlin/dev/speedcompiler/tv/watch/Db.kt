@@ -106,6 +106,10 @@ interface QueueDao {
     @Query("UPDATE queue_item SET state = 'QUEUED', startedAt = NULL WHERE id = :id AND state = 'RUNNING'")
     suspend fun requeueIfRunning(id: Long)
 
+    /** Every RUNNING row back to QUEUED; only call it holding the run lock (see requeueStaleRunning). */
+    @Query("UPDATE queue_item SET state = 'QUEUED', startedAt = NULL WHERE state = 'RUNNING'")
+    suspend fun requeueAllRunning()
+
     @Query("SELECT * FROM queue_item WHERE id = :id")
     suspend fun get(id: Long): QueueItem?
 

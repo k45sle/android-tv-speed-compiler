@@ -4,9 +4,11 @@ import android.app.Application
 import android.os.PowerManager
 import android.util.Log
 import dev.speedcompiler.tv.adb.ConnectionState
+import dev.speedcompiler.tv.adb.tryOrNull
 import dev.speedcompiler.tv.watch.FrameSampler
 import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.enqueueReconnect
+import dev.speedcompiler.tv.watch.requeueStaleRunning
 import dev.speedcompiler.tv.watch.schedulePeriodicJobs
 import dev.speedcompiler.tv.watch.startWatchService
 import kotlinx.coroutines.CancellationException
@@ -53,6 +55,7 @@ class SpeedApp : Application() {
         // WorkManager may be uninitialised under test.
         runCatching { enqueueReconnect(this); schedulePeriodicJobs(this) }
         graph.appScope.launch { graph.connectionKeeper.watchKeepTrusting() }
+        graph.appScope.launch { tryOrNull { requeueStaleRunning(graph) } } // best effort; must not crash
         startWatchService(this) // its process forwards screen-off and the sampler tick to WakeReceiver here
     }
 }

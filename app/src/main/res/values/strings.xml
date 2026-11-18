@@ -96,7 +96,6 @@
     <string name="setup_open_developer_options">Open Developer options</string>
     <string name="setup_allow_title">Allow this app.</string>
     <string name="setup_allow_body">Your TV will ask to allow debugging. Choose Always allow from this computer.</string>
-    <string name="setup_no_answer">No answer from the TV yet.</string>
     <string name="setup_connecting">Connecting</string>
     <string name="setup_waiting_for_you">Waiting for you</string>
     <string name="setup_waiting_dots">Waiting for you…</string>
@@ -385,6 +384,7 @@
     <string name="home_key_not_saved">The TV didn\'t save Always allow, so it will ask again after a restart.</string>
     <string name="home_key_allowed_once">The TV allowed this app only once, so it will ask again after a restart.</string>
     <string name="home_key_forgotten">The TV stopped accepting the app, usually after a restart.</string>
+    <string name="home_key_forgets_at_restart">This TV forgets the app at every full restart. After one, choose Fix connection.</string>
     <string name="home_key_fix">How to fix</string>
     <string name="keyhelp_title">Asked again after a restart</string>
     <string name="keyhelp_saved">Saved. After a restart the TV lets Speed Compile back in without asking.</string>
@@ -392,6 +392,9 @@
     <string name="keyhelp_allowed_once">The TV allowed Speed Compile only once. After a full restart the app can\'t reconnect until you allow it again.</string>
     <string name="keyhelp_not_saved">You chose Always allow, but this TV didn\'t save it. After a full restart the app can\'t reconnect until you allow it again.</string>
     <string name="keyhelp_forgotten">This TV saved Always allow, then stopped accepting the app, usually after a restart.</string>
+    <string name="keyhelp_saved_again">Saved again. The TV forgot Speed Compile once at a restart. If it asks again after the next full restart, this TV can\'t keep Always allow.</string>
+    <string name="keyhelp_forgets_at_restart">This TV forgot Speed Compile at two full restarts in a row, although it had saved Always allow. That\'s the TV, not the app: after each full restart, open Speed Compile and choose Fix connection, then allow it. Standby doesn\'t need this.</string>
+    <string name="keyhelp_not_let_in">The TV didn\'t let Speed Compile in. Choose Allow again, then answer on the TV.</string>
     <string name="keyhelp_step_revoke">In Developer options, choose Revoke USB debugging authorizations, then OK. Other apps and computers you allowed will ask once more.</string>
     <string name="keyhelp_step_allow_tick">Come back here and choose Allow again. On the TV, tick Always allow from this computer, then choose Allow.</string>
     <string name="keyhelp_step_allow_again">Choose Allow again.</string>
