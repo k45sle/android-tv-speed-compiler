@@ -121,6 +121,17 @@ class WatchServiceTest {
         watch.destroy()
     }
 
+    @Test fun anUpdateOfThisAppAndOpeningItStartTheService() {
+        val app = shadowOf(ctx as android.app.Application)
+        while (app.nextStartedService != null) Unit // the process start's own
+        dev.speedcompiler.tv.watch.BootReceiver().onReceive(ctx, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertEquals(WatchService::class.java.name, app.nextStartedService.component!!.className)
+        Robolectric.buildActivity(MainActivity::class.java).create().start()
+        assertEquals(WatchService::class.java.name, app.nextStartedService.component!!.className)
+        val receiver = ctx.packageManager.queryBroadcastReceivers(Intent(Intent.ACTION_MY_PACKAGE_REPLACED).setPackage(ctx.packageName), 0)
+        assertTrue(receiver.any { it.activityInfo.name.endsWith("BootReceiver") })
+    }
+
     @Test fun aRefusedBackgroundStartDoesNotCrash() {
         var tried = false
         startWatchService(object : ContextWrapper(ctx) {

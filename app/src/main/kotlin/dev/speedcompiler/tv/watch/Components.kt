@@ -16,10 +16,15 @@ import kotlinx.coroutines.launch
 /** Starts the reconnect and change-detection jobs after boot. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            enqueueReconnect(context)
-            enqueueDetectNow(context)
-            startWatchService(context)
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED -> {
+                enqueueReconnect(context)
+                enqueueDetectNow(context)
+                startWatchService(context)
+            }
+            // An update of this app kills the watcher, and the job that restarts the process runs in the background, where
+            // Android 12+ refuses to start it. This broadcast is one of the few moments it allows that.
+            Intent.ACTION_MY_PACKAGE_REPLACED -> startWatchService(context)
         }
     }
 }
@@ -116,7 +121,7 @@ class WatchService : Service() {
     private companion object { const val NOTIFICATION_ID = 4 }
 }
 
-/** Starts [WatchService]; Android 12+ refuses that from the background (a job, say), which is fine: launch and boot start it too. */
+/** Starts [WatchService]; Android 12+ refuses that from the background (a job, say), so opening the app, boot and an update of this app start it too. */
 fun startWatchService(context: Context) {
     try {
         context.startForegroundService(Intent(context, WatchService::class.java))

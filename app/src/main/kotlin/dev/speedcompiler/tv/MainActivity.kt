@@ -11,6 +11,7 @@ import dev.speedcompiler.tv.theme.SpeedTheme
 import dev.speedcompiler.tv.theme.seedChoice
 import dev.speedcompiler.tv.ui.AppNavHost
 import dev.speedcompiler.tv.watch.enqueueReconnect
+import dev.speedcompiler.tv.watch.startWatchService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,9 +22,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // The process may outlive a boot job that gave up, so opening the app tries again.
+    // The process may outlive a boot job that gave up, so opening the app tries again. The same goes for the watcher: a process
+    // a background job started could not start it, and without it nothing samples frames or sees screen-off and app updates.
     override fun onStart() {
         super.onStart()
         runCatching { enqueueReconnect(this) }
+        startWatchService(this)
     }
 }
