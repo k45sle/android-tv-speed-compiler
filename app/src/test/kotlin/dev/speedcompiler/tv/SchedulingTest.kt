@@ -701,6 +701,36 @@ class SchedulingTest {
         assertEquals(listOf("a"), optimizer.refreshed)
     }
 
+    @Test fun theFrontAppIsReadAgainBeforeEachRefreshSoANewlyOpenedAppIsSkipped() = runBlocking {
+        for (pkg in listOf("a", "b")) {
+            val fp = system.apps.getValue(pkg)
+            g.database.watchedApps().upsert(WatchedApp(pkg, fp))
+            dev.speedcompiler.tv.watch.wantRecompile(g, pkg, fp)
+        }
+        g.screenOn = { true }
+        val answers = ArrayDeque(listOf("c", "b", "a")) // nobody wanted in front at the first read; the second wanted app is then opened
+        var reads = 0
+        g.adbShell = object : dev.speedcompiler.tv.adb.AdbShell {
+            override suspend fun run(command: String): dev.speedcompiler.tv.adb.ShellResult {
+                reads++
+                return dev.speedcompiler.tv.adb.ShellResult(0, "  topResumedActivity=ActivityRecord{1a2b u0 ${answers.removeFirst()}/.Main t5}")
+            }
+        }
+        runWantedRecompiles(g)
+        assertEquals(1, optimizer.refreshed.size) // one refreshed, the other was opened meanwhile
+        assertEquals(2, reads) // one read per app, right before its refresh
+        // The skipped app stays wanted and runs once it is not in front.
+        g.adbShell = frontShell("c")
+        runWantedRecompiles(g)
+        assertEquals(setOf("a", "b"), optimizer.refreshed.toSet())
+        // An unreadable front before a refresh skips that app this time.
+        for (pkg in listOf("a", "b")) dev.speedcompiler.tv.watch.wantRecompile(g, pkg, system.apps.getValue(pkg)).also { (g.clock as FakeClock).now += dayMillis + 1 }
+        g.adbShell = frontShell("a", fail = true)
+        val before = optimizer.refreshed.size
+        runWantedRecompiles(g)
+        assertEquals(before, optimizer.refreshed.size)
+    }
+
     @Test fun aWantedRecompileRunsFromRestartOpenedGatesAndNewVersionsMayRunAgain() = runBlocking {
         g.database.watchedApps().upsert(WatchedApp("a", "1"))
         dev.speedcompiler.tv.watch.wantRecompile(g, "a", "1")

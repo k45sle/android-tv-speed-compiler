@@ -24,8 +24,8 @@ import org.junit.Test
 private fun stat(filter: String, frames: Long, pct: Int) = FrameStat("a.app", "f", filter, frames, frames * pct / 100)
 
 /** Cause counts and start-window JIT time, for the DrawingBound cases. */
-private fun caused(filter: String, frames: Long, pct: Int, ui: Long, draw: Long, jitMs: Long = 0, durationMs: Long = 60_000) =
-    FrameStat("a.app", "f", filter, frames, frames * pct / 100, "start", ui, 0, draw, jitMs, durationMs)
+private fun caused(filter: String, frames: Long, pct: Int, ui: Long, draw: Long, jitMs: Long = 0, durationMs: Long = 60_000, jitDurationMs: Long = durationMs) =
+    FrameStat("a.app", "f", filter, frames, frames * pct / 100, "start", ui, 0, draw, jitMs, durationMs, jitDurationMs)
 
 class AdviceTest : ComposeTestBase() {
     private fun advice(
@@ -70,6 +70,16 @@ class AdviceTest : ComposeTestBase() {
         assertEquals(Advice.Measuring, advice(listOf(caused("speed-profile", 2999, 38, 10, 1300))))
         // No cause counts at all: unknown, not drawing.
         assertEquals(Advice.TrySmoother, advice(listOf(stat("speed-profile", 4000, 38))))
+    }
+
+    @Test fun notDrawingBoundWhenTheJitWasNeverMeasuredAtAFreshStart() {
+        // Same stutter as AIOStreams, but the JIT thread was not read (unreadable /proc, or no fresh start seen): unknown is not "no JIT".
+        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 0))))
+        // Under 30 s of measured start time: too little evidence.
+        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 29_999))))
+        assertEquals(Advice.DrawingBound(38), advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 30_000))))
+        // No start row at all.
+        assertEquals(Advice.TrySmoother, advice(listOf(FrameStat("a.app", "f", "speed-profile", 4000, 1520, "later", 198, 0, 1310))))
     }
 
     @Test fun measuringUntilTheCurrentFilterHasEnoughFrames() {

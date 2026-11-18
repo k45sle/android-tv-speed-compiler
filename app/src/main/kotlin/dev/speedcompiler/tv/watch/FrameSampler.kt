@@ -117,9 +117,11 @@ fun parseGfxinfo(dumpsys: String): GfxStats? {
 data class Counts(
     val frames: Long = 0, val janky: Long = 0, val slowUi: Long = 0, val slowBitmap: Long = 0, val slowDraw: Long = 0,
     val jitMs: Long = 0, val durationMs: Long = 0,
+    /** Wall time of the readings where the JIT thread was actually read; [jitMs] over this is the JIT share. */
+    val jitDurationMs: Long = 0,
 ) {
     operator fun plus(o: Counts) = Counts(
-        frames + o.frames, janky + o.janky, slowUi + o.slowUi, slowBitmap + o.slowBitmap, slowDraw + o.slowDraw, jitMs + o.jitMs, durationMs + o.durationMs,
+        frames + o.frames, janky + o.janky, slowUi + o.slowUi, slowBitmap + o.slowBitmap, slowDraw + o.slowDraw, jitMs + o.jitMs, durationMs + o.durationMs, jitDurationMs + o.jitDurationMs,
     )
 }
 
@@ -146,6 +148,7 @@ class SessionTracker(
     /** The session's whole start window so far (not cleared on release) and whether it is still waiting to be judged. */
     sessionJitMs: Long = 0L,
     sessionDurationMs: Long = 0L,
+    sessionJitDurationMs: Long = 0L,
     startOpen: Boolean = false,
     /** True when the first reading was fresh; only such a session has a start window. */
     beganFresh: Boolean = false,
@@ -176,6 +179,8 @@ class SessionTracker(
         private set
     var sessionDurationMs = sessionDurationMs
         private set
+    var sessionJitDurationMs = sessionJitDurationMs
+        private set
     var startOpen = startOpen
         private set
     var beganFresh = beganFresh
@@ -202,13 +207,15 @@ class SessionTracker(
             fresh -> g.ageMs ?: 0L
             else -> 0L
         }
+        val jitMeasured = jit != null && ((seen && lastJit != null) || fresh)
+        val jitDuration = if (jitMeasured) duration else 0L
         val delta = when {
             seen -> Counts(
                 g.total - lastTotal, g.janky - lastJanky,
                 (g.slowUi - lastSlowUi).coerceAtLeast(0), (g.slowBitmap - lastSlowBitmap).coerceAtLeast(0), (g.slowDraw - lastSlowDraw).coerceAtLeast(0),
-                jitDelta, duration,
+                jitDelta, duration, jitDuration,
             )
-            fresh -> Counts(g.total, g.janky, g.slowUi, g.slowBitmap, g.slowDraw, jitDelta, duration)
+            fresh -> Counts(g.total, g.janky, g.slowUi, g.slowBitmap, g.slowDraw, jitDelta, duration, jitDuration)
             else -> Counts()
         }
         if (!seen) {
@@ -216,15 +223,16 @@ class SessionTracker(
             startOpen = fresh
         }
         val prevAge = lastAgeMs
-        val inStart = fresh || (seen && beganFresh && prevAge != null && prevAge < START_WINDOW_MS && g.ageMs != null && g.ageMs <= START_WINDOW_MS + START_SLACK_MS)
+        val inStart = fresh || (seen && beganFresh && prevAge != null && prevAge < START_WINDOW_MS && g.ageMs != null && g.ageMs <= START_WINDOW_MS + START_SLACK_MS && g.ageMs - prevAge <= START_SLACK_MS)
         val window = if (inStart) WINDOW_START else WINDOW_LATER
         startJustEnded = seen && startOpen && window == WINDOW_LATER
         if (startJustEnded) startOpen = false
         if (window == WINDOW_START) {
             sessionJitMs += delta.jitMs
             sessionDurationMs += delta.durationMs
+            sessionJitDurationMs += delta.jitDurationMs
         }
-        if (jit != null) lastJitMs = jit
+        lastJitMs = jit // null when unread: the next interval has no baseline and is not measured
         lastTotal = g.total
         lastJanky = g.janky
         lastSlowUi = g.slowUi
@@ -282,9 +290,9 @@ class FrameSampler(
                     it.filter, it.fingerprint,
                     SessionTracker(
                         it.pid, it.lastTotal, it.lastJanky, it.lastSlowUi, it.lastSlowBitmap, it.lastSlowDraw, it.lastAgeMs,
-                        Counts(it.startFrames, it.startJanky, it.startSlowUi, it.startSlowBitmap, it.startSlowDraw, it.startJitMs, it.startDurationMs),
-                        Counts(it.frames, it.janky, it.laterSlowUi, it.laterSlowBitmap, it.laterSlowDraw, it.laterJitMs, it.laterDurationMs), it.released,
-                        it.lastJitMs, it.sessionJitMs, it.sessionDurationMs, it.startOpen, it.beganFresh,
+                        Counts(it.startFrames, it.startJanky, it.startSlowUi, it.startSlowBitmap, it.startSlowDraw, it.startJitMs, it.startDurationMs, it.startJitDurationMs),
+                        Counts(it.frames, it.janky, it.laterSlowUi, it.laterSlowBitmap, it.laterSlowDraw, it.laterJitMs, it.laterDurationMs, it.laterJitDurationMs), it.released,
+                        it.lastJitMs, it.sessionJitMs, it.sessionDurationMs, it.sessionJitDurationMs, it.startOpen, it.beganFresh,
                     ),
                 )
             }
@@ -304,34 +312,42 @@ class FrameSampler(
                 sessions[front] = s
             }
             val added = s.tracker.add(g)
-            // One transaction, so the stored session and the stored frames never disagree.
-            database.withTransaction {
-                for ((window, c) in added) {
-                    val old = dao.get(front, s.fingerprint, s.filter, window)
-                    dao.put(
-                        FrameStat(
-                            front, s.fingerprint, s.filter, (old?.frames ?: 0) + c.frames, (old?.janky ?: 0) + c.janky, window,
-                            (old?.slowUi ?: 0) + c.slowUi, (old?.slowBitmap ?: 0) + c.slowBitmap, (old?.slowDraw ?: 0) + c.slowDraw,
-                            (old?.jitMs ?: 0) + c.jitMs, (old?.durationMs ?: 0) + c.durationMs,
+            val t = s.tracker
+            try {
+                // Judge before persisting: if this throws, nothing of this tick is stored, so the next tick re-reads the delta and judges again.
+                val share = jitShare(t.sessionJitMs, t.sessionJitDurationMs)
+                if (t.startJustEnded && s.filter == "speed-profile" && !watched.useSpeed && !compilesFull() &&
+                    t.sessionJitDurationMs >= RECOMPILE_MIN_START_MS && share != null && share >= JIT_BUSY_SHARE
+                ) wantRecompile(front, s.fingerprint)
+                // One transaction, so the stored session and the stored frames never disagree.
+                database.withTransaction {
+                    for ((window, c) in added) {
+                        val old = dao.get(front, s.fingerprint, s.filter, window)
+                        dao.put(
+                            FrameStat(
+                                front, s.fingerprint, s.filter, (old?.frames ?: 0) + c.frames, (old?.janky ?: 0) + c.janky, window,
+                                (old?.slowUi ?: 0) + c.slowUi, (old?.slowBitmap ?: 0) + c.slowBitmap, (old?.slowDraw ?: 0) + c.slowDraw,
+                                (old?.jitMs ?: 0) + c.jitMs, (old?.durationMs ?: 0) + c.durationMs, (old?.jitDurationMs ?: 0) + c.jitDurationMs,
+                            ),
+                        )
+                    }
+                    dao.putSession(
+                        FrameSession(
+                            front, s.filter, s.fingerprint, t.lastTotal, t.lastJanky, t.pendingLater.frames, t.pendingLater.janky, t.released,
+                            t.pid, t.lastAgeMs, t.lastSlowUi, t.lastSlowBitmap, t.lastSlowDraw,
+                            t.pendingStart.frames, t.pendingStart.janky, t.pendingStart.slowUi, t.pendingStart.slowBitmap, t.pendingStart.slowDraw,
+                            t.pendingLater.slowUi, t.pendingLater.slowBitmap, t.pendingLater.slowDraw,
+                            t.lastJitMs, t.pendingStart.jitMs, t.pendingStart.durationMs, t.pendingLater.jitMs, t.pendingLater.durationMs,
+                            t.pendingStart.jitDurationMs, t.pendingLater.jitDurationMs,
+                            t.sessionJitMs, t.sessionDurationMs, t.sessionJitDurationMs, t.startOpen, t.beganFresh,
                         ),
                     )
                 }
-                val t = s.tracker
-                dao.putSession(
-                    FrameSession(
-                        front, s.filter, s.fingerprint, t.lastTotal, t.lastJanky, t.pendingLater.frames, t.pendingLater.janky, t.released,
-                        t.pid, t.lastAgeMs, t.lastSlowUi, t.lastSlowBitmap, t.lastSlowDraw,
-                        t.pendingStart.frames, t.pendingStart.janky, t.pendingStart.slowUi, t.pendingStart.slowBitmap, t.pendingStart.slowDraw,
-                        t.pendingLater.slowUi, t.pendingLater.slowBitmap, t.pendingLater.slowDraw,
-                        t.lastJitMs, t.pendingStart.jitMs, t.pendingStart.durationMs, t.pendingLater.jitMs, t.pendingLater.durationMs,
-                        t.sessionJitMs, t.sessionDurationMs, t.startOpen, t.beganFresh,
-                    ),
-                )
+            } catch (e: Exception) {
+                // The in-memory session is ahead of what is stored: drop it so the next tick reloads the stored one.
+                sessions.remove(front)
+                throw e
             }
-            val t = s.tracker
-            if (t.startJustEnded && s.filter == "speed-profile" && !watched.useSpeed && !compilesFull() &&
-                t.sessionDurationMs >= RECOMPILE_MIN_START_MS && (jitShare(t.sessionJitMs, t.sessionDurationMs) ?: 0.0) >= JIT_BUSY_SHARE
-            ) wantRecompile(front, s.fingerprint)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

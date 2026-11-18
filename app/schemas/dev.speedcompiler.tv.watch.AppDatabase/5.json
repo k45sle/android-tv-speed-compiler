@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 5,
-    "identityHash": "986705ed8a348ac81b55a1cb5506b132",
+    "identityHash": "f22f9f4c46a0443113f80aef7a78fc4e",
     "entities": [
       {
         "tableName": "watched_app",
@@ -181,7 +181,7 @@
       },
       {
         "tableName": "frame_stat",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `window` TEXT NOT NULL DEFAULT 'later', `slowUi` INTEGER NOT NULL DEFAULT 0, `slowBitmap` INTEGER NOT NULL DEFAULT 0, `slowDraw` INTEGER NOT NULL DEFAULT 0, `jitMs` INTEGER NOT NULL DEFAULT 0, `durationMs` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`, `fingerprint`, `filter`, `window`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `window` TEXT NOT NULL DEFAULT 'later', `slowUi` INTEGER NOT NULL DEFAULT 0, `slowBitmap` INTEGER NOT NULL DEFAULT 0, `slowDraw` INTEGER NOT NULL DEFAULT 0, `jitMs` INTEGER NOT NULL DEFAULT 0, `durationMs` INTEGER NOT NULL DEFAULT 0, `jitDurationMs` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`, `fingerprint`, `filter`, `window`))",
         "fields": [
           {
             "fieldPath": "packageName",
@@ -254,6 +254,13 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
+          },
+          {
+            "fieldPath": "jitDurationMs",
+            "columnName": "jitDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -268,7 +275,7 @@
       },
       {
         "tableName": "frame_session",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `filter` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `lastTotal` INTEGER NOT NULL, `lastJanky` INTEGER NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `released` INTEGER NOT NULL, `pid` INTEGER, `lastAgeMs` INTEGER, `lastSlowUi` INTEGER NOT NULL DEFAULT 0, `lastSlowBitmap` INTEGER NOT NULL DEFAULT 0, `lastSlowDraw` INTEGER NOT NULL DEFAULT 0, `startFrames` INTEGER NOT NULL DEFAULT 0, `startJanky` INTEGER NOT NULL DEFAULT 0, `startSlowUi` INTEGER NOT NULL DEFAULT 0, `startSlowBitmap` INTEGER NOT NULL DEFAULT 0, `startSlowDraw` INTEGER NOT NULL DEFAULT 0, `laterSlowUi` INTEGER NOT NULL DEFAULT 0, `laterSlowBitmap` INTEGER NOT NULL DEFAULT 0, `laterSlowDraw` INTEGER NOT NULL DEFAULT 0, `lastJitMs` INTEGER, `startJitMs` INTEGER NOT NULL DEFAULT 0, `startDurationMs` INTEGER NOT NULL DEFAULT 0, `laterJitMs` INTEGER NOT NULL DEFAULT 0, `laterDurationMs` INTEGER NOT NULL DEFAULT 0, `sessionJitMs` INTEGER NOT NULL DEFAULT 0, `sessionDurationMs` INTEGER NOT NULL DEFAULT 0, `startOpen` INTEGER NOT NULL DEFAULT 0, `beganFresh` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `filter` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `lastTotal` INTEGER NOT NULL, `lastJanky` INTEGER NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `released` INTEGER NOT NULL, `pid` INTEGER, `lastAgeMs` INTEGER, `lastSlowUi` INTEGER NOT NULL DEFAULT 0, `lastSlowBitmap` INTEGER NOT NULL DEFAULT 0, `lastSlowDraw` INTEGER NOT NULL DEFAULT 0, `startFrames` INTEGER NOT NULL DEFAULT 0, `startJanky` INTEGER NOT NULL DEFAULT 0, `startSlowUi` INTEGER NOT NULL DEFAULT 0, `startSlowBitmap` INTEGER NOT NULL DEFAULT 0, `startSlowDraw` INTEGER NOT NULL DEFAULT 0, `laterSlowUi` INTEGER NOT NULL DEFAULT 0, `laterSlowBitmap` INTEGER NOT NULL DEFAULT 0, `laterSlowDraw` INTEGER NOT NULL DEFAULT 0, `lastJitMs` INTEGER, `startJitMs` INTEGER NOT NULL DEFAULT 0, `startDurationMs` INTEGER NOT NULL DEFAULT 0, `laterJitMs` INTEGER NOT NULL DEFAULT 0, `laterDurationMs` INTEGER NOT NULL DEFAULT 0, `startJitDurationMs` INTEGER NOT NULL DEFAULT 0, `laterJitDurationMs` INTEGER NOT NULL DEFAULT 0, `sessionJitMs` INTEGER NOT NULL DEFAULT 0, `sessionDurationMs` INTEGER NOT NULL DEFAULT 0, `sessionJitDurationMs` INTEGER NOT NULL DEFAULT 0, `startOpen` INTEGER NOT NULL DEFAULT 0, `beganFresh` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))",
         "fields": [
           {
             "fieldPath": "packageName",
@@ -439,6 +446,20 @@
             "defaultValue": "0"
           },
           {
+            "fieldPath": "startJitDurationMs",
+            "columnName": "startJitDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "laterJitDurationMs",
+            "columnName": "laterJitDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
             "fieldPath": "sessionJitMs",
             "columnName": "sessionJitMs",
             "affinity": "INTEGER",
@@ -448,6 +469,13 @@
           {
             "fieldPath": "sessionDurationMs",
             "columnName": "sessionDurationMs",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "sessionJitDurationMs",
+            "columnName": "sessionJitDurationMs",
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
@@ -477,7 +505,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '986705ed8a348ac81b55a1cb5506b132')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f22f9f4c46a0443113f80aef7a78fc4e')"
     ]
   }
 }

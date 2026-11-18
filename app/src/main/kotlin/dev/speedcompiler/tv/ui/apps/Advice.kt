@@ -5,6 +5,7 @@ import dev.speedcompiler.tv.watch.FrameStat
 import dev.speedcompiler.tv.watch.JIT_BUSY_SHARE
 import dev.speedcompiler.tv.watch.MIN_CAUSE_FRAMES
 import dev.speedcompiler.tv.watch.WINDOW_START
+import dev.speedcompiler.tv.watch.RECOMPILE_MIN_START_MS
 import dev.speedcompiler.tv.watch.jitShare
 
 /** Filters need this many frames before their share of slow frames is trusted. */
@@ -43,7 +44,10 @@ private fun drawingBound(stats: List<FrameStat>, filter: String): Boolean {
     if (rows.sumOf { it.slowUi + it.slowBitmap + it.slowDraw } == 0L) return false
     if (janky < MIN_CAUSE_FRAMES || rows.sumOf { it.slowUi }.toDouble() / janky >= DRAW_BOUND_UI_SHARE) return false
     val start = rows.filter { it.window == WINDOW_START }
-    return (jitShare(start.sumOf { it.jitMs }, start.sumOf { it.durationMs }) ?: 0.0) < JIT_BUSY_SHARE
+    // Without enough measured start time the JIT load is unknown, which is not the same as none.
+    if (start.sumOf { it.jitDurationMs } < RECOMPILE_MIN_START_MS) return false
+    val share = jitShare(start.sumOf { it.jitMs }, start.sumOf { it.jitDurationMs }) ?: return false
+    return share < JIT_BUSY_SHARE
 }
 
 fun adviceFor(debugBuild: Boolean, waitingForProfile: Boolean, compiled: Boolean, stats: List<FrameStat>, smootherOn: Boolean): Advice? {

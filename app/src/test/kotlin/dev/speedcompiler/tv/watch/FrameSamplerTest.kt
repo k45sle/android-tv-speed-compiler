@@ -240,8 +240,8 @@ Janky frames (legacy): 51 (83.61%)
         f.counters = gfxJit(10, 1_000, 70, 140_000, 810); f.sampler.tick() // later: 100 ms over 60 s
         assertEquals(
             setOf(
-                FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", jitMs = 8_000, durationMs = 80_000),
-                FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", jitMs = 100, durationMs = 60_000),
+                FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", jitMs = 8_000, durationMs = 80_000, jitDurationMs = 80_000),
+                FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", jitMs = 100, durationMs = 60_000, jitDurationMs = 60_000),
             ),
             f.stats().toSet(),
         )
@@ -266,11 +266,66 @@ Janky frames (legacy): 51 (83.61%)
         assertTrue(t.startJustEnded)
         // Just inside one tick of slack still counts.
         val u = SessionTracker()
-        u.add(g(100, 0, 30_000))
-        u.add(g(200, 0, START_WINDOW_MS + START_SLACK_MS))
-        assertEquals(START_WINDOW_MS + START_SLACK_MS, u.sessionDurationMs)
-        assertEquals(Counts(200, 0, durationMs = START_WINDOW_MS + START_SLACK_MS), u.pendingStart)
+        u.add(g(100, 0, START_WINDOW_MS - 1))
+        u.add(g(200, 0, START_WINDOW_MS - 1 + START_SLACK_MS))
+        assertEquals(START_WINDOW_MS - 1 + START_SLACK_MS, u.sessionDurationMs)
+        assertEquals(Counts(200, 0, durationMs = START_WINDOW_MS - 1 + START_SLACK_MS), u.pendingStart)
         assertFalse(u.startJustEnded)
+    }
+
+    @Test fun aMidLengthGapIsLaterEvenWhenTheReadingIsStillYoung() {
+        val t = SessionTracker()
+        t.add(g(100, 0, 5_000))
+        // 130 s old is inside START_WINDOW_MS + START_SLACK_MS, but 125 s since the last reading is more than one tick of slack.
+        val out = t.add(g(600, 5, 130_000))
+        assertEquals(mapOf(WINDOW_START to Counts(100, 0, durationMs = 5_000), WINDOW_LATER to Counts(500, 5, durationMs = 125_000)), out)
+        assertEquals(5_000L, t.sessionDurationMs)
+        assertTrue(t.startJustEnded)
+    }
+
+    @Test fun jitDurationCountsOnlyIntervalsWhereTheJitThreadWasRead() {
+        val t = SessionTracker()
+        t.add(GfxStats(1, 100, 0, 0, 0, 0, 15_000, jitMs = 100)) // fresh and read
+        t.add(GfxStats(1, 200, 0, 0, 0, 0, 30_000, jitMs = null)) // /proc unreadable: wall time counts, JIT time does not
+        t.add(GfxStats(1, 300, 0, 0, 0, 0, 45_000, jitMs = 150)) // no JIT baseline from the reading before
+        t.add(GfxStats(1, 400, 0, 0, 0, 0, 59_000, jitMs = 250)) // read again
+        assertEquals(59_000L, t.sessionDurationMs)
+        assertEquals(29_000L, t.sessionJitDurationMs) // 15 s + 14 s
+        assertEquals(200L, t.sessionJitMs) // 100 + 100
+    }
+
+    @Test fun noRecompileWhenTheJitThreadWasNeverRead() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        val w = Wanted()
+        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { false }, { p, fp -> w.calls += p to fp })
+        for ((i, age) in listOf(20_000L, 80_000L, 140_000L).withIndex()) { f.counters = gfxFull(10, 400L * (i + 1), 10, age); sampler.tick() }
+        assertEquals(emptyList<Pair<String, String>>(), w.calls)
+        assertEquals(0L, f.stats().filter { it.window == "start" }.sumOf { it.jitDurationMs })
+        assertTrue(f.stats().filter { it.window == "start" }.sumOf { it.durationMs } > 0)
+        f.db.close()
+    }
+
+    @Test fun aThrowingWantRecompileKeepsTheJudgementForTheNextTickWithoutDoubleRecording() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        var fail = true
+        val calls = mutableListOf<Pair<String, String>>()
+        val sampler = FrameSampler(f.shell, { f.filter }, { "fp1" }, { f.db }, { true }, { false }, { p, fp -> if (fail) throw java.io.IOException("db"); calls += p to fp })
+        f.counters = gfxJit(10, 400, 10, 20_000, 200); sampler.tick()
+        f.counters = gfxJit(10, 800, 20, 80_000, 800); sampler.tick()
+        f.counters = gfxJit(10, 1_000, 30, 140_000, 810); sampler.tick() // the window ends, wantRecompile throws
+        assertEquals(emptyList<Pair<String, String>>(), calls)
+        assertTrue(f.db.frameStats().session("a.app")!!.startOpen) // not judged yet
+        assertEquals(800L, f.stats().first { it.window == "start" }.frames) // nothing of the failed tick was stored
+        fail = false
+        f.counters = gfxJit(10, 1_000, 30, 140_000, 810); sampler.tick() // retried
+        assertEquals(listOf("a.app" to "fp1"), calls)
+        assertFalse(f.db.frameStats().session("a.app")!!.startOpen)
+        assertEquals(200L, f.stats().first { it.window == "later" }.frames) // recorded once
+        f.counters = gfxJit(10, 1_200, 35, 200_000, 820); sampler.tick()
+        assertEquals(listOf("a.app" to "fp1"), calls) // not judged again
+        f.db.close()
     }
 
     @Test fun aGapDoesNotDiluteTheJitShareThatTriggersARecompile() = runBlocking {
@@ -404,7 +459,7 @@ Janky frames (legacy): 51 (83.61%)
         }
         val db = Room.databaseBuilder(ctx, AppDatabase::class.java, "migrate4.db").allowMainThreadQueries().build()
         // Old rows are post-start frames: window "later", and the new cause, JIT and duration columns are zero.
-        assertEquals(listOf(FrameStat("a.app", "fp1", "speed", 900, 90, "later", 0, 0, 0, 0, 0)), db.frameStats().all().first())
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed", 900, 90, "later", 0, 0, 0, 0, 0, 0)), db.frameStats().all().first())
         // The pending frames and janky counts of the old session are kept as later; everything new is empty.
         assertEquals(
             FrameSession("a.app", "speed", "fp1", 5, 1, 300, 3, false, pid = null, lastAgeMs = null, lastJitMs = null),

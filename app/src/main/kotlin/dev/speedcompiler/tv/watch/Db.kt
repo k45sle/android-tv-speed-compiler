@@ -43,6 +43,8 @@ data class FrameStat(
     /** CPU time of the app's JIT thread and the wall time of the readings, in this window. */
     @ColumnInfo(defaultValue = "0") val jitMs: Long = 0,
     @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
+    /** Wall time of the readings where the JIT thread was read: the JIT share is jitMs over this. */
+    @ColumnInfo(defaultValue = "0") val jitDurationMs: Long = 0,
 )
 
 /**
@@ -77,9 +79,12 @@ data class FrameSession(
     @ColumnInfo(defaultValue = "0") val startDurationMs: Long = 0,
     @ColumnInfo(defaultValue = "0") val laterJitMs: Long = 0,
     @ColumnInfo(defaultValue = "0") val laterDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startJitDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterJitDurationMs: Long = 0,
     /** The session's whole start window so far, kept apart from the pending counts, which are released and cleared. */
     @ColumnInfo(defaultValue = "0") val sessionJitMs: Long = 0,
     @ColumnInfo(defaultValue = "0") val sessionDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val sessionJitDurationMs: Long = 0,
     /** True from a fresh session's first reading until its start window has been judged. */
     @ColumnInfo(defaultValue = "0") val startOpen: Boolean = false,
     /** True when the session's first reading was inside the start window, so its start window was seen from the beginning. */

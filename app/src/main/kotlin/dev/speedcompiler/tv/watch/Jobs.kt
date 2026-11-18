@@ -204,19 +204,19 @@ suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
     if (g.gate.status(ignoreIdle = true) != GateStatus.Open || !runLock.tryLock()) return
     try {
         if (g.settings.values.first().optimizeHow == OptimizeHow.Full) return
-        // No front given: with the screen on, ask the TV who is in front; if that fails, wait for the next time. Screen off: nobody is using an app.
-        val inFront = front ?: if (g.screenOn()) {
+        // The front app is read again before every refresh: a refresh is a long compile and the user may open the next app meanwhile.
+        // With the screen on and nobody given, ask the TV; if that fails, skip this app. Screen off: nobody is using an app.
+        suspend fun inFront(): Pair<Boolean, String?> = front?.let { true to it } ?: if (g.screenOn()) {
             try {
-                topResumedPackage(g.adbShell.run(TOP_RESUMED_COMMAND).output.lines()) ?: return
+                topResumedPackage(g.adbShell.run(TOP_RESUMED_COMMAND).output.lines())?.let { true to it } ?: (false to null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                return
+                false to null
             }
-        } else null
+        } else true to null
         for (key in sync.withPrefix(RECOMPILE_PREFIX).map { it.key }) {
             val pkg = key.removePrefix(RECOMPILE_PREFIX)
-            if (pkg == inFront) continue
             val p = sync.get(key).orEmpty().split('|')
             if (p.getOrNull(2) != "0") continue
             val watched = g.database.watchedApps().get(pkg)
@@ -224,6 +224,8 @@ suspend fun runWantedRecompiles(g: AppGraph, front: String? = null) {
                 sync.put(SyncState(key, ""))
                 continue
             }
+            val (known, now) = inFront()
+            if (!known || pkg == now) continue
             sync.put(SyncState(key, "${p[0]}|${p[1]}|${g.clock.nowMillis()}")) // before the call, so a failure is not retried at once
             try {
                 g.optimizer.refresh(pkg)
