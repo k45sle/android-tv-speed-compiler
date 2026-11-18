@@ -24,19 +24,86 @@ private fun top(pkg: String) = "  topResumedActivity=ActivityRecord{1a2b u0 $pkg
 @RunWith(RobolectricTestRunner::class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 class FrameSamplerTest {
-    @Test fun parsesTotalsAndIgnoresTheLegacyLine() {
-        assertEquals(1234L to 56L, parseGfxinfo(gfx(1234, 56)))
-        assertNull(parseGfxinfo("Total frames rendered: 10"))
-        assertNull(parseGfxinfo(""))
+    private val real = """
+Applications Graphics Acceleration Info:
+Uptime: 237305290 Realtime: 237305290
+** Graphics info for pid 17090 [dev.speedcompiler.tv] **
+Stats since: 234723287527046ns
+Total frames rendered: 114727
+Janky frames: 56 (0.05%)
+Janky frames (legacy): 866 (0.75%)
+50th percentile: 20ms
+Number Missed Vsync: 27
+Number High input latency: 229341
+Number Slow UI thread: 52
+Number Slow bitmap uploads: 3
+Number Slow issue draw commands: 54
+Number Frame deadline missed: 56
+Number Frame deadline missed (legacy): 57
+HISTOGRAM: 5ms=0 6ms=0
+"""
+
+    @Test fun parsesTheRealFormat() {
+        assertEquals(GfxStats(17090, 114727, 56, 52, 3, 54, 2_582_003), parseGfxinfo(real))
     }
 
-    @Test fun firstReadingIsABaselineAndShortSessionsAreDropped() {
+    @Test fun parserHandlesMissingLinesAndOnlyReadsTheFirstBlock() {
+        assertEquals(GfxStats(null, 1234, 56, 0, 0, 0, null), parseGfxinfo(gfx(1234, 56)))
+        assertNull(parseGfxinfo("Total frames rendered: 10"))
+        assertNull(parseGfxinfo("Total frames rendered: 10\nJanky frames (legacy): 9 (1.00%)"))
+        assertNull(parseGfxinfo(""))
+        // Stats since later than uptime: no age.
+        assertNull(parseGfxinfo(real.replace("Uptime: 237305290", "Uptime: 1"))!!.ageMs)
+        val two = real + "** Graphics info for pid 99 [other] **\nTotal frames rendered: 5\nJanky frames: 1 (1%)\n"
+        assertEquals(17090, parseGfxinfo(two)!!.pid)
+        assertEquals(114727L, parseGfxinfo(two)!!.total)
+    }
+
+    private fun g(total: Long, janky: Long, age: Long?, pid: Int? = 1, ui: Long = 0, bmp: Long = 0, draw: Long = 0) = GfxStats(pid, total, janky, ui, bmp, draw, age)
+
+    @Test fun aFreshSessionCountsItsFirstReadingIntoStart() {
         val t = SessionTracker()
-        assertNull(t.add(5_000, 100)) // baseline: frames from before we looked do not count
-        assertNull(t.add(5_300, 130)) // 300 frames, under the minimum
-        assertEquals(700L to 80L, t.add(5_700, 180)) // passes 600 frames: everything so far in one go
-        assertEquals(100L to 5L, t.add(5_800, 185))
-        assertNull(t.add(5_800, 185)) // nothing drawn
+        assertEquals(emptyMap<String, Counts>(), t.add(g(300, 30, 20_000, ui = 20, bmp = 1, draw = 25)))
+        val out = t.add(g(700, 40, 80_000, ui = 25, bmp = 1, draw = 30))
+        assertEquals(mapOf(WINDOW_START to Counts(700, 40, 25, 1, 30)), out)
+        assertEquals(mapOf(WINDOW_LATER to Counts(100, 5, 0, 0, 0)), t.add(g(800, 45, 140_000, ui = 25, bmp = 1, draw = 30)))
+    }
+
+    @Test fun anOldProcessIsABaseline() {
+        val t = SessionTracker()
+        assertEquals(emptyMap<String, Counts>(), t.add(g(5_000, 100, START_WINDOW_MS + 1)))
+        assertEquals(mapOf(WINDOW_LATER to Counts(700, 80)), t.add(g(5_700, 180, 200_000)))
+    }
+
+    @Test fun anIntervalBelongsToStartWhenThePreviousReadingWasYoung() {
+        val t = SessionTracker()
+        t.add(g(100, 0, START_WINDOW_MS)) // exactly the limit still counts as fresh
+        t.add(g(200, 0, START_WINDOW_MS - 1_000)) // previous age was the limit: later
+        assertEquals(Counts(100, 0), t.pendingStart)
+        assertEquals(Counts(100, 0), t.pendingLater)
+    }
+
+    @Test fun theGateReleasesPendingCountsPerWindow() {
+        val u = SessionTracker()
+        assertEquals(emptyMap<String, Counts>(), u.add(g(400, 4, 59_000)))
+        assertEquals(emptyMap<String, Counts>(), u.add(g(500, 5, 119_000))) // start interval, 100 more
+        assertEquals(emptyMap<String, Counts>(), u.add(g(550, 6, 179_000))) // previous age 119 s: later
+        assertEquals(mapOf(WINDOW_START to Counts(500, 5), WINDOW_LATER to Counts(500, 3)), u.add(g(1_000, 8, 239_000)))
+    }
+
+    @Test fun aSessionSurvivesARoundTrip() = runBlocking {
+        val t = SessionTracker(7)
+        t.add(g(400, 4, 30_000, pid = 7, ui = 2))
+        t.add(g(450, 5, 90_000, pid = 7, ui = 3))
+        val s = FrameSession(
+            "a.app", "f", "fp", t.lastTotal, t.lastJanky, t.pendingLater.frames, t.pendingLater.janky, t.released, t.pid, t.lastAgeMs, t.lastSlowUi, t.lastSlowBitmap, t.lastSlowDraw,
+            t.pendingStart.frames, t.pendingStart.janky, t.pendingStart.slowUi, t.pendingStart.slowBitmap, t.pendingStart.slowDraw,
+            t.pendingLater.slowUi, t.pendingLater.slowBitmap, t.pendingLater.slowDraw,
+        )
+        val f = Fixture()
+        f.db.frameStats().putSession(s)
+        assertEquals(s, f.db.frameStats().session("a.app"))
+        f.db.close()
     }
 
     private class Fixture(var counters: String = gfx(0, 0), var ready: Boolean = true) {
@@ -120,6 +187,55 @@ class FrameSamplerTest {
         f.sample(1_000, 0); f.sample(3_000, 0)
         assertTrue(f.stats().isEmpty())
         f.db.close()
+    }
+
+    private fun gfxFull(pid: Int, total: Long, janky: Long, age: Long, ui: Long = 0) =
+        "Uptime: 1000000000 Realtime: 1\n** Graphics info for pid $pid [a.app] **\nStats since: ${(1_000_000_000L - age) * 1_000_000}ns\n" +
+            "Total frames rendered: $total\nJanky frames: $janky (1.00%)\nNumber Slow UI thread: $ui\n"
+
+    @Test fun storesBothWindowsAndTreatsASamePidResetAsABaseline() = runBlocking {
+        val f = Fixture()
+        f.db.watchedApps().upsert(WatchedApp("a.app", "fp1"))
+        f.counters = gfxFull(10, 400, 40, 30_000, ui = 30); f.sampler.tick() // fresh: counts from zero
+        f.counters = gfxFull(10, 800, 60, 90_000, ui = 40); f.sampler.tick() // start interval, gate passed
+        f.counters = gfxFull(10, 1_000, 70, 150_000, ui = 45); f.sampler.tick() // later
+        assertEquals(
+            setOf(FrameStat("a.app", "fp1", "speed-profile", 800, 60, "start", 40), FrameStat("a.app", "fp1", "speed-profile", 200, 10, "later", 5)),
+            f.stats().toSet(),
+        )
+        // Same pid, smaller counters and young age: gfxinfo was reset, so this is a baseline, not a fresh start.
+        f.counters = gfxFull(10, 50, 1, 5_000); f.sampler.tick()
+        assertEquals(2, f.stats().size)
+        assertEquals(800L, f.stats().first { it.window == "start" }.frames)
+        // A different pid with young counters is fresh.
+        f.counters = gfxFull(11, 700, 7, 20_000); f.sampler.tick()
+        assertEquals(1_500L, f.stats().first { it.window == "start" }.frames)
+        f.db.close()
+    }
+
+    @Test fun migratesVersion4KeepingOldRowsAsLater() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        ctx.deleteDatabase("migrate4.db")
+        // Version 4 tables as in schemas/dev.speedcompiler.tv.watch.AppDatabase/4.json.
+        SQLiteDatabase.openOrCreateDatabase(ctx.getDatabasePath("migrate4.db"), null).use {
+            it.execSQL("CREATE TABLE `watched_app` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `autoOptimize` INTEGER NOT NULL, `lastResult` TEXT, `lastOptimizedAt` INTEGER, `useSpeed` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`packageName`))")
+            it.execSQL("CREATE TABLE `event` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timeMillis` INTEGER NOT NULL, `packageName` TEXT, `kind` TEXT NOT NULL, `message` TEXT NOT NULL)")
+            it.execSQL("CREATE TABLE `sync_state` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
+            it.execSQL("CREATE TABLE `queue_item` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `packageName` TEXT NOT NULL, `source` TEXT NOT NULL, `state` TEXT NOT NULL, `enqueuedAt` INTEGER NOT NULL, `startedAt` INTEGER, `finishedAt` INTEGER, `failureReason` TEXT, `runNow` INTEGER NOT NULL)")
+            it.execSQL("CREATE TABLE `frame_stat` (`packageName` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `filter` TEXT NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, PRIMARY KEY(`packageName`, `fingerprint`, `filter`))")
+            it.execSQL("CREATE TABLE `frame_session` (`packageName` TEXT NOT NULL, `filter` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `lastTotal` INTEGER NOT NULL, `lastJanky` INTEGER NOT NULL, `frames` INTEGER NOT NULL, `janky` INTEGER NOT NULL, `released` INTEGER NOT NULL, PRIMARY KEY(`packageName`))")
+            it.execSQL("INSERT INTO frame_stat VALUES ('a.app', 'fp1', 'speed', 900, 90)")
+            it.execSQL("INSERT INTO frame_session VALUES ('a.app', 'speed', 'fp1', 5, 1, 300, 3, 0)")
+            it.version = 4
+        }
+        val db = Room.databaseBuilder(ctx, AppDatabase::class.java, "migrate4.db").allowMainThreadQueries().build()
+        assertEquals(listOf(FrameStat("a.app", "fp1", "speed", 900, 90, "later", 0, 0, 0)), db.frameStats().all().first())
+        val s = db.frameStats().session("a.app")!!
+        assertEquals(300L to 3L, s.frames to s.janky)
+        assertNull(s.pid)
+        db.frameStats().put(FrameStat("a.app", "fp1", "speed", 10, 1, "start"))
+        assertEquals(2, db.frameStats().all().first().size)
+        db.close()
     }
 
     @Test fun migratesVersion2WithoutLosingRows() = runBlocking {
