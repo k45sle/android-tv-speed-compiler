@@ -24,17 +24,33 @@ data class WatchedApp(
     @ColumnInfo(defaultValue = "0") val useSpeed: Boolean = false,
 )
 
-/** Frames drawn and slow frames counted while [packageName] was in front, per app version and compiler filter. */
-@Entity(tableName = "frame_stat", primaryKeys = ["packageName", "fingerprint", "filter"])
+/**
+ * Frames drawn and slow frames counted while [packageName] was in front, per app version, compiler filter and [window]
+ * ("start": the app's first minute or two after launch, "later": the rest). The cause columns only count janky frames.
+ * Rows from before schema 5 never held a session's first reading, so they are mostly post-start frames and migrate to "later".
+ */
+@Entity(tableName = "frame_stat", primaryKeys = ["packageName", "fingerprint", "filter", "window"])
 data class FrameStat(
     val packageName: String,
     val fingerprint: String,
     val filter: String,
     val frames: Long,
     val janky: Long,
+    @ColumnInfo(defaultValue = "'later'") val window: String = WINDOW_LATER,
+    @ColumnInfo(defaultValue = "0") val slowUi: Long = 0,
+    @ColumnInfo(defaultValue = "0") val slowBitmap: Long = 0,
+    @ColumnInfo(defaultValue = "0") val slowDraw: Long = 0,
+    /** CPU time of the app's JIT thread and the wall time of the readings, in this window. */
+    @ColumnInfo(defaultValue = "0") val jitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
+    /** Wall time of the readings where the JIT thread was read: the JIT share is jitMs over this. */
+    @ColumnInfo(defaultValue = "0") val jitDurationMs: Long = 0,
 )
 
-/** The sampler's running session for one app, kept so a killed process does not lose its baseline or unreleased frames. */
+/**
+ * The sampler's running session for one app, kept so a killed process does not lose its baseline or unreleased frames.
+ * [frames] and [janky] are the pending "later" counts (the only pending ones before schema 5).
+ */
 @Entity(tableName = "frame_session")
 data class FrameSession(
     @PrimaryKey val packageName: String,
@@ -45,6 +61,34 @@ data class FrameSession(
     val frames: Long,
     val janky: Long,
     val released: Boolean,
+    val pid: Int? = null,
+    val lastAgeMs: Long? = null,
+    @ColumnInfo(defaultValue = "0") val lastSlowUi: Long = 0,
+    @ColumnInfo(defaultValue = "0") val lastSlowBitmap: Long = 0,
+    @ColumnInfo(defaultValue = "0") val lastSlowDraw: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startFrames: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startJanky: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startSlowUi: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startSlowBitmap: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startSlowDraw: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterSlowUi: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterSlowBitmap: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterSlowDraw: Long = 0,
+    val lastJitMs: Long? = null,
+    @ColumnInfo(defaultValue = "0") val startJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val startJitDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val laterJitDurationMs: Long = 0,
+    /** The session's whole start window so far, kept apart from the pending counts, which are released and cleared. */
+    @ColumnInfo(defaultValue = "0") val sessionJitMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val sessionDurationMs: Long = 0,
+    @ColumnInfo(defaultValue = "0") val sessionJitDurationMs: Long = 0,
+    /** True from a fresh session's first reading until its start window has been judged. */
+    @ColumnInfo(defaultValue = "0") val startOpen: Boolean = false,
+    /** True when the session's first reading was inside the start window, so its start window was seen from the beginning. */
+    @ColumnInfo(defaultValue = "0") val beganFresh: Boolean = false,
 )
 
 @Entity(tableName = "event")
@@ -154,8 +198,8 @@ interface FrameStatDao {
     @Query("SELECT * FROM frame_stat")
     fun all(): Flow<List<FrameStat>>
 
-    @Query("SELECT * FROM frame_stat WHERE packageName = :packageName AND fingerprint = :fingerprint AND filter = :filter")
-    suspend fun get(packageName: String, fingerprint: String, filter: String): FrameStat?
+    @Query("SELECT * FROM frame_stat WHERE packageName = :packageName AND fingerprint = :fingerprint AND filter = :filter AND `window` = :window")
+    suspend fun get(packageName: String, fingerprint: String, filter: String, window: String): FrameStat?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(stat: FrameStat)
@@ -196,9 +240,9 @@ interface SyncStateDao {
 
 @Database(
     entities = [WatchedApp::class, Event::class, SyncState::class, QueueItem::class, FrameStat::class, FrameSession::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun queue(): QueueDao

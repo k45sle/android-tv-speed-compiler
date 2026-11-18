@@ -3,15 +3,20 @@ package dev.speedcompiler.tv
 import android.app.Application
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import dev.speedcompiler.tv.adb.ConnectionState
 import dev.speedcompiler.tv.adb.tryOrNull
 import dev.speedcompiler.tv.watch.FrameSampler
 import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.enqueueReconnect
 import dev.speedcompiler.tv.watch.requeueStaleRunning
+import dev.speedcompiler.tv.watch.runWantedRecompiles
+import dev.speedcompiler.tv.watch.wantRecompile
+import dev.speedcompiler.tv.engine.OptimizeHow
 import dev.speedcompiler.tv.watch.schedulePeriodicJobs
 import dev.speedcompiler.tv.watch.startWatchService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -28,6 +33,10 @@ class SpeedApp : Application() {
         FrameSampler(
             graph.adbShell, { graph.optimizer.verify(it) }, { graph.packageSystem.fingerprint(it) }, { graph.database },
             { power.isInteractive && !compileRunning() && graph.connectionMonitor.state.first() == ConnectionState.Connected },
+            { graph.settings.values.first().optimizeHow == OptimizeHow.Full },
+            { pkg, fingerprint -> wantRecompile(graph, pkg, fingerprint) },
+            // A compile outlasts the sampler's time cap, so it runs in its own coroutine.
+            { graph.appScope.launch { tryOrNull { runWantedRecompiles(graph) } } },
         )
     }
     private val sampling = Mutex()
@@ -49,13 +58,16 @@ class SpeedApp : Application() {
         }
     }
 
+    /** Holds the compile lock while it runs; tests wait for it so their own tryLock calls are not skipped. */
+    @VisibleForTesting internal var startupRequeue: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         if (getProcessName().endsWith(":watch")) return // WatchService's process: no graph, WorkManager or ADB there
         // WorkManager may be uninitialised under test.
         runCatching { enqueueReconnect(this); schedulePeriodicJobs(this) }
         graph.appScope.launch { graph.connectionKeeper.watchKeepTrusting() }
-        graph.appScope.launch { tryOrNull { requeueStaleRunning(graph) } } // best effort; must not crash
+        startupRequeue = graph.appScope.launch { tryOrNull { requeueStaleRunning(graph) } } // best effort; must not crash
         startWatchService(this) // its process forwards screen-off and the sampler tick to WakeReceiver here
     }
 }

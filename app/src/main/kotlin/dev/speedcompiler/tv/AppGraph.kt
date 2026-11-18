@@ -47,7 +47,9 @@ class AppGraph(context: Context) {
 
     val settings: Settings = DataStoreSettings(app.settingsStore)
     private val libAdb = LibAdb(app, legacy = { settings.values.first().legacyAdb })
-    val adbShell: AdbShell = libAdb
+    var adbShell: AdbShell = libAdb
+    /** Whether the TV's screen is on (tests replace it). */
+    var screenOn: () -> Boolean = { app.getSystemService(android.os.PowerManager::class.java).isInteractive }
     val pairing: Pairing = libAdb
     private val keyChecker = KeyChecker(libAdb::keyTrusted, libAdb, { libAdb.publicKeyBase64 })
     val connectionKeeper = ConnectionKeeper(

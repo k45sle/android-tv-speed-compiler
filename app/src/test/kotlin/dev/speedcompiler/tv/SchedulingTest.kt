@@ -35,7 +35,9 @@ import dev.speedcompiler.tv.watch.QueueState
 import dev.speedcompiler.tv.watch.WatchedApp
 import dev.speedcompiler.tv.watch.WorkScheduler
 import dev.speedcompiler.tv.watch.freeBytes
+import dev.speedcompiler.tv.watch.recompileWanted
 import dev.speedcompiler.tv.watch.refreshDue
+import dev.speedcompiler.tv.watch.runWantedRecompiles
 import dev.speedcompiler.tv.watch.compileRunning
 import dev.speedcompiler.tv.watch.restartOpenedGates
 import dev.speedcompiler.tv.watch.requeueStaleRunning
@@ -100,10 +102,16 @@ class SchedulingTest {
         g.optimizer = optimizer
         g.gate = gate
         g.scheduler = WorkScheduler(ctx, g)
+        g.screenOn = { false } // the TV's screen is off unless a test says otherwise
         freeBytes = { 10L shl 30 }
+        runBlocking { (ctx as SpeedApp).startupRequeue?.join() } // it takes the compile lock at app start
     }
 
-    @After fun tearDown() = g.database.close()
+    /** The compile lock is one per process: a worker still letting go of it would make the next test's refresh skip its run. */
+    @After fun tearDown() = runBlocking {
+        await("compile lock released") { !compileRunning() }
+        g.database.close()
+    }
 
     private fun infos(pkg: String) = wm.getWorkInfosForUniqueWork(workName(pkg)).get()
 
@@ -643,6 +651,7 @@ class SchedulingTest {
         record()
         restartOpenedGates(g)
         assertEquals(listOf("a"), optimizer.refreshed)
+        assertEquals(listOf(dev.speedcompiler.tv.engine.REFRESHED), optimizer.refreshMessages)
         dev.speedcompiler.tv.watch.dropRefresh(g, "a") // as after a Reset
         (g.clock as FakeClock).now = 2 * day
         restartOpenedGates(g)
@@ -650,6 +659,130 @@ class SchedulingTest {
         record()
         g.scheduler.unwatch("a")
         assertEquals("", sync.get("refresh:a"))
+    }
+
+    private val dayMillis = 24 * 60 * 60 * 1000L
+
+    @Test fun aWantedRecompileRunsOnceAfterTheAppLeavesTheFront() = runBlocking {
+        val fp = system.apps.getValue("a")
+        g.database.watchedApps().upsert(WatchedApp("a", fp))
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        g.screenOn = { true }
+        g.adbShell = frontShell("a")
+        runWantedRecompiles(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed) // in front: waits
+        g.adbShell = frontShell("b")
+        runWantedRecompiles(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        assertEquals(listOf(dev.speedcompiler.tv.engine.RECOMPILED_AT_START), optimizer.refreshMessages) // its own line in Activity
+        // Wanted again within 24 h (same version): not recorded, not run.
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        runWantedRecompiles(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        (g.clock as FakeClock).now += dayMillis + 1
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        g.screenOn = { false }
+        g.adbShell = frontShell("a", fail = true) // screen off: nobody is using an app, so nothing is read
+        runWantedRecompiles(g)
+        assertEquals(listOf("a", "a"), optimizer.refreshed)
+    }
+
+    private fun frontShell(pkg: String?, fail: Boolean = false) = object : dev.speedcompiler.tv.adb.AdbShell {
+        override suspend fun run(command: String): dev.speedcompiler.tv.adb.ShellResult {
+            if (fail) throw java.io.IOException("link down")
+            return dev.speedcompiler.tv.adb.ShellResult(0, if (pkg == null) "" else "  topResumedActivity=ActivityRecord{1a2b u0 $pkg/.Main t5}")
+        }
+    }
+
+    @Test fun withTheScreenOnARecompileWithoutAGivenFrontResolvesTheFrontAndNeverTouchesIt() = runBlocking {
+        val fp = system.apps.getValue("a")
+        g.database.watchedApps().upsert(WatchedApp("a", fp))
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        g.screenOn = { true }
+        g.adbShell = frontShell("a")
+        restartOpenedGates(g) // as the 30 minute detect does
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell(null) // front unknown: wait
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell("a", fail = true)
+        restartOpenedGates(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.adbShell = frontShell("b")
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+    }
+
+    @Test fun theFrontAppIsReadAgainBeforeEachRefreshSoANewlyOpenedAppIsSkipped() = runBlocking {
+        for (pkg in listOf("a", "b")) {
+            val fp = system.apps.getValue(pkg)
+            g.database.watchedApps().upsert(WatchedApp(pkg, fp))
+            dev.speedcompiler.tv.watch.wantRecompile(g, pkg, fp)
+        }
+        g.screenOn = { true }
+        val answers = ArrayDeque(listOf("c", "b", "a")) // nobody wanted in front at the first read; the second wanted app is then opened
+        var reads = 0
+        g.adbShell = object : dev.speedcompiler.tv.adb.AdbShell {
+            override suspend fun run(command: String): dev.speedcompiler.tv.adb.ShellResult {
+                reads++
+                return dev.speedcompiler.tv.adb.ShellResult(0, "  topResumedActivity=ActivityRecord{1a2b u0 ${answers.removeFirst()}/.Main t5}")
+            }
+        }
+        runWantedRecompiles(g)
+        assertEquals(1, optimizer.refreshed.size) // one refreshed, the other was opened meanwhile
+        assertEquals(2, reads) // one read per app, right before its refresh
+        // The skipped app stays wanted and runs once it is not in front.
+        g.adbShell = frontShell("c")
+        runWantedRecompiles(g)
+        assertEquals(setOf("a", "b"), optimizer.refreshed.toSet())
+        // An unreadable front before a refresh skips that app this time.
+        for (pkg in listOf("a", "b")) dev.speedcompiler.tv.watch.wantRecompile(g, pkg, system.apps.getValue(pkg)).also { (g.clock as FakeClock).now += dayMillis + 1 }
+        g.adbShell = frontShell("a", fail = true)
+        val before = optimizer.refreshed.size
+        runWantedRecompiles(g)
+        assertEquals(before, optimizer.refreshed.size)
+    }
+
+    @Test fun aWantedRecompileRunsFromRestartOpenedGatesAndNewVersionsMayRunAgain() = runBlocking {
+        g.database.watchedApps().upsert(WatchedApp("a", "1"))
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", "1")
+        restartOpenedGates(g)
+        assertEquals(listOf("a"), optimizer.refreshed)
+        system.apps["a"] = "2" // updated: a new fingerprint may be recompiled at once
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", "2")
+        restartOpenedGates(g)
+        assertEquals(listOf("a", "a"), optimizer.refreshed)
+    }
+
+    @Test fun aWantedRecompileRespectsTheGateAndSkipsSpeedAndFullApps() = runBlocking {
+        val fp = system.apps.getValue("a")
+        g.database.watchedApps().upsert(WatchedApp("a", fp))
+        dev.speedcompiler.tv.watch.wantRecompile(g, "a", fp)
+        gate.status = GateStatus.Paused
+        runWantedRecompiles(g)
+        gate.status = GateStatus.WaitingForPlayback
+        runWantedRecompiles(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        gate.status = GateStatus.WaitingForIdle // the screen is on: fine, the app is not in front
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Full) }
+        runWantedRecompiles(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        g.settings.update { it.copy(optimizeHow = dev.speedcompiler.tv.engine.OptimizeHow.Automatic) }
+        g.database.watchedApps().upsert(WatchedApp("a", fp, useSpeed = true))
+        runWantedRecompiles(g)
+        assertEquals(emptyList<String>(), optimizer.refreshed)
+        assertEquals("", g.database.syncState().get("recompile:a")) // dropped
+        gate.status = GateStatus.Open
+    }
+
+    @Test fun recompileRule() {
+        val day = 24 * 60 * 60 * 1000L
+        assertTrue(recompileWanted(null, "1", 5))
+        assertFalse(recompileWanted("1|5|0", "1", 9)) // already waiting
+        assertFalse(recompileWanted("1|5|100", "1", 100 + day - 1))
+        assertTrue(recompileWanted("1|5|100", "1", 100 + day))
+        assertTrue(recompileWanted("1|5|100", "2", 101)) // a new version
+        assertTrue(recompileWanted("", "1", 5))
     }
 
     @Test fun refreshRule() {

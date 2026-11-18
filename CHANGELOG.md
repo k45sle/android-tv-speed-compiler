@@ -4,6 +4,13 @@ What changed in each version of Speed Compile, in plain words. Newest first.
 
 Speed Compile prepares the code of the apps you pick ahead of time. This is called compiling, and it can make an app open and scroll more smoothly.
 
+## Unreleased
+
+- App detail says when an app stutters while drawing the screen, which compiling can't change. Then it doesn't suggest Smoother mode, and if Smoother mode is on, it offers Back to normal mode. On the test TV this is AIOStreams, whose screens are a web page (about 18% of frames slow with any compile), and Nuvio Arc (63%). For both, more than 8 in 10 slow frames were slow in drawing, not in the app's code.
+- If an optimized app still spends its first minute compiling code, Speed Compile notices once you have used the app for about two minutes. Within about a minute after you leave the app, while the screen is on, it asks the TV to compile what you used, without waiting for the TV to be idle. Home lists it as a note under Recent activity. It does this at most once a day per app version, and never starts while the app is on screen. On the test TV, Nuvio Arc compiled from the profile it ships with spent 3% of its first minute this way. After the recompile that was 0.2%, and it opened in 1.4 s instead of 1.6-1.7 s in these runs. Its stutter stayed the same, because that is in drawing.
+- The smoothness check now counts the first minute after an app opens, where compiling matters most. Before, it skipped each app's first reading, so it never saw that minute.
+- After Speed Compile itself updates, its watcher starts again by itself. Before, Android 12 and newer could block that until you opened the app or restarted the TV, and until then it didn't notice app updates, the screen turning off, or how smoothly apps ran.
+
 ## 1.1.1 (18 November 2026)
 
 - A watched app is now compiled within about a minute of its update, even while the TV is on, unless something is playing, automatic optimizing is paused, or you set hours that are closed. Before, it waited for the TV to be idle, so the first evening with a new version ran uncompiled.

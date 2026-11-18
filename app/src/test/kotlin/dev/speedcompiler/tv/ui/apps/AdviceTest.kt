@@ -23,6 +23,10 @@ import org.junit.Test
 
 private fun stat(filter: String, frames: Long, pct: Int) = FrameStat("a.app", "f", filter, frames, frames * pct / 100)
 
+/** Cause counts and start-window JIT time, for the DrawingBound cases. */
+private fun caused(filter: String, frames: Long, pct: Int, ui: Long, draw: Long, jitMs: Long = 0, durationMs: Long = 60_000, jitDurationMs: Long = durationMs) =
+    FrameStat("a.app", "f", filter, frames, frames * pct / 100, "start", ui, 0, draw, jitMs, durationMs, jitDurationMs)
+
 class AdviceTest : ComposeTestBase() {
     private fun advice(
         stats: List<FrameStat> = emptyList(), debug: Boolean = false, profile: Boolean = false, compiled: Boolean = true, on: Boolean = false,
@@ -43,6 +47,45 @@ class AdviceTest : ComposeTestBase() {
         assertEquals(Advice.Measuring, advice(nuvio, on = true)) // speed has no frames yet
         assertEquals(Advice.SlowByItself, advice(nuvio + stat("speed", 4000, 29))) // speed helps by 3 points
         assertEquals(null, advice(nuvio + stat("speed", 4000, 20))) // speed helped by 12 points
+    }
+
+    @Test fun drawingBoundWhenTheStutterIsNotInTheUiThread() {
+        // AIOStreams-like: 13% of janky frames are UI thread, 86% issue draw commands, no JIT.
+        val aio = listOf(caused("verify", 4000, 40, 208, 1376), caused("speed-profile", 4000, 38, 198, 1310, jitMs = 50))
+        assertEquals(Advice.DrawingBound(38), advice(aio))
+        // Smoother mode on: judged by the speed rows.
+        assertEquals(Advice.DrawingBound(35), advice(aio + caused("speed", 4000, 35, 180, 1200), on = true))
+        // Never suggests Smoother.
+        assertEquals(false, advice(aio) == Advice.TrySmoother)
+        // Smooth still wins.
+        assertEquals(Advice.Smooth, advice(listOf(caused("speed-profile", 4000, 10, 10, 100))))
+    }
+
+    @Test fun notDrawingBoundForUiHeavyFewOrUnexplainedStutter() {
+        // Nuvio-like: 44% UI thread.
+        assertEquals(Advice.TrySmoother, advice(listOf(caused("verify", 4000, 60, 1000, 1200), caused("speed-profile", 4000, 32, 563, 700))))
+        // Exactly 25% on the UI thread is not drawing-bound.
+        assertEquals(Advice.TrySmoother, advice(listOf(caused("speed-profile", 4000, 40, 400, 1200))))
+        // Under 3000 frames.
+        assertEquals(Advice.Measuring, advice(listOf(caused("speed-profile", 2999, 38, 10, 1300))))
+        // No cause counts at all: unknown, not drawing.
+        assertEquals(Advice.TrySmoother, advice(listOf(stat("speed-profile", 4000, 38))))
+    }
+
+    @Test fun startupJitDoesNotChangeWhereTheStutterIs() {
+        // Nuvio Arc on the test TV, compiled from its shipped profile: 63% slow, 6% of them on the UI thread, 98% slow draw commands,
+        // 1.9 s of JIT in its first minute (3%). Its own recompile handles the JIT; the stutter is in drawing either way.
+        assertEquals(Advice.DrawingBound(63), advice(listOf(caused("speed-profile", 6000, 63, 222, 3700, jitMs = 1_940))))
+        // JIT never measured, or later frames only: the causes alone decide.
+        assertEquals(Advice.DrawingBound(38), advice(listOf(caused("speed-profile", 4000, 38, 198, 1310, jitDurationMs = 0))))
+        assertEquals(Advice.DrawingBound(38), advice(listOf(FrameStat("a.app", "f", "speed-profile", 4000, 1520, "later", 198, 0, 1310, 0, 120_000, 0))))
+    }
+
+    @Test fun rowsFromBeforeCausesWereStoredDoNotMakeAnAppDrawingBound() {
+        // A schema-4 row after migration: many slow frames, no causes, no duration. The new rows put 44% of slow frames on the UI thread.
+        val old = FrameStat("a.app", "f", "speed-profile", 20_000, 4_000, "later")
+        val new = caused("speed-profile", 4000, 20, ui = 352, draw = 448)
+        assertEquals(Advice.MostlySmooth(20), advice(listOf(old, new)))
     }
 
     @Test fun measuringUntilTheCurrentFilterHasEnoughFrames() {
@@ -121,6 +164,21 @@ class AdviceTest : ComposeTestBase() {
     @Test fun detailShowsThePercentOnTheMostlySmoothLine() {
         show(stats = listOf(stat("speed-profile", 4000, 20)))
         rule.onNodeWithText("Mostly smooth, with some stutter (20% of frames).").assertExists()
+    }
+
+    @Test fun detailSaysDrawingBoundWithTheSmootherVariant() {
+        val aio = listOf(caused("speed-profile", 4000, 38, 198, 1310))
+        show(stats = aio)
+        rule.onNodeWithText("Stutters while drawing the screen (38% of frames). Compiling can't change that.").assertExists()
+        noSmootherButton()
+    }
+
+    @Test fun detailSaysDrawingBoundInSmootherModeAndOffersBackToNormal() {
+        show(w = ok.copy(useSpeed = true), stats = listOf(caused("speed", 4000, 35, 180, 1200)))
+        rule.onNodeWithText(
+            "Stutters while drawing the screen (35% of frames). Compiling can't change that, so Smoother mode can't either; switching back saves storage and starts faster.",
+        ).assertExists()
+        rule.onNodeWithText("Back to normal mode", ignoreCase = true).assertExists()
     }
 
     @Test fun slowByItselfInSmootherModeOffersBackToNormalAndFocusMoves() {

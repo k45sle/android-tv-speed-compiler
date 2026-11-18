@@ -23,8 +23,8 @@ interface Optimizer {
     /** The compiler filter the TV reports for [packageName], or null when unknown. */
     suspend fun verify(packageName: String): String? = null
 
-    /** A plain, non-forced speed-profile compile: ART recompiles only if new profile data was merged. Failures are ignored. */
-    suspend fun refresh(packageName: String) {}
+    /** A plain, non-forced speed-profile compile: ART recompiles only if new profile data was merged. Failures are ignored. [message] is its Activity event. */
+    suspend fun refresh(packageName: String, message: String = REFRESHED) {}
 
     /** Puts [packageName] back to the TV's own compile state. */
     suspend fun reset(packageName: String): OptimizeResult = OptimizeResult(false, RESET_UNSUPPORTED)

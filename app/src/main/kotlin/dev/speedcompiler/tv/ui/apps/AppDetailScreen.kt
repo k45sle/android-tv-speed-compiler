@@ -215,8 +215,13 @@ fun AppDetailContent(
                         Advice.TrySmoother -> R.string.advice_try_smoother
                         Advice.SlowByItself -> if (smootherOn) R.string.advice_slow_by_itself_smoother else R.string.advice_slow_by_itself
                         Advice.Measuring -> R.string.advice_measuring
+                        is Advice.DrawingBound -> null // below, it has a number
                         else -> null // the state line above, or MostlySmooth below
                     }?.let { Text(stringResource(it), style = MaterialTheme.typography.bodyMedium) }
+                    if (advice is Advice.DrawingBound) Text(
+                        stringResource(if (smootherOn) R.string.advice_drawing_bound_smoother else R.string.advice_drawing_bound, advice.percent),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     if (advice is Advice.MostlySmooth) Text(stringResource(R.string.advice_mostly_smooth, advice.percent), style = MaterialTheme.typography.bodyMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
                         ArcadeButton(stringResource(R.string.setup_optimize_now), onOptimize, Modifier.remembersFocus(mem, "optimize"))
@@ -228,7 +233,7 @@ fun AppDetailContent(
                             { mem.id.value = "optimize"; mem.pending = true; onSmoother(true) },
                             Modifier.remembersFocus(mem, "smoother"),
                         )
-                        if (advice == Advice.SlowByItself && smootherOn) ArcadeButton(
+                        if ((advice == Advice.SlowByItself || advice is Advice.DrawingBound) && smootherOn) ArcadeButton(
                             stringResource(R.string.advice_normal_button),
                             { mem.id.value = "optimize"; mem.pending = true; onSmoother(false) },
                             Modifier.remembersFocus(mem, "normal"),

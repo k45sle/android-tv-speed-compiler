@@ -87,7 +87,7 @@ class OptimizerImpl(
     }
 
     // shortcut: no check whether the refresh actually recompiled, and its outcome is ignored; the next one is a day away.
-    override suspend fun refresh(packageName: String) {
+    override suspend fun refresh(packageName: String, message: String) {
         if (!isValidPackageId(packageName)) return
         try {
             withTimeout(timeoutMillis) { shell.run(compileCommand(packageName, force = false)) }
@@ -98,7 +98,7 @@ class OptimizerImpl(
         } finally {
             synchronized(dumpLock) { dumpGeneration++; dump = null }
         }
-        events.insert(Event(timeMillis = clock.nowMillis(), packageName = packageName, kind = "refresh", message = REFRESHED))
+        events.insert(Event(timeMillis = clock.nowMillis(), packageName = packageName, kind = "refresh", message = message))
     }
 
     private suspend fun compile(pkg: String, wanted: String): OptimizeResult {

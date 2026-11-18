@@ -354,6 +354,7 @@
     <string name="stored_optimized_unverified">Optimized (this TV doesn\'t report the result)</string>
     <string name="stored_no_profile">Waiting for you to use the app for about a minute. This finishes on its own afterwards.</string>
     <string name="stored_refreshed">Asked the TV to refresh this app\'s compiled code.</string>
+    <string name="stored_recompiled_start">It was still compiling code as it started, so the TV was asked to compile what you used.</string>
     <string name="stored_optimized_checked">Optimized (checked)</string>
     <string name="stored_verify_unknown">The TV did not report the result for this app.</string>
     <string name="stored_not_installed">Not installed</string>
@@ -380,6 +381,8 @@
     <string name="advice_measuring">Checking how smoothly it runs. Use it a little longer.</string>
     <string name="advice_mostly_smooth">Mostly smooth, with some stutter (%1$d%% of frames).</string>
     <string name="advice_slow_by_itself_smoother">Slow by itself. Compiling can\'t fix it. Smoother mode didn\'t help; switching back saves storage and starts faster.</string>
+    <string name="advice_drawing_bound">Stutters while drawing the screen (%1$d%% of frames). Compiling can\'t change that.</string>
+    <string name="advice_drawing_bound_smoother">Stutters while drawing the screen (%1$d%% of frames). Compiling can\'t change that, so Smoother mode can\'t either; switching back saves storage and starts faster.</string>
     <string name="advice_normal_button">Back to normal mode</string>
     <!-- ADB debugging mode: whether the TV saved Always allow. -->
     <string name="home_key_not_saved">The TV didn\'t save Always allow, so it will ask again after a restart.</string>
