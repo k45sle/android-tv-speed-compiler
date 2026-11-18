@@ -61,6 +61,7 @@ class AppGraph(context: Context) {
         linkOpen = { libAdb.isConnected },
         keyId = { libAdb.publicKeyId },
         bootId = { android.provider.Settings.Global.getInt(app.contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 } },
+        takeQuietHandshake = libAdb::takeRunHandshake,
     )
     val connectionMonitor: ConnectionMonitor = connectionKeeper
     var database: AppDatabase = Room.databaseBuilder(app, AppDatabase::class.java, "speed.db").build()

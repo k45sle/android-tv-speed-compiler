@@ -82,16 +82,8 @@ class AndroidSetupEnv(private val context: Context, private val keeper: Connecti
         }
     }
 
-    override fun openSettings() = launch(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
+    override fun openSettings() = launchFirst(context, Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)
     override fun openDeveloperOptions() = openDeveloperOptions(context)
-
-    private fun launch(vararg actions: String) {
-        for (a in actions) try {
-            context.startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
-        } catch (_: ActivityNotFoundException) {
-        }
-    }
 
     override fun startPairing() {
         context.startForegroundService(Intent(context, PairingService::class.java))
@@ -114,7 +106,12 @@ class AndroidSetupEnv(private val context: Context, private val keeper: Connecti
 
 /** Opens Developer options, or Settings where that screen doesn't exist. */
 fun openDeveloperOptions(context: Context) {
-    for (a in listOf(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)) try {
+    launchFirst(context, Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, Settings.ACTION_SETTINGS)
+}
+
+/** Starts the first of [actions] this TV has a screen for. */
+private fun launchFirst(context: Context, vararg actions: String) {
+    for (a in actions) try {
         context.startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return
     } catch (_: ActivityNotFoundException) {

@@ -53,6 +53,7 @@ class ConnectionKeeperTest {
         linkOpen: () -> Boolean = { false },
         keyId: () -> String? = { null },
         bootId: () -> Int? = { null },
+        takeQuietHandshake: () -> Boolean = { false },
         connect: suspend (Boolean) -> Boolean = { true },
     ) =
         ConnectionKeeper(
@@ -62,6 +63,7 @@ class ConnectionKeeperTest {
             linkOpen = linkOpen,
             keyId = keyId,
             bootId = bootId,
+            takeQuietHandshake = takeQuietHandshake,
         )
 
     @Test
@@ -399,6 +401,38 @@ class ConnectionKeeperTest {
     }
 
     @Test
+    fun quietHandshakeSameBootAfterForgottenIsSavedAgain() = runTest(UnconfinedTestDispatcher()) {
+        // Refused earlier this boot, then let in quietly: it still has the key, so it was saved again after the drop.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Forgotten, key = "k1", boot = 5)
+        keeper(FakeAdbShell(), settings, checkKey = { KeyCheck.Unknown }, keyId = { "k1" }, bootId = { 5 }).reconnect()
+        assertEquals(KeyCheck.SavedAgain, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun quietHandshakeByAShellCommandStoresSaved() = runTest(UnconfinedTestDispatcher()) {
+        // A shell command opened the link after a restart, so the keeper never saw that handshake itself.
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Forgotten, key = "k1", boot = 5)
+        keeper(
+            FakeAdbShell(), settings,
+            checkKey = { KeyCheck.Unknown }, keyId = { "k1" }, bootId = { 6 },
+            takeQuietHandshake = { true }, connect = { false },
+        ).reconnect()
+        assertEquals(KeyCheck.Saved, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
+    fun openLinkWithoutHandshakeStoresNothing() = runTest(UnconfinedTestDispatcher()) {
+        // An already open link proves nothing (it may come from an Allow-once).
+        val settings = FakeSettings(legacy = true, check = KeyCheck.Forgotten, key = "k1", boot = 5)
+        keeper(
+            FakeAdbShell(), settings,
+            checkKey = { KeyCheck.Unknown }, keyId = { "k1" }, bootId = { 6 },
+            takeQuietHandshake = { false }, connect = { false },
+        ).reconnect()
+        assertEquals(KeyCheck.Forgotten, settings.values.first().legacyKeyCheck)
+    }
+
+    @Test
     fun quietRefusalSameBootIsOnlyForgotten() = runTest(UnconfinedTestDispatcher()) {
         // Authorizations were revoked while the TV stayed up: not a restart, so it isn't known to forget at restarts.
         val settings = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "k1", boot = 5)
@@ -573,6 +607,23 @@ class ConnectionKeeperTest {
             val s = FakeSettings(legacy = true, check = check, key = "A")
             assertEquals(false, keeper(FakeAdbShell(), s, keyId = { "A" }).keyKnownRefused())
         }
+    }
+
+    @Test
+    fun forgottenThisBootIsKnownRefused() = runTest(UnconfinedTestDispatcher()) {
+        // Forgotten in this boot: an earlier run in this boot used up the early-boot grace, so retrying is pointless.
+        val s = FakeSettings(legacy = true, check = KeyCheck.Forgotten, key = "A", boot = 5)
+        assertEquals(true, keeper(FakeAdbShell(), s, keyId = { "A" }, bootId = { 5 }).keyKnownRefused())
+
+        // After a restart the stored Forgotten is from an earlier boot, so that run still gets the retries.
+        assertEquals(false, keeper(FakeAdbShell(), s, keyId = { "A" }, bootId = { 6 }).keyKnownRefused())
+
+        // Only for the key the refusal was found for.
+        assertEquals(false, keeper(FakeAdbShell(), s, keyId = { "B" }, bootId = { 5 }).keyKnownRefused())
+
+        // SavedAgain says nothing about this boot.
+        val saved = FakeSettings(legacy = true, check = KeyCheck.SavedAgain, key = "A", boot = 5)
+        assertEquals(false, keeper(FakeAdbShell(), saved, keyId = { "A" }, bootId = { 5 }).keyKnownRefused())
     }
 
     @Test

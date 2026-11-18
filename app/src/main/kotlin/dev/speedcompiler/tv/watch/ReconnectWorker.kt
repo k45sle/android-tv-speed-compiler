@@ -41,7 +41,8 @@ fun enqueueReconnect(context: Context) {
  * Stops early once connected or when the user has to act. Without a network it tries anyway.
  * With [retryNotAllowed] (the legacy port, only just after a restart) a refused key is retried too: these tries never
  * show the TV's prompt, and right after boot the TV may refuse a key it accepts a few seconds later. It is left off
- * later, and when the check knows the TV won't keep the key, so those runs stop at once and Home offers Fix connection.
+ * later, and when the check knows the TV won't keep the key, or a run in this boot was already refused at every try,
+ * so those runs stop at once and Home offers Fix connection.
  * Calls [onGaveUp] with the last status when the run ends on a refusal ([Fix.AllowPrompt]) and every try of it was
  * refused: after the last retry, or at once when refusals aren't retried (for example more than 10 minutes after boot).
  * Calls [enableWifiAdb] only when [turnOnWifiAdb] (the Keep Wireless debugging on setting).

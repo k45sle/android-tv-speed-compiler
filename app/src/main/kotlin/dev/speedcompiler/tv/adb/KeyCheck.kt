@@ -86,10 +86,16 @@ fun afterQuietRefusal(stored: KeyCheck, sameBoot: Boolean): KeyCheck = when (sto
  * The result to keep after a quiet handshake (the TV let the key in by itself). That proves the TV kept the key across a
  * restart only when [stored] was stored in an earlier boot; within the same boot ([sameBoot]) a result about restarts
  * stands, for example after the app's process was restarted.
+ * [KeyCheck.Forgotten] within the same boot is the exception: Forgotten in this boot means the TV refused the key and
+ * nothing since showed a restart, so when the TV now lets the key in by itself, it still has the key: it was saved
+ * again after the drop (or the refusal was a slow boot), so the result becomes [KeyCheck.SavedAgain]. That shows no
+ * warning on Home, and the next restart still tells whether the TV keeps the key.
  */
-fun afterQuietHandshake(stored: KeyCheck, sameBoot: Boolean): KeyCheck =
-    if (sameBoot && (stored == KeyCheck.Forgotten || stored == KeyCheck.SavedAgain || stored == KeyCheck.ForgetsAtRestart)) stored
-    else KeyCheck.Saved
+fun afterQuietHandshake(stored: KeyCheck, sameBoot: Boolean): KeyCheck = when {
+    sameBoot && stored == KeyCheck.Forgotten -> KeyCheck.SavedAgain
+    sameBoot && (stored == KeyCheck.SavedAgain || stored == KeyCheck.ForgetsAtRestart) -> stored
+    else -> KeyCheck.Saved
+}
 
 /**
  * Right after someone allowed the app: will the TV let the same key back in without asking, as it must after a

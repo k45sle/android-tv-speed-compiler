@@ -145,7 +145,9 @@ class KeyCheckTest {
     }
 
     @Test fun afterQuietHandshakeKeepsARestartResultFromTheSameBoot() {
-        for (stored in listOf(KeyCheck.Forgotten, KeyCheck.SavedAgain, KeyCheck.ForgetsAtRestart)) {
+        // Forgotten this boot: the TV refused, then let the key in by itself, so it still has it (saved again).
+        assertEquals(KeyCheck.SavedAgain, afterQuietHandshake(KeyCheck.Forgotten, sameBoot = true))
+        for (stored in listOf(KeyCheck.SavedAgain, KeyCheck.ForgetsAtRestart)) {
             assertEquals(stored, afterQuietHandshake(stored, sameBoot = true))
         }
         for (stored in listOf(KeyCheck.Unknown, KeyCheck.AllowedOnce, KeyCheck.NotSaved, KeyCheck.Saved)) {

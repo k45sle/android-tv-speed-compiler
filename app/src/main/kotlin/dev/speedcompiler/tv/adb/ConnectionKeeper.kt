@@ -48,6 +48,8 @@ fun fixFor(e: Throwable): Fix = when (e) {
  * means unknown.
  * [bootId] identifies the current boot (Settings.Global.BOOT_COUNT), so a quiet handshake or refusal can tell whether a
  * restart happened since a result was stored; null means unknown.
+ * [takeQuietHandshake] says (once) whether a shell command opened the main link by itself since the last call, which is a
+ * quiet handshake the keeper didn't make.
  * SYSTEM_ALERT_WINDOW via appops is deliberately not done: it waits on a device test.
  */
 class ConnectionKeeper(
@@ -61,6 +63,7 @@ class ConnectionKeeper(
     private val linkOpen: () -> Boolean = { false },
     private val keyId: () -> String? = { null },
     private val bootId: () -> Int? = { null },
+    private val takeQuietHandshake: () -> Boolean = { false },
 ) : ConnectionMonitor {
     private val _status = MutableStateFlow<KeeperStatus>(KeeperStatus.Reconnecting)
     val status: StateFlow<KeeperStatus> get() = _status
@@ -151,10 +154,19 @@ class ConnectionKeeper(
             _status.value = KeeperStatus.Failed(err, fixFor(err))
             return _status.value
         }
+        // Once on every successful connect, so the flag never goes stale.
+        val quietElsewhere = takeQuietHandshake()
         _status.value = KeeperStatus.Connected
         if (!granted) grant()
         // grant() can flip the status to Failed when the link drops: then nothing is stored or checked.
-        if (fresh && _status.value == KeeperStatus.Connected) onHandshake(prompt)
+        if (_status.value == KeeperStatus.Connected) {
+            when {
+                // A handshake this call made counts as prompted or quiet as asked for.
+                fresh -> onHandshake(prompt)
+                // A shell command opened the link by itself meanwhile: that handshake was quiet.
+                quietElsewhere -> onHandshake(false)
+            }
+        }
         return _status.value
     }
 
@@ -246,14 +258,19 @@ class ConnectionKeeper(
      * True when the TV is known not to let this app's key back in by itself (legacy ADB debugging mode, result found
      * for this key): it never saved it, or it forgets it at every restart. A quiet refusal is then the expected answer,
      * so retrying it only keeps Home on Connecting; one quiet try still runs, and its success stores Saved.
+     * Forgotten stored in this boot counts too: a reconnect run in this boot was already refused at every try (the
+     * early-boot grace was used), and retrying again only keeps Home on Connecting for about 75 s without Fix connection,
+     * so later runs in this boot make one quiet try and stop. A Forgotten from an earlier boot still gets the retries
+     * after the next restart.
      */
     suspend fun keyKnownRefused(): Boolean {
         val s = settings.values.first()
+        if (!s.legacyAdb) return false
+        val check = s.legacyKeyCheck
+        val known = check == KeyCheck.AllowedOnce || check == KeyCheck.NotSaved || check == KeyCheck.ForgetsAtRestart ||
+            (check == KeyCheck.Forgotten && s.legacyKeyCheckBoot != null && s.legacyKeyCheckBoot == bootId())
         // Cheap fields first: keyId() may load or generate the RSA key, so only ask it once the result could match.
-        return s.legacyAdb &&
-            (s.legacyKeyCheck == KeyCheck.AllowedOnce || s.legacyKeyCheck == KeyCheck.NotSaved ||
-                s.legacyKeyCheck == KeyCheck.ForgetsAtRestart) &&
-            s.legacyKeyCheckKey == keyId()
+        return known && s.legacyKeyCheckKey == keyId()
     }
 
     /**

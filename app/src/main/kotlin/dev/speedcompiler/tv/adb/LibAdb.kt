@@ -21,6 +21,7 @@ import java.security.MessageDigest
 import java.security.cert.Certificate
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** The older plain ADB connection on this device, which some TVs (for example Sony Bravia) open with ADB debugging. */
 const val LEGACY_HOST = "127.0.0.1"
@@ -72,6 +73,8 @@ class LibAdb(
 
     @Volatile private var linkViaPort = false // whether the open link goes through the legacy port; set by connect()
 
+    private val runHandshake = AtomicBoolean(false)
+
     /** A fresh connection manager over this app's key, for [connect] and the side connections ([keyTrusted], [askSeparately]). */
     private fun newManager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
         override fun getPrivateKey() = keys.privateKey
@@ -92,7 +95,7 @@ class LibAdb(
             if (linkViaPort == viaPort) return@withLock false
             // The connection mode changed (Setup's switch): the open link goes through the other port, so drop it and dial
             // the right one. Only that user action gets here, so ending whatever ran on the old link is expected.
-            runCatching { adbCall { manager.disconnect() } }
+            tryOrNull { adbCall { manager.disconnect() } }
         }
         val waitForAllow = viaPort && prompt
         // Without the public key adbd shows no prompt, and libadb only sends it when it doesn't throw first.
@@ -128,7 +131,7 @@ class LibAdb(
     }
 
     override suspend fun run(command: String): ShellResult {
-        connect()
+        if (connect()) runHandshake.set(true) // a handshake the keeper didn't make
         // withTimeoutOrNull only reacts to its own deadline, so a caller's withTimeout still propagates as usual.
         val raw = withTimeoutOrNull(timeoutMillis) {
             adbCall {
@@ -159,6 +162,9 @@ class LibAdb(
     }
 
     suspend fun disconnect() = connecting.withLock { adbCall { manager.disconnect() } }
+
+    /** True once after run() made a new connection by itself (always quiet, no prompt), so the keeper can count that handshake; clears it. */
+    fun takeRunHandshake(): Boolean = runHandshake.getAndSet(false)
 
     /** This app's public key in adb's format, as the TV lists it in `dumpsys adb`. */
     val publicKeyBase64: String by lazy { adbPublicKeyBase64(keys.certificate.publicKey as RSAPublicKey) }

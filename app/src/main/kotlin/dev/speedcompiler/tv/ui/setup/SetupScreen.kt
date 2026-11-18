@@ -274,8 +274,12 @@ fun ReconnectScreen(onBack: () -> Unit, deps: SetupDeps = rememberSetupDeps()) {
         while (!(if (legacy) env.legacyPortOpen().also { portOpen = it } else env.wirelessDebuggingOn())) delay(PollMs)
         if (deps.connection.first() == ConnectionState.Connected) return@LaunchedEffect leave()
         connecting = true
-        failure = env.connect() // its own try; in ADB debugging mode it waits as long as the TV's prompt does
-        connecting = false
+        // A cancelled effect (for example the legacy placeholder changing) must not leave the page hiding its error and button.
+        try {
+            failure = env.connect() // its own try; in ADB debugging mode it waits as long as the TV's prompt does
+        } finally {
+            connecting = false
+        }
         if (failure == null) leave()
     }
     // A connect from elsewhere (the boot worker) also finishes, also after a failure or the timeout.
