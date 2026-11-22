@@ -475,6 +475,28 @@ class SetupFlowTest : ComposeTestBase() {
     private fun click(text: String) { rule.onNodeWithText(text, ignoreCase = true).performClick(); rule.waitForIdle() }
 
     @Test
+    fun alreadyOnSkipsDeveloperOptionsTheTvNeverReports() {
+        show { SetupScreen({ backs++ }, deps = deps) }
+        enter()
+        see("Turn on Developer options.")
+        click("It's already on")
+        see("Turn on Wireless debugging.")
+        assertTrue("openSettings" !in env.calls)
+    }
+
+    @Test
+    fun fireTvStartsOnAdbDebuggingWithItsOwnMenuNames() {
+        env.fireTv = true
+        show { SetupScreen({ backs++ }, deps = legacyDeps()) }
+        assertEquals(true, legacy.value)
+        enter()
+        see("Open Settings > My Fire TV > About, and press your Fire TV's name 7 times. If My Fire TV already lists Developer options, it's on.")
+        shot("2_developer_options_fire_tv")
+        click("It's already on")
+        see("Turn on ADB debugging.")
+    }
+
+    @Test
     fun legacyWalksFromNoWirelessDebuggingToAllowWithoutPairing() {
         env.developerOptions = true
         show { SetupScreen({ backs++ }, deps = legacyDeps()) }

@@ -85,6 +85,8 @@
     <string name="setup_start">Start</string>
     <string name="setup_dev_title">Turn on Developer options.</string>
     <string name="setup_dev_body">Open Settings &gt; System &gt; About &gt; Build, and press it 7 times.</string>
+    <string name="setup_dev_body_fire_tv">Open Settings &gt; My Fire TV &gt; About, and press your Fire TV\'s name 7 times. If My Fire TV already lists Developer options, it\'s on.</string>
+    <string name="setup_dev_already_on">It\'s already on</string>
     <string name="setup_open_settings">Open Settings</string>
     <string name="setup_wifi_title">Turn on Wireless debugging.</string>
     <string name="setup_wifi_body">In Developer options, switch on Wireless debugging.</string>
@@ -112,6 +114,7 @@
         <item quantity="other">Continue (%1$d selected)</item>
     </plurals>
     <string name="setup_no_apps">No apps found.</string>
+    <string name="setup_help_settings_fire_tv">Open Settings, go to My Fire TV, then About. Press OK on your Fire TV\'s name (the first line) 7 times. A message says you are now a developer, and Developer options appears in My Fire TV.</string>
     <string name="setup_help_settings">Open Settings, go to System, then About. Find the line named Build and press OK on it 7 times. A message says you are now a developer.</string>
     <string name="setup_help_wireless">In Developer options, scroll to Wireless debugging and switch it on. If the TV asks about Wi-Fi, choose Allow.</string>
     <string name="setup_help_pair">Keep the phone on the same Wi-Fi as the TV. If the QR will not scan, type the short address into the phone\'s browser. If the TV\'s pairing code times out, open Pair device with pairing code again.</string>

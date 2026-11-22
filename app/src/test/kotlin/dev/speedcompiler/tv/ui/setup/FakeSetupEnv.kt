@@ -8,6 +8,7 @@ class FakeSetupEnv(
     var apps: List<SetupApp> = emptyList(),
     var adbDebugging: Boolean = false,
     var portOpen: Boolean = false,
+    override var fireTv: Boolean = false,
 ) : SetupEnv {
     val calls = mutableListOf<String>()
     var hook: (String) -> Unit = {}

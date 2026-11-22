@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -35,6 +36,8 @@ typealias SetupApp = AppInfo
 /** Everything the setup screens need from Android that a JVM test cannot do: Settings reads and launches. */
 interface SetupEnv {
     fun developerOptionsOn(): Boolean
+    /** Amazon Fire TV: other menu names, and only the older ADB debugging (no Wireless debugging). */
+    val fireTv: Boolean get() = false
     fun wirelessDebuggingOn(): Boolean
     /** The plain ADB (USB) debugging switch, which opens the legacy port on some TVs. */
     fun adbDebuggingOn(): Boolean
@@ -70,7 +73,11 @@ class SetupDeps(
 class AndroidSetupEnv(private val context: Context, private val keeper: ConnectionKeeper) : SetupEnv {
     private fun global(name: String) = Settings.Global.getInt(context.contentResolver, name, 0) == 1
 
-    override fun developerOptionsOn() = global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)
+    // Fire OS shows Developer options without setting this flag, so a debugging switch that is on counts too:
+    // those switches live inside Developer options.
+    override fun developerOptionsOn() =
+        global(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED) || adbDebuggingOn() || wirelessDebuggingOn()
+    override val fireTv = isFireTv(context)
     override fun wirelessDebuggingOn() = global("adb_wifi_enabled")
     override fun adbDebuggingOn() = global(Settings.Global.ADB_ENABLED)
 
@@ -103,6 +110,10 @@ class AndroidSetupEnv(private val context: Context, private val keeper: Connecti
         return loadUserApps(context, packages).sortedByDescending { it.updatedAt }
     }
 }
+
+/** Amazon Fire TV (Fire OS), by its feature flag or maker. */
+fun isFireTv(context: Context) =
+    context.packageManager.hasSystemFeature("amazon.hardware.fire_tv") || Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
 
 /** Opens Developer options, or Settings where that screen doesn't exist. */
 fun openDeveloperOptions(context: Context) {
