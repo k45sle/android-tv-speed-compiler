@@ -159,14 +159,27 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
 
     val pageBack = { if (help) help = false else if (step > first) back() else onBack() }
     CompositionLocalProvider(LocalPageBack provides pageBack) {
-    if (help) HelpPage(step, legacy) { help = false } else when (step) {
+    // Fire TV has no Wireless debugging, only ADB debugging, so a full setup starts on the older connection.
+    // Once per setup (saved across recreation), so a later pick of Wireless debugging sticks.
+    var legacyDefaulted by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (mode == SetupMode.Full && env.fireTv && !legacyDefaulted) {
+            legacyDefaulted = true
+            if (!deps.legacy.first()) deps.setLegacy(true)
+        }
+    }
+    if (help) HelpPage(step, legacy, env.fireTv) { help = false } else when (step) {
         1 -> Page(null, stringResource(R.string.setup_intro_title)) {
             Body(stringResource(R.string.setup_intro_body))
             PrimaryButton(stringResource(R.string.setup_start), onClick = ::advance)
         }
         2 -> Page(2, stringResource(R.string.setup_dev_title)) {
-            Body(stringResource(R.string.setup_dev_body))
-            PrimaryButton(stringResource(R.string.setup_open_settings), onClick = debounced(env::openSettings))
+            Body(stringResource(if (env.fireTv) R.string.setup_dev_body_fire_tv else R.string.setup_dev_body))
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.x2)) {
+                PrimaryButton(stringResource(R.string.setup_open_settings), onClick = debounced(env::openSettings))
+                // Some TVs never report Developer options as on; the next step checks the switch it needs anyway.
+                Button(onClick = ::advance) { Text(stringResource(R.string.setup_dev_already_on).upper()) }
+            }
             helpOffer?.let { ShowMeHow(it) }
             Waiting()
             FailWhenStuck(::fail)
@@ -463,10 +476,10 @@ private fun AppPicker(apps: List<SetupApp>, picked: MutableList<String>, onConti
 }
 
 @Composable
-private fun HelpPage(step: Int, legacy: Boolean, onClose: () -> Unit) {
+private fun HelpPage(step: Int, legacy: Boolean, fireTv: Boolean = false, onClose: () -> Unit) {
     val text = stringResource(
         when (step) {
-            2 -> R.string.setup_help_settings
+            2 -> if (fireTv) R.string.setup_help_settings_fire_tv else R.string.setup_help_settings
             3 -> if (legacy) R.string.setup_help_adb else R.string.setup_help_wireless
             4 -> R.string.setup_help_pair
             else -> if (legacy) R.string.setup_help_allow_adb else R.string.setup_help_allow
