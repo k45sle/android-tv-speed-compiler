@@ -159,8 +159,15 @@ fun SetupScreen(onBack: () -> Unit, mode: SetupMode = SetupMode.Full, deps: Setu
 
     val pageBack = { if (help) help = false else if (step > first) back() else onBack() }
     CompositionLocalProvider(LocalPageBack provides pageBack) {
-    // Fire TV has no Wireless debugging, only ADB debugging, so it starts on the older connection.
-    LaunchedEffect(Unit) { if (env.fireTv && !deps.legacy.first()) deps.setLegacy(true) }
+    // Fire TV has no Wireless debugging, only ADB debugging, so a full setup starts on the older connection.
+    // Once per setup (saved across recreation), so a later pick of Wireless debugging sticks.
+    var legacyDefaulted by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (mode == SetupMode.Full && env.fireTv && !legacyDefaulted) {
+            legacyDefaulted = true
+            if (!deps.legacy.first()) deps.setLegacy(true)
+        }
+    }
     if (help) HelpPage(step, legacy, env.fireTv) { help = false } else when (step) {
         1 -> Page(null, stringResource(R.string.setup_intro_title)) {
             Body(stringResource(R.string.setup_intro_body))

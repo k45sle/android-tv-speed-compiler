@@ -497,6 +497,14 @@ class SetupFlowTest : ComposeTestBase() {
     }
 
     @Test
+    fun fireTvRepairKeepsTheChosenConnection() {
+        env.fireTv = true
+        show { SetupScreen({ backs++ }, SetupMode.Repair, deps = legacyDeps()) }
+        tick()
+        assertEquals(false, legacy.value)
+    }
+
+    @Test
     fun legacyWalksFromNoWirelessDebuggingToAllowWithoutPairing() {
         env.developerOptions = true
         show { SetupScreen({ backs++ }, deps = legacyDeps()) }
